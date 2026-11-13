@@ -1,0 +1,67 @@
+# Config do workspace — cada aba é um arquivo de configuração
+screen 1440x1000
+row pad=16 gap=14
+  card w=200 gap=10
+    title "JARVIS" size=20
+    text "WORKSPACES" size=11 muted h=16
+    pill "FIA · Agentes" h=40
+    pill "FID · Designer" h=40
+    pill "Pessoal" h=40
+    opill "+ Novo" h=32
+    divider
+    text "FERRAMENTAS" size=11 muted h=16
+    pill "Skills" h=40
+    pill "Calendário · v2" h=40
+    pill "Config" solid h=40
+    space
+  col f=1 gap=14
+    row h=48 gap=10
+      title "Config · FIA" size=24
+      space
+      button "Salvar" solid w=100
+    row gap=14
+      col f=1 gap=14
+        card gap=10 h=300
+          title "Identidade" size=15
+          input "Nome: FIA · Engenheiro de Agentes de IA"
+          input "Contexto: 4 Workspace/[FIA]_..."
+          input "Tag do vault: 🤖fia"
+          input "Público e inimigo em comum…"
+        card gap=10 f=1
+          title "Fontes do radar" size=15
+          row h=32 gap=10
+            text "X · feed e listas" size=13 h=20
+            space
+            toggle
+          row h=32 gap=10
+            text "Web · busca e notícias" size=13 h=20
+            space
+            toggle
+          row h=32 gap=10
+            text "YouTube · busca por temas" size=13 h=20
+            space
+            toggle
+          row h=32 gap=10
+            text "Instagram · perfis" size=13 h=20
+            space
+            toggle
+          input "Temas: agentes, Claude Code, n8n, MCP…"
+          select "Atualizar: todo dia 07:00"
+      col f=1 gap=14
+        card gap=10 f=1
+          row h=30
+            title "Concorrentes e referências" size=15
+            space
+            button "+ Perfil" ghost w=90
+          table cols="Perfil|Rede|Tipo" rows=6 data="@concorrente_a,Instagram,Rival|@concorrente_b,YouTube,Rival|@nick_saraev,YouTube,Ref|@kallaway,Instagram,Ref|@concorrente_c,Instagram,Rival|@referencia_us,Instagram,Ref"
+        card gap=10 h=230
+          title "Skills deste workspace" size=15
+          list items="reels-builder|carrossel-builder|viral-hooks|re-hook"
+  card w=320 gap=10
+    row h=28
+      title "Jarvis · Config" size=16
+      space
+      dot size=24
+    divider
+    space
+    input "Ex.: sugira concorrentes para FIA…"

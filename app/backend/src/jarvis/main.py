@@ -1,0 +1,319 @@
+"""API do Jarvis. Dev: `uv run jarvis` (porta 8740). O front (Vite) faz proxy de /api para cá."""
+import asyncio
+import json
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import agente, anuncios, auth, db, metricool, notas, planejamento, preferencias, radar, skills, videos_x
+from .config import FRONT_DIST
+
+MODO_AUTH = auth.preparar()
+db.iniciar()
+app = FastAPI(title="Jarvis Conteúdo")
+
+
+@app.get("/api/saude")
+def saude():
+    return {"ok": True, "auth": MODO_AUTH, "ultima_coleta": db.ultima_coleta()}
+
+
+@app.get("/api/sinais")
+def sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None):
+    return db.listar_sinais(status, fonte, tipo)
+
+
+class Status(BaseModel):
+    status: str
+
+
+@app.post("/api/sinais/{id_}/status")
+def status_sinal(id_: int, corpo: Status):
+    if corpo.status not in ("novo", "salvo", "descartado"):
+        raise HTTPException(400, "status inválido")
+    db.mudar_status(id_, corpo.status)
+    return {"ok": True}
+
+
+class Voto(BaseModel):
+    voto: int
+
+
+@app.post("/api/sinais/{id_}/voto")
+def votar(id_: int, corpo: Voto):
+    if corpo.voto not in (-1, 0, 1):
+        raise HTTPException(400, "voto é -1, 0 ou 1")
+    db.votar(id_, corpo.voto)
+    preferencias.invalidar()
+    return {"ok": True}
+
+
+@app.get("/api/radar/gosto")
+def gosto():
+    vs = db.votados()
+    p = preferencias.perfil()
+    top = sorted(((l - d) / (l + d + 1), k) for k, (l, d) in p.items() if k[0] != "fonte" and l + d >= 2)
+    return {"likes": sum(v["voto"] > 0 for v in vs), "deslikes": sum(v["voto"] < 0 for v in vs),
+            "gosta": [f"{k[1]}" for w, k in reversed(top) if w > 0.3][:8],
+            "evita": [f"{k[1]}" for w, k in top if w < -0.3][:8]}
+
+
+_reav: asyncio.Task | None = None
+
+
+@app.post("/api/radar/reavaliar")
+async def reavaliar():
+    global _reav
+    if _reav and not _reav.done():
+        return {"status": "ja_rodando"}
+    _reav = asyncio.create_task(radar.reavaliar())
+    return {"status": "iniciado"}
+
+
+@app.get("/api/sinais/{id_}/video")
+async def video_x(id_: int):
+    return {"video": await asyncio.to_thread(videos_x.video, id_)}
+
+
+_tarefa: asyncio.Task | None = None
+
+
+@app.post("/api/radar/atualizar")
+async def atualizar():
+    global _tarefa
+    if _tarefa and not _tarefa.done():
+        return {"status": "ja_rodando"}
+    _tarefa = asyncio.create_task(radar.coletar())
+    return {"status": "iniciado"}
+
+
+@app.get("/api/radar/estado")
+def estado():
+    return {"rodando": bool(_tarefa and not _tarefa.done()), "reavaliando": bool(_reav and not _reav.done()),
+            "ultima": db.ultima_coleta()}
+
+
+class Mensagem(BaseModel):
+    conversa: str = "radar"
+    texto: str
+    sinal: int | None = None
+
+
+@app.post("/api/chat")
+async def chat(m: Mensagem):
+    async def eventos():
+        async for ev in agente.conversar(m.conversa, m.texto, m.sinal):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+    return StreamingResponse(eventos(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/chat/{conversa}")
+def historico(conversa: str):
+    return db.mensagens(conversa)
+
+
+@app.get("/api/skills")
+def lista_skills():
+    return skills.listar()
+
+
+@app.get("/api/skills/{nome}")
+def uma_skill(nome: str):
+    s = skills.ler(nome)
+    if not s:
+        raise HTTPException(404, "skill não encontrada")
+    return s
+
+
+@app.get("/api/metricool/estado")
+def metricool_estado():
+    return {"conectado": True, "motivo": "Lido pelo conector Metricool da conta claude.ai, só leitura."}
+
+
+_sync: asyncio.Task | None = None
+
+
+@app.get("/api/calendario")
+def calendario(de: str, ate: str):
+    """Posts publicados e agendados entre duas datas ISO (ate exclusivo)."""
+    return {"posts": metricool.listar(de, ate), "sincronizando": bool(_sync and not _sync.done())}
+
+
+@app.post("/api/calendario/sincronizar")
+async def sincronizar():
+    global _sync
+    if _sync and not _sync.done():
+        return {"status": "ja_rodando"}
+    _sync = asyncio.create_task(metricool.sincronizar())
+    return {"status": "iniciado"}
+
+
+@app.get("/api/notas-indice")
+def notas_indice():
+    return {"itens": notas.indice()}
+
+
+@app.get("/api/notas/agenda")
+def notas_agenda():
+    """Notas de 1 Copies com `scheduled`, para o calendário editorial de Ideias."""
+    return {"itens": notas.agenda()}
+
+
+class Agendar(BaseModel):
+    data: str   # AAAA-MM-DD
+
+
+@app.post("/api/notas/{raiz}/{nome:path}/agenda")
+def nota_agendar(raiz: str, nome: str, corpo: Agendar):
+    try:
+        return notas.mudar_agenda(raiz, nome, corpo.data)
+    except FileNotFoundError:
+        raise HTTPException(404, "nota não encontrada")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/planejamento")
+def planejamento_listar():
+    return {"itens": planejamento.listar()}
+
+
+class Bloco(BaseModel):
+    inicio: str
+    fim: str
+    texto: str
+    cor: str | None = None
+
+
+@app.post("/api/planejamento")
+def planejamento_criar(corpo: Bloco):
+    return planejamento.criar(corpo.inicio, corpo.fim, corpo.texto, corpo.cor)
+
+
+class BlocoParcial(BaseModel):
+    inicio: str | None = None
+    fim: str | None = None
+    texto: str | None = None
+    cor: str | None = None
+
+
+@app.put("/api/planejamento/{id_}")
+def planejamento_atualizar(id_: str, corpo: BlocoParcial):
+    item = planejamento.atualizar(id_, **corpo.model_dump())
+    if not item:
+        raise HTTPException(404, "bloco não encontrado")
+    return item
+
+
+@app.delete("/api/planejamento/{id_}")
+def planejamento_apagar(id_: str):
+    if not planejamento.apagar(id_):
+        raise HTTPException(404, "bloco não encontrado")
+    return {"ok": True}
+
+
+class Acao(BaseModel):
+    acao: str                   # fixar | desafixar | mover | renomear | status | lixeira
+    destino: str | None = None  # mover: priorizar | publicados · status: ideia | edicao | agendado
+    novo: str | None = None     # para renomear
+
+
+@app.post("/api/notas/{raiz}/{nome:path}/acao")
+def nota_acao(raiz: str, nome: str, corpo: Acao):
+    try:
+        if corpo.acao in ("fixar", "desafixar"):
+            return {"fixadas": notas.fixar(raiz, nome, corpo.acao == "fixar")}
+        if corpo.acao == "mover":
+            return notas.mover(raiz, nome, corpo.destino or "")
+        if corpo.acao == "renomear":
+            return notas.renomear(raiz, nome, corpo.novo or "")
+        if corpo.acao == "status":
+            return notas.mudar_status(raiz, nome, corpo.destino or "")
+        if corpo.acao == "lixeira":
+            return notas.para_lixeira(raiz, nome)
+    except FileExistsError:
+        raise HTTPException(409, "já existe uma nota com esse nome lá")
+    except FileNotFoundError:
+        raise HTTPException(404, "nota não encontrada")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    raise HTTPException(400, "ação desconhecida")
+
+
+@app.get("/api/notas/{raiz}")
+def notas_lista(raiz: str):
+    if raiz not in notas.RAIZES:
+        raise HTTPException(404, "pasta desconhecida")
+    return {"pasta": notas.RAIZES[raiz], "itens": notas.listar(raiz)}
+
+
+@app.get("/api/notas/{raiz}/{nome:path}")
+def nota_ler(raiz: str, nome: str):
+    n = notas.ler(raiz, nome)
+    if not n:
+        raise HTTPException(404, "nota não encontrada")
+    return n
+
+
+class Salvar(BaseModel):
+    texto: str
+    mtime: float | None = None
+
+
+@app.put("/api/notas/{raiz}/{nome:path}")
+def nota_salvar(raiz: str, nome: str, corpo: Salvar):
+    try:
+        return notas.salvar(raiz, nome, corpo.texto, corpo.mtime)
+    except notas.Conflito as e:
+        raise HTTPException(409, str(e))
+    except FileNotFoundError:
+        raise HTTPException(404, "nota não encontrada")
+
+
+class Nova(BaseModel):
+    titulo: str
+
+
+@app.post("/api/notas/priorizar")
+def nota_nova(corpo: Nova):
+    try:
+        return notas.criar(corpo.titulo)
+    except FileExistsError:
+        raise HTTPException(409, "já existe uma nota com esse nome")
+
+
+_ads: asyncio.Task | None = None
+
+
+@app.get("/api/ads")
+def ads():
+    return anuncios.painel() | {"sincronizando": bool(_ads and not _ads.done())}
+
+
+@app.post("/api/ads/sincronizar")
+async def ads_sincronizar():
+    global _ads
+    if _ads and not _ads.done():
+        return {"status": "ja_rodando"}
+    _ads = asyncio.create_task(anuncios.sincronizar())
+    return {"status": "iniciado"}
+
+
+app.mount("/api/thumbs", StaticFiles(directory=metricool.THUMBS, check_dir=False), name="thumbs")
+
+
+if FRONT_DIST.exists():  # build de produção servido pelo próprio backend
+    app.mount("/assets", StaticFiles(directory=FRONT_DIST / "assets"), name="assets")
+
+    @app.get("/{caminho:path}")
+    def spa(caminho: str):
+        alvo = FRONT_DIST / caminho
+        return FileResponse(alvo if caminho and alvo.is_file() else FRONT_DIST / "index.html")
+
+
+def rodar():
+    import uvicorn
+    uvicorn.run("jarvis.main:app", host="127.0.0.1", port=8740, reload=False)

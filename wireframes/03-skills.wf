@@ -1,0 +1,64 @@
+# Skills — visualizador e editor dos SKILL.md do vault
+screen 1440x900
+row pad=16 gap=14
+  card w=200 gap=10
+    title "JARVIS" size=20
+    text "WORKSPACES" size=11 muted h=16
+    pill "FIA · Agentes" h=40
+    pill "FID · Designer" h=40
+    pill "Pessoal" h=40
+    opill "+ Novo" h=32
+    divider
+    text "FERRAMENTAS" size=11 muted h=16
+    pill "Skills" solid h=40
+    pill "Calendário · v2" h=40
+    pill "Config" h=40
+    space
+  col f=1 gap=14
+    row h=48 gap=10
+      title "Skills" size=24
+      text "3 Skills/ · 18 skills" size=12 muted w=160
+      space
+      input "Buscar skill…" w=220
+      button "+ Nova skill" w=130
+    row gap=14
+      card w=250 gap=8
+        tabs items="Todas|Reels|VSL" active=1
+        list items="reels-builder|carrossel-builder|viral-hooks|re-hook|roteiro-to-descricao|pesquisa-reels|ai-signal-report|social-feed-radar|vsl-lead|ad-vsl"
+      col f=1 gap=14
+        card gap=8 h=110
+          row h=30 gap=8
+            title "reels-builder" size=18
+            space
+            opill "usada em 12 ideias · v2" w=170 h=26
+          text "Criação de Reels a partir de uma ideia ou fonte. Usa viral-hooks e o tom do @rodrigotadewald." size=13 h=40
+        card gap=10 f=1
+          row h=34 gap=8
+            tabs items="SKILL.md|references/" active=1 w=220
+            space
+            button "Testar · v2" ghost w=110
+            button "Salvar" solid w=90
+          lines n=22
+          row h=24
+            text "Grava direto em 3 Skills/reels-builder/SKILL.md" size=11 muted
+            space
+            text "editado há 2 min" size=11 muted w=110
+  card w=320 gap=10
+    row h=28
+      title "Jarvis · Skills" size=16
+      space
+      dot size=24
+    text "Contexto: reels-builder aberta" size=11 muted h=16
+    divider
+    card gap=4 h=80
+      text "Você" size=11 muted h=16
+      text "Adiciona uma regra: CTA sempre na última fala" size=13 h=40
+    card gap=6 h=150
+      text "Jarvis" size=11 muted h=16
+      text "Incluí na seção Estrutura. Veja o diff antes de salvar." size=13 h=60
+      space
+      row h=30 gap=6
+        opill "Ver diff" h=28
+        opill "Aplicar" h=28
+    space
+    input "Peça uma mudança na skill…"

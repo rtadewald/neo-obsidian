@@ -1,0 +1,130 @@
+# Painel — variante A: navbar no topo, 70/30
+screen 1440x1180
+col pad=16 gap=14
+  row h=52 gap=8
+    dot size=36
+    lines n=1 bold w=90 h=36
+    space
+    pill w=100 h=36 solid
+    pill w=100 h=36
+    pill w=100 h=36
+    pill w=90 h=36
+    pill w=110 h=36
+    pill w=90 h=36
+    space
+    dot size=36
+  row gap=14
+    col f=7 gap=14
+      row h=44 gap=8
+        lines n=1 bold w=260
+        space
+        tabs items="A|B|C|D|E" active=1 w=300
+        pill w=100 h=40 solid
+
+      # Hoje
+      card gap=10 h=190
+        row h=22
+          lines n=1 bold w=120
+          space
+          pill w=90 h=22
+        row gap=10
+          card gap=6
+            lines n=1 w=120
+            lines n=2 bold
+            lines n=1 w=100
+          card gap=6
+            lines n=1 w=120
+            lines n=2 bold
+            lines n=1 w=100
+          card gap=6
+            lines n=1 w=120
+            lines n=2 bold
+            lines n=1 w=100
+          card gap=6
+            lines n=1 w=120
+            lines n=2 bold
+            lines n=1 w=100
+      # Viralizando
+      card gap=10 h=380
+        row h=30 gap=8
+          lines n=1 bold w=140
+          space
+          pill w=110 h=30
+        row gap=12
+          card gap=8
+            image h=140
+            row h=22
+              opill w=78 h=22
+              space
+              pill w=44 h=22 solid
+            lines n=2 bold
+            lines n=1
+            row h=32 gap=6
+              pill h=32 solid
+              dot size=32
+              dot size=32
+          card gap=8
+            image h=140
+            row h=22
+              opill w=78 h=22
+              space
+              pill w=44 h=22 solid
+            lines n=2 bold
+            lines n=1
+            row h=32 gap=6
+              pill h=32 solid
+              dot size=32
+              dot size=32
+          card gap=8
+            image h=140
+            row h=22
+              opill w=78 h=22
+              space
+              pill w=44 h=22 solid
+            lines n=2 bold
+            lines n=1
+            row h=32 gap=6
+              pill h=32 solid
+              dot size=32
+              dot size=32
+          card gap=8
+            image h=140
+            row h=22
+              opill w=78 h=22
+              space
+              pill w=44 h=22 solid
+            lines n=2 bold
+            lines n=1
+            row h=32 gap=6
+              pill h=32 solid
+              dot size=32
+              dot size=32
+      row gap=14
+        card gap=10 f=1
+          row h=30
+            lines n=1 bold w=130
+            space
+            pill w=130 h=30
+          table cols="A|B|C" rows=5
+        card gap=10 f=1
+          row h=30
+            lines n=1 bold w=130
+            space
+            pill w=130 h=30
+          kanban cols="A|B|C" cards=3
+    card f=3 gap=12
+      row h=32
+        lines n=1 bold w=120
+        space
+        dot size=28
+      divider
+      card h=80 gap=6
+        lines n=2
+      card h=170 gap=8
+        lines n=5
+        space
+        row h=28 gap=6
+          opill w=100 h=28
+          opill w=100 h=28
+      space
+      input h=48

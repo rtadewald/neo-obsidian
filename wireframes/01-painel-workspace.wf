@@ -1,0 +1,143 @@
+# Painel do workspace (FIA) — "ideias vivas"
+screen 1440x1240
+row pad=16 gap=14
+  # ---- barra de workspaces ----
+  card w=200 gap=10
+    title "JARVIS" size=20
+    text "WORKSPACES" size=11 muted h=16
+    pill "FIA · Agentes" solid h=40
+    pill "FID · Designer" h=40
+    pill "Pessoal" h=40
+    opill "+ Novo" h=32
+    divider
+    text "FERRAMENTAS" size=11 muted h=16
+    pill "Skills" h=40
+    pill "Calendário · v2" h=40
+    pill "Config" h=40
+    space
+    text "Radar: hoje 07:02" size=11 muted h=16
+  # ---- centro ----
+  col f=1 gap=14
+    row h=48 gap=10
+      title "FIA · Agentes de IA" size=24
+      space
+      tabs items="Tudo|X|Web|YT|IG" active=1 w=260
+      button "Atualizar" w=100
+    # Hoje
+    card gap=10 h=200
+      row h=22
+        title "Hoje" size=16
+        space
+        text "X + web · ver todas" size=12 muted w=140
+      row gap=10
+        card gap=4
+          text "X · @anthropicai · 2h" size=11 muted h=16
+          text "Claude ganha agentes em background" size=13 h=54
+          text "↳ tema direto da FIA" size=11 muted h=16
+        card gap=4
+          text "Web · The Verge · 4h" size=11 muted h=16
+          text "OpenAI lança modelo de agente" size=13 h=54
+          text "↳ comparativo viraliza" size=11 muted h=16
+        card gap=4
+          text "X · @karpathy · 6h" size=11 muted h=16
+          text "Agentes vão substituir apps?" size=13 h=54
+          text "↳ ângulo polêmico" size=11 muted h=16
+        card gap=4
+          text "GitHub trending" size=11 muted h=16
+          text "Repo de MCP: 4k estrelas em 1 dia" size=13 h=54
+          text "↳ tutorial prático" size=11 muted h=16
+    # Viralizando
+    card gap=10 h=370
+      row h=30
+        title "Viralizando" size=16
+        text "nota = views ÷ média do autor" size=12 muted w=220
+        space
+        select "7 dias" w=110
+      row gap=10
+        card gap=6
+          image h=120
+          row h=22
+            opill "YouTube" w=78 h=22
+            space
+            text "8,4x" size=14 h=20 w=40
+          text "Agente que trabalha enquanto durmo" size=13 h=36
+          text "@nick_saraev · 412k " size=11 muted h=16
+          text "↳ mesma promessa da FIA" size=11 muted h=16
+          row h=32 gap=6
+            button "Abrir" f=1
+            dot size=30
+            dot size=30
+        card gap=6
+          image h=120
+          row h=22
+            opill "Instagram" w=86 h=22
+            space
+            text "5,1x" size=14 h=20 w=40
+          text "3 automações n8n que poupam 10h" size=13 h=36
+          text "@concorrente · 1,2M " size=11 muted h=16
+          text "↳ formato lista" size=11 muted h=16
+          row h=32 gap=6
+            button "Abrir" f=1
+            dot size=30
+            dot size=30
+        card gap=6
+          image h=120
+          row h=22
+            opill "YouTube" w=78 h=22
+            space
+            text "4,7x" size=14 h=20 w=40
+          text "Claude Code vs Cursor: testei" size=13 h=36
+          text "@referencia · 230k " size=11 muted h=16
+          text "↳ comparativo p/ Reel" size=11 muted h=16
+          row h=32 gap=6
+            button "Abrir" f=1
+            dot size=30
+            dot size=30
+        card gap=6
+          image h=120
+          row h=22
+            opill "Instagram" w=86 h=22
+            space
+            text "3,9x" size=14 h=20 w=40
+          text "Seu ChatGPT está te deixando burro" size=13 h=36
+          text "@referencia_us · 890k " size=11 muted h=16
+          text "↳ hook negativo" size=11 muted h=16
+          row h=32 gap=6
+            button "Abrir" f=1
+            dot size=30
+            dot size=30
+    row gap=14
+      # Concorrentes
+      card gap=10 f=1
+        row h=30
+          title "Concorrentes" size=16
+          space
+          tabs items="Rivais|Refs" active=1 w=150
+        table cols="Perfil|7d|Nota" rows=5 data="@concorrente_a,6 posts,6,2x|@concorrente_b,4 posts,3,1x|@concorrente_c,9 posts,2,8x|@concorrente_d,3 posts,1,9x|@concorrente_e,5 posts,1,2x"
+      # Minhas ideias
+      card gap=10 f=1
+        row h=30
+          title "Minhas ideias" size=16
+          space
+          tabs items="Kanban|Lista" active=1 w=150
+        kanban cols="Salvas|Em dev.|Pronto" cards=3
+  # ---- chat ----
+  card w=320 gap=10
+    row h=28
+      title "Jarvis · FIA" size=16
+      space
+      dot size=24
+    text "Contexto: painel FIA de hoje" size=11 muted h=16
+    divider
+    card gap=4 h=90
+      text "Você" size=11 muted h=16
+      text "Quais 3 sinais de hoje viram Reel mais rápido?" size=13 h=40
+    card gap=6 h=210
+      text "Jarvis" size=11 muted h=16
+      text "1) Vídeo do @nick_saraev (8,4x): mesma promessa da FIA. 2) Repo de MCP: tutorial prático. 3) Thread do Karpathy: hook polêmico." size=13 h=110
+      space
+      row h=30 gap=6
+        opill "Abrir 1" h=28
+        opill "Salvar os 3" h=28
+    space
+    input "Pergunte ao Jarvis…"

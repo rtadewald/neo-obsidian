@@ -1,0 +1,103 @@
+# Mesa da ideia — do sinal ao roteiro
+screen 1440x1240
+row pad=16 gap=14
+  # ---- barra de workspaces ----
+  card w=200 gap=10
+    title "JARVIS" size=20
+    text "WORKSPACES" size=11 muted h=16
+    pill "FIA · Agentes" solid h=40
+    pill "FID · Designer" h=40
+    pill "Pessoal" h=40
+    opill "+ Novo" h=32
+    divider
+    text "FERRAMENTAS" size=11 muted h=16
+    pill "Skills" h=40
+    pill "Calendário · v2" h=40
+    pill "Config" h=40
+    space
+    text "Nota: 1 Copies/0 Ideias/" size=11 muted h=16
+  # ---- centro ----
+  col f=1 gap=14
+    row h=48 gap=10
+      col gap=2 f=1
+        text "FIA › Minhas ideias" size=12 muted h=16
+        title "Agente que trabalha enquanto durmo" size=19
+      opill "Em dev." w=90 h=32
+      button "Mandar p/ Priorizar" w=170 solid
+    row gap=14
+      # fonte
+      card w=260 gap=10
+        title "Fonte" size=15
+        image h=160
+        row h=22
+          opill "YouTube" w=78 h=22
+          space
+          text "8,4x média" size=13 h=20 w=80
+        text "@nick_saraev · 412k views · 3d" size=11 muted h=16
+        row gap=8 h=84
+          card
+            kpi "412k" "views" size=18
+          card
+            kpi "8,4x" "vs autor" size=18
+        text "Transcrição" size=12 muted h=16
+        lines n=10
+        button "Abrir original" ghost
+      # desenvolvimento
+      col f=1 gap=14
+        card gap=8 h=60 dir=row
+          text "Peças desta ideia:" size=12 muted w=120
+          pill "Reel" solid h=30 w=90
+          pill "Carrossel" h=30 w=120
+          opill "+" h=30 w=40
+        card gap=10 h=170
+          row h=26
+            title "1 · Ângulos" size=15
+            space
+            text "sugeridos pelo Jarvis" size=11 muted w=140
+          row gap=8
+            card gap=4
+              text "Escolhido" size=11 muted h=16
+              text "Agente que responde alunos à noite" size=13 h=56
+            card gap=4
+              text "Alternativa" size=11 muted h=16
+              text "95% usa IA só no chat" size=13 h=56
+            card gap=4
+              text "Alternativa" size=11 muted h=16
+              text "Testei e deu errado" size=13 h=56
+        card gap=8 h=190
+          row h=26
+            title "2 · Hooks" size=15
+            space
+            select "skill: viral-hooks" w=170
+          list items="Esse agente trabalhou 8h enquanto eu dormia|Você usa 5% da IA. Esse agente usa os 95%|Construí um funcionário que não dorme"
+        card gap=8 f=1
+          row h=30 gap=8
+            title "3 · Roteiro" size=15
+            space
+            select "skill: reels-builder" w=200
+          lines n=20
+          row h=36 gap=8
+            button "Gerar com skill"
+            button "Re-hook" ghost
+            space
+            text "salvo há 10s" size=11 muted w=100
+  # ---- chat da ideia ----
+  card w=320 gap=10
+    row h=28
+      title "Jarvis · esta ideia" size=16
+      space
+      dot size=24
+    text "Sessão própria · contexto: fonte + roteiro" size=11 muted h=16
+    divider
+    card gap=4 h=80
+      text "Você" size=11 muted h=16
+      text "Deixa o hook 1 mais curto e com número" size=13 h=40
+    card gap=6 h=170
+      text "Jarvis" size=11 muted h=16
+      text "Sugestão: \"Esse agente trabalhou 8h enquanto eu dormia.\" Troquei no roteiro e marquei a mudança." size=13 h=90
+      space
+      row h=30 gap=6
+        opill "Ver diff" h=28
+        opill "Desfazer" h=28
+    space
+    input "Peça uma mudança…"

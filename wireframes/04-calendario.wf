@@ -1,0 +1,50 @@
+# Calendário editorial — v2, somente leitura (Notion + Metricool)
+screen 1440x900
+row pad=16 gap=14
+  card w=200 gap=10
+    title "JARVIS" size=20
+    text "WORKSPACES" size=11 muted h=16
+    pill "FIA · Agentes" h=40
+    pill "FID · Designer" h=40
+    pill "Pessoal" h=40
+    opill "+ Novo" h=32
+    divider
+    text "FERRAMENTAS" size=11 muted h=16
+    pill "Skills" h=40
+    pill "Calendário · v2" solid h=40
+    pill "Config" h=40
+    space
+  col f=1 gap=14
+    row h=48 gap=10
+      title "Calendário · Novembro 2026" size=24
+      opill "somente leitura" w=130 h=28
+      space
+      tabs items="Mês|Semana" active=1 w=170
+    row gap=14
+      card f=1
+        calendar today=7
+      card w=250 gap=8
+        title "Dia 11/11" size=15
+        text "Notion · Prazo" size=11 muted h=16
+        card gap=4 h=70
+          text "📱 Reel · Agente WhatsApp" size=13 h=20
+          text "FIA · Aguardando publicação" size=11 muted h=16
+        card gap=4 h=70
+          text "💰 Ad · LP Black" size=13 h=20
+          text "FIA · Em edição" size=11 muted h=16
+        text "Metricool · agendado" size=11 muted h=16
+        card gap=4 h=70
+          text "📱 Reel · Claude Code hack" size=13 h=20
+          text "18:00 · Instagram" size=11 muted h=16
+        space
+        text "Buracos na semana: qui e sáb" size=12 muted h=18
+        button "Sugerir ideias" ghost
+  card w=320 gap=10
+    row h=28
+      title "Jarvis · Calendário" size=16
+      space
+      dot size=24
+    text "Contexto: novembro" size=11 muted h=16
+    divider
+    space
+    input "Pergunte sobre a agenda…"

@@ -1,0 +1,13 @@
+# só o código do app e as specs vão para o git
+prototipos/
+design-systems/
+wireframes/out/
+wireframes/v2/out/
+indice-glass.html
+.DS_Store
+app/dados/
+app/backend/.venv/
+app/frontend/node_modules/
+app/frontend/dist/
+.env
+__pycache__/
