@@ -35,6 +35,8 @@ const P: Record<string, React.ReactNode> = {
   instagram: <><rect x="3.2" y="3.2" width="13.6" height="13.6" rx="4" /><circle cx="10" cy="10" r="3.2" /><circle cx="14" cy="6" r=".5" /></>,
   globo: <><circle cx="10" cy="10" r="7" /><path d="M3 10h14M10 3c2 2.2 2.8 4.5 2.8 7s-.8 4.8-2.8 7c-2-2.2-2.8-4.5-2.8-7S8 5.2 10 3Z" /></>,
   olho: <><path d="M1.8 10S4.8 4.6 10 4.6 18.2 10 18.2 10 15.2 15.4 10 15.4 1.8 10 1.8 10Z" /><circle cx="10" cy="10" r="2.6" /></>,
+  grafo: <><rect x="2.6" y="3" width="6" height="4.6" rx="1.4" /><rect x="11.4" y="12.4" width="6" height="4.6" rx="1.4" /><rect x="11.4" y="3" width="6" height="4.6" rx="1.4" /><path d="M8.6 5.3h2.8M5.6 7.6v4.6c0 1.2.8 2.5 2.4 2.5h3.4" /></>,
+  ferramenta: <path d="M12.6 3.2a4 4 0 0 0-4.9 5.2l-4.6 4.6a1.7 1.7 0 0 0 2.4 2.4l4.6-4.6a4 4 0 0 0 5.2-4.9l-2.4 2.4-2.1-.6-.6-2.1Z" />,
   usuario:<><circle cx="10" cy="6.4" r="3.6" /><path d="M3 17.6c.4-3.6 3-5.4 7-5.4s6.6 1.8 7 5.4" /></>,
 }
 

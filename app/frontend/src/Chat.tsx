@@ -7,6 +7,8 @@ import { Fonte, Icone } from './Icone'
 const VERBO: Record<string, string> = {
   Read: 'Lendo', Glob: 'Procurando', Grep: 'Buscando', Write: 'Escrevendo', Edit: 'Editando',
   WebSearch: 'Pesquisando', WebFetch: 'Abrindo', Skill: 'Usando a skill', TodoWrite: 'Planejando',
+  mcp__jarvis__transcrever_youtube: 'Transcrevendo', mcp__jarvis__criar_ideia: 'Criando a ideia', mcp__jarvis__criar_saida: 'Criando a saída',
+  mcp__jarvis__ligar_ao_canvas: 'Ligando no canvas', mcp__jarvis__criar_entrada: 'Criando a entrada', mcp__jarvis__posicionar: 'Posicionando',
 }
 
 /** Resposta do Jarvis em markdown completo (o mesmo leitor das notas: títulos, listas, citações, código, links).
@@ -61,7 +63,11 @@ type Props = {
 }
 
 export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = null, limparTrecho, pedido, onFim, alca, onAbrirSinal }: Props) {
-  const conversa = 'radar'
+  // modo construtor: o mesmo chat, mas o agente mexe no código do app (outra conversa, com desfazer)
+  const [modo, setModo] = useState<'vault' | 'app'>(() => { try { return localStorage.getItem('chat-modo') === 'app' ? 'app' : 'vault' } catch { return 'vault' } })
+  useEffect(() => { try { localStorage.setItem('chat-modo', modo) } catch { /* sem storage */ } }, [modo])
+  const conversa = modo === 'app' ? 'construtor' : 'radar'
+  const [pontos, setPontos] = useState(0)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [texto, setTexto] = useState('')
   const [ocupado, setOcupado] = useState(false)
@@ -75,7 +81,15 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   const processando = useRef(false)   // trava de verdade (ocupado é só pra UI; estado React é tarde demais pro encadeamento)
   const sinalEnviado = useRef<number | null>(null)   // o mesmo sinal não é repetido a cada mensagem
 
-  useEffect(() => { api.historico(conversa).then((h) => setMsgs(h)).catch(() => {}) }, [])
+  useEffect(() => { api.historico(conversa).then((h) => setMsgs(h)).catch(() => {}) }, [conversa])
+  const lerPontos = () => fetch('/api/construtor').then((r) => r.json()).then((d) => setPontos(d.pontos)).catch(() => {})
+  useEffect(() => { if (modo === 'app') lerPontos() }, [modo])
+  async function desfazer() {
+    const r = await fetch('/api/construtor/desfazer', { method: 'POST' })
+    const d = await r.json().catch(() => ({}))
+    setMsgs((m) => [...m, { papel: 'jarvis', texto: r.ok ? `↩︎ Desfeito: “${d.desfeito}”. O app voltou ao ponto de antes desse pedido.` : '', erro: r.ok ? undefined : d.detail || 'Não consegui desfazer.' }])
+    lerPontos()
+  }
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' }) }, [msgs])
 
   useEffect(() => { if (trecho || foco) campo.current?.focus() }, [trecho, foco])
@@ -99,7 +113,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     setMsgs((m) => [...m, { papel: 'usuario', texto: t }, { papel: 'jarvis', texto: '', ferramentas: [] }])
     const mexe = (f: (u: Msg) => Msg) => setMsgs((m) => [...m.slice(0, -1), f(m[m.length - 1])])
     try {
-      await conversar({ conversa, texto: t, sinal: foco?.id ?? null }, (ev) => {
+      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, modo }, (ev) => {
         if (ev.t === 'texto') mexe((u) => ({ ...u, texto: u.texto + ev.v }))
         else if (ev.t === 'ferramenta') mexe((u) => ({ ...u, ferramentas: [...(u.ferramentas ?? []), `${VERBO[ev.nome] ?? ev.nome} ${ev.alvo}`.trim()] }))
         else if (ev.t === 'erro') mexe((u) => ({ ...u, erro: ev.v }))
@@ -110,6 +124,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
       processando.current = false
       setOcupado(false)
       cb.current.onFim?.()
+      if (modo === 'app') lerPontos()
       const prox = filaRef.current[0]
       if (prox !== undefined) { setFila((f) => f.slice(1)); enviar(undefined, prox) }
     }
@@ -126,12 +141,14 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   )
 
   return (
-    <aside className="chat glass glass--light" aria-label="Chat do Jarvis">
+    <aside className={`chat glass glass--light ${modo === 'app' ? 'is-construtor' : ''}`} aria-label="Chat do Jarvis">
       {alca}
       <header className="chat-cabeca">
         <span className="orb orb--p" />
         <span className="chat-nome">JARVIS</span>
-        <span className="chat-status">{ocupado ? 'pensando…' : 'vault conectado'}{fila.length > 0 ? ` · ${fila.length} na fila` : ''}</span>
+        <span className="chat-status">{ocupado ? 'pensando…' : modo === 'app' ? 'mexendo no app' : 'vault conectado'}{fila.length > 0 ? ` · ${fila.length} na fila` : ''}</span>
+        <button className={`btn-icone ${modo === 'app' ? 'is-on' : ''}`} disabled={ocupado} onClick={() => setModo((m) => (m === 'app' ? 'vault' : 'app'))}
+          title={modo === 'app' ? 'Sair do modo construtor (voltar ao vault)' : 'Modo construtor: pedir mudanças no próprio app'} aria-pressed={modo === 'app'}><Icone n="ferramenta" t={16} /></button>
         {onAlternar && <button className="btn-icone chat-recolher" onClick={onAlternar} title="Recolher o chat" aria-label="Recolher o chat"><Icone n="painel" t={16} /></button>}
       </header>
 
@@ -156,6 +173,12 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
         ))}
       </div>
 
+      {modo === 'app' && (
+        <div className="chat-construtor">
+          <span>🛠 Modo construtor: os pedidos mudam o código do app.</span>
+          {pontos > 0 && !ocupado && <button onClick={desfazer} title="Volta o app para antes do último pedido">↩︎ Desfazer última mudança</button>}
+        </div>
+      )}
       {fila.length > 0 && (
         <ul className="chat-fila">
           {fila.map((f, i) => (
@@ -187,7 +210,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
       )}
       <form className="campo" onSubmit={enviar}>
         <textarea
-          ref={campo} rows={1} value={texto} placeholder={trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
+          ref={campo} rows={1} value={texto} placeholder={modo === 'app' ? 'O que mudar no app?' : trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }

@@ -9,7 +9,7 @@ import { Markdown } from './Markdown'
  *  Lista à esquerda por status (working, ideia, em edição, agendado, publicado; botão direito para mudar),
  *  nota à direita já em edição.
  *  Salva sozinho (1 s depois de parar de digitar) e com ⌘S. ⌘P abre a busca rápida em todas as pastas. */
-export type Raiz = 'priorizar' | 'publicados' | 'skills'
+export type Raiz = 'priorizar' | 'publicados' | 'skills' | 'ideias' | 'entradas'
 type Aba = 'copies' | 'skills' | 'calendario'
 type Status = 'ideia' | 'edicao' | 'agendado' | 'publicado' | ''
 type Categoria = 'todos' | 'working' | 'ideia' | 'edicao' | 'agendado' | 'publicado'
@@ -20,8 +20,8 @@ type Menu = { x: number; y: number; item: Item }
 /** Trecho de nota mandado para o chat do Jarvis (⌘I ou botão direito no editor). */
 export type Trecho = Selecao & { raiz: Raiz; nome: string; caminho: string }
 
-const PASTA: Record<Raiz, string> = { priorizar: '1 Copies/1 Priorizar', publicados: '1 Copies/2 Publicados', skills: '3 Skills' }
-const ROTULO: Record<Raiz, string> = { priorizar: 'Priorizar', publicados: 'Publicados', skills: 'Skills' }
+export const PASTA: Record<Raiz, string> = { priorizar: '1 Copies/1 Priorizar', publicados: '1 Copies/2 Publicados', skills: '3 Skills', ideias: '1 Copies/0 Ideias', entradas: '1 Copies/0 Ideias/Entradas' }
+const ROTULO: Record<Raiz, string> = { priorizar: 'Priorizar', publicados: 'Publicados', skills: 'Skills', ideias: 'Ideias', entradas: 'Entradas' }
 /** Como o Rodrigo marca no Obsidian: pin = working, 🧑🏼‍🔧 = em edição, 🔹 = agendado, pasta 2 Publicados = publicado. */
 const CATEGORIAS: { k: Categoria; nome: string; marca: string }[] = [
   { k: 'todos', nome: 'Todos', marca: '📄' },
@@ -48,7 +48,7 @@ const tipoDoNome = (t: Tipo, nome: string) => TIPOS.find((x) => x.k === t)?.marc
 const chave = (r: Raiz, n: string) => `${r}/${n}`
 const url = (raiz: Raiz, nome: string) => `/api/notas/${raiz}/${encodeURIComponent(nome)}`
 const caminhoVault = (r: Raiz, n: string) => (r === 'skills' ? `${PASTA[r]}/${n}/SKILL` : `${PASTA[r]}/${n}`)
-const obsidian = (r: Raiz, n: string) => `obsidian://open?vault=${encodeURIComponent('Obsidian Notes')}&file=${encodeURIComponent(caminhoVault(r, n))}`
+export const obsidian = (r: Raiz, n: string) => `obsidian://open?vault=${encodeURIComponent('Obsidian Notes')}&file=${encodeURIComponent(caminhoVault(r, n))}`
 
 function quando(ts: number) {
   const d = (Date.now() / 1000 - ts) / 86400
@@ -71,7 +71,7 @@ export function Ideias({ abrir, busca, onTrecho, versao }: {
   versao?: number                                     // o chat terminou de responder: a nota aberta pode ter mudado
 }) {
   const [aba, setAba] = useState<Aba>(abrir?.raiz === 'skills' ? 'skills' : 'copies')
-  const [listas, setListas] = useState<Record<Raiz, Item[]>>({ priorizar: [], publicados: [], skills: [] })
+  const [listas, setListas] = useState<Record<Raiz, Item[]>>({ priorizar: [], publicados: [], skills: [], ideias: [], entradas: [] })
   const [cat, setCat] = useState<Categoria>(() => { try { return (localStorage.getItem('ideias-cat') as Categoria) || 'working' } catch { return 'working' } })
   const [tipo, setTipo] = useState<Tipo>(() => { try { return (localStorage.getItem('ideias-tipo') as Tipo) || '' } catch { return '' } })
   const [nota, setNota] = useState<Nota | null>(null)
@@ -531,7 +531,7 @@ function casar(q: string, nome: string): { p: number; marcas: number[] } | null 
   return { p: 400 - (seq[seq.length - 1] - seq[0]) - a.length * 0.1, marcas: seq }
 }
 
-function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; onAbrir: (r: Raiz, n: string) => void; onCriar: (t: string) => void }) {
+export function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; onAbrir: (r: Raiz, n: string) => void; onCriar: (t: string) => void }) {
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState<Entrada[]>([])
   const [sel, setSel] = useState(0)
@@ -540,7 +540,7 @@ function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; onAbrir:
   useEffect(() => { fetch('/api/notas-indice').then((r) => r.json()).then((d) => setIdx(d.itens)).catch(() => {}) }, [])
 
   const res = useMemo(() => {
-    const peso: Record<Raiz, number> = { priorizar: 20, skills: 10, publicados: 0 }
+    const peso: Record<Raiz, number> = { ideias: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
     if (!q.trim()) return [...idx].filter((e) => e.raiz !== 'publicados').sort((a, b) => b.mtime - a.mtime).slice(0, 30).map((e) => ({ e, marcas: [] as number[] }))
     return idx.map((e) => ({ e, m: casar(q.trim(), e.nome) })).filter((x) => x.m)
       .sort((a, b) => (b.m!.p + peso[b.e.raiz]) - (a.m!.p + peso[a.e.raiz])).slice(0, 40).map((x) => ({ e: x.e, marcas: x.m!.marcas }))
@@ -573,7 +573,7 @@ function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; onAbrir:
       <div className="paleta glass glass--light" role="dialog" aria-label="Buscar notas">
         <label className="paleta-campo">
           <Icone n="busca" t={17} />
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={tecla} placeholder="Buscar nota em Copies e Skills…" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={tecla} placeholder="Buscar ideia, copy ou skill…" />
         </label>
         <div className="paleta-lista" ref={lista} role="listbox">
           {res.map(({ e, marcas }, i) => (

@@ -1,4 +1,4 @@
-"""O chat do Jarvis: uma sessão do Claude Code por conversa, rodando dentro do vault."""
+"""O chat do Jarvis: uma sessão do Claude Code por conversa, rodando dentro do vault (ou no código do app, no modo construtor)."""
 import json
 from pathlib import Path
 from typing import AsyncIterator
@@ -6,8 +6,8 @@ from typing import AsyncIterator
 from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage,
                               StreamEvent, ToolUseBlock, create_sdk_mcp_server, tool)
 
-from . import db, youtube
-from .config import ESCRITA_LIVRE, MODELO_CHAT, VAULT
+from . import canvas, construtor, db, youtube
+from .config import APP, ESCRITA_LIVRE, MODELO_CHAT, VAULT
 
 FERRAMENTAS = ["Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch", "Skill", "TodoWrite"]
 
@@ -23,13 +23,87 @@ async def _transcrever_youtube(args: dict) -> dict:
     return {"content": [{"type": "text", "text": cab + d["texto"]}]}
 
 
-SERVIDOR_MCP = create_sdk_mcp_server("jarvis", tools=[_transcrever_youtube])
+def _ok(texto: str) -> dict:
+    return {"content": [{"type": "text", "text": texto}]}
+
+
+def _falha(e: Exception) -> dict:
+    return {"content": [{"type": "text", "text": f"Não consegui: {type(e).__name__}: {e}"}], "is_error": True}
+
+
+@tool("criar_ideia", "Cria uma 💡 ideia no canvas (nota em 1 Copies/0 Ideias). `fontes` são nomes de notas de entrada "
+      "já existentes, separados por vírgula (pode ser vazio).", {"titulo": str, "brief": str, "fontes": str})
+async def _criar_ideia(args: dict) -> dict:
+    try:
+        fontes = [f.strip() for f in (args.get("fontes") or "").split(",") if f.strip()]
+        d = canvas.criar_ideia(args["titulo"], args.get("brief", ""), fontes)
+        return _ok(f"Criada: [[{d['nome']}]]")
+    except Exception as e:
+        return _falha(e)
+
+
+@tool("criar_saida", "Cria uma produção (copy) em 1 Priorizar ligada a uma 💡 ideia, já com o texto. `formato` é um "
+      "destes emojis: 📱 Reels, 📺 VSL, 📝 Feed, 💰 Ad, 🏞️ Carrossel, 🎥 YouTube, 🎙️ Live, 🗣️ Stories. `titulo` é "
+      "opcional (padrão: emoji + nome da ideia).", {"ideia": str, "formato": str, "titulo": str, "texto": str})
+async def _criar_saida(args: dict) -> dict:
+    try:
+        d = canvas.criar_saida(args["ideia"], args["formato"], args.get("titulo", ""), args.get("texto", ""))
+        return _ok(f"Criada: [[{d['nome']}]] em 1 Copies/1 Priorizar")
+    except Exception as e:
+        return _falha(e)
+
+
+@tool("ligar_ao_canvas", "Liga notas no canvas. tipo='entrada': põe a entrada `nota` nas fontes da ideia. "
+      "tipo='producao': marca a copy `nota` (de 1 Priorizar ou 2 Publicados) como saída da ideia. "
+      "`desligar`=true desfaz.", {"ideia": str, "nota": str, "tipo": str, "desligar": bool})
+async def _ligar(args: dict) -> dict:
+    try:
+        sim = not args.get("desligar")
+        if args["tipo"] == "entrada":
+            canvas.ligar_fonte(args["ideia"], args["nota"], sim)
+        else:
+            raiz = "priorizar" if (canvas.notas.PRIORIZAR / f"{args['nota']}.md").is_file() else "publicados"
+            canvas.ligar_producao(raiz, args["nota"], args["ideia"] if sim else None)
+        return _ok("Feito.")
+    except Exception as e:
+        return _falha(e)
+
+
+@tool("criar_entrada", "Cria uma entrada (material bruto) a partir de um link ou de um texto: lê a página ou a "
+      "transcrição do YouTube e guarda numa nota em 0 Ideias/Entradas. `ideia` opcional já liga a ela.",
+      {"conteudo": str, "ideia": str})
+async def _criar_entrada(args: dict) -> dict:
+    try:
+        d = canvas.criar_entrada(args["conteudo"], args.get("ideia") or None)
+        return _ok(f"Criada: [[{d['nome']}]]")
+    except Exception as e:
+        return _falha(e)
+
+
+@tool("posicionar", "Põe um card do canvas ao lado de outro. Use o nome das notas.", {"card": str, "perto_de": str})
+async def _posicionar(args: dict) -> dict:
+    try:
+        canvas.posicionar_perto(args["card"], args["perto_de"])
+        return _ok("Posicionado.")
+    except Exception as e:
+        return _falha(e)
+
+
+FERRAMENTAS_CANVAS = [_transcrever_youtube, _criar_ideia, _criar_saida, _ligar, _criar_entrada, _posicionar]
+SERVIDOR_MCP = create_sdk_mcp_server("jarvis", tools=FERRAMENTAS_CANVAS)
+NOMES_MCP = [f"mcp__jarvis__{n}" for n in ("transcrever_youtube", "criar_ideia", "criar_saida", "ligar_ao_canvas",
+                                           "criar_entrada", "posicionar")]
 
 INSTRUCOES = """
-# Você é o Jarvis, no app Jarvis Conteúdo
+# Você é o Jarvis, no app Neo-Obsidian
 
-Você conversa com o Rodrigo dentro de um painel web local feito para ele ter ideias de conteúdo (Reels e carrosséis
-no Instagram) e transformá-las em roteiros. O diretório atual é o vault do Obsidian dele: use as notas como base de
+Você conversa com o Rodrigo dentro de um app web local feito para ele ter ideias de conteúdo e transformá-las em
+roteiros. A tela principal é um canvas: 💡 ideias (`1 Copies/0 Ideias/`), entradas de material bruto
+(`1 Copies/0 Ideias/Entradas/`, ligadas à ideia pela propriedade `fontes:`) e produções, as copies de `1 Copies`, que
+pertencem a uma ideia pela propriedade `ideia: "[[💡 Nome]]"`. Uma ideia gera várias saídas (📱 Reels, 💰 Ad, 🏞️
+Carrossel...) da mesma copy com adaptações; as saídas têm o mesmo nome da ideia, só muda o emoji (e um sufixo como
+"LP" ou "VSL" se precisar). Para criar e ligar essas notas, prefira as ferramentas `criar_ideia`, `criar_saida`,
+`criar_entrada` e `ligar_ao_canvas` (elas cuidam do frontmatter); o canvas se atualiza sozinho depois da resposta. O diretório atual é o vault do Obsidian dele: use as notas como base de
 conhecimento e as skills dele (`3 Skills/`) para hooks, roteiros e carrosséis.
 
 - Responda em PT-BR, curto e direto; o chat ocupa uma coluna estreita. Use listas curtas, nada de tabelas largas.
@@ -69,11 +143,44 @@ def _opcoes(sessao: str | None, contexto: str) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         cwd=str(VAULT), setting_sources=["user", "project"], model=MODELO_CHAT,
         tools=FERRAMENTAS, mcp_servers={"jarvis": SERVIDOR_MCP},
-        allowed_tools=["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill", "TodoWrite",
-                       "mcp__jarvis__transcrever_youtube"],
+        allowed_tools=["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill", "TodoWrite", *NOMES_MCP],
         permission_mode="acceptEdits", resume=sessao, include_partial_messages=True,
         system_prompt={"type": "preset", "preset": "claude_code", "append": INSTRUCOES + contexto},
         hooks={"PreToolUse": [HookMatcher(matcher="Write|Edit", hooks=[_guarda_escrita])]},
+    )
+
+
+INSTRUCOES_APP = """
+# Você é o Jarvis, no modo construtor do Neo-Obsidian
+
+O Rodrigo está usando o app agora e pediu uma mudança nele. O diretório atual é o código do app: `backend/`
+(FastAPI, Python, `uv`) e `frontend/` (React + Vite + TypeScript, CSS em `frontend/src/index.css`). O Vite recarrega a
+tela sozinho quando você salva um arquivo do front; mudança no backend precisa reiniciar a API (avise).
+
+- Responda em PT-BR, curto. Faça a mudança pedida e diga em uma linha o que mudou.
+- Você só escreve dentro desta pasta. Não mexa em `dados/` (banco e layout do usuário).
+- Antes de cada pedido o app guarda um ponto de restauração; o Rodrigo tem um botão "desfazer" no chat.
+- Siga o estilo do código que já existe: nomes em PT-BR, poucos comentários, sem abstrações a mais.
+"""
+
+
+async def _guarda_app(entrada, tool_use_id, contexto):
+    alvo = (entrada.get("tool_input") or {}).get("file_path", "")
+    p = Path(alvo if Path(alvo).is_absolute() else APP / alvo).resolve()
+    if p.is_relative_to(APP.resolve()) and not p.is_relative_to((APP / "dados").resolve()):
+        return {}
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": "No modo construtor só dá para escrever no código do app."}}
+
+
+def _opcoes_app(sessao: str | None) -> ClaudeAgentOptions:
+    return ClaudeAgentOptions(
+        cwd=str(APP), setting_sources=["user"], model=MODELO_CHAT,
+        tools=["Read", "Glob", "Grep", "Write", "Edit", "TodoWrite"],
+        allowed_tools=["Read", "Glob", "Grep", "TodoWrite"],
+        permission_mode="acceptEdits", resume=sessao, include_partial_messages=True,
+        system_prompt={"type": "preset", "preset": "claude_code", "append": INSTRUCOES_APP},
+        hooks={"PreToolUse": [HookMatcher(matcher="Write|Edit", hooks=[_guarda_app])]},
     )
 
 
@@ -88,8 +195,9 @@ def _contexto_sinal(sinal_id: int | None) -> str:
 def _resumo_ferramenta(b: ToolUseBlock) -> str:
     i = b.input or {}
     alvo = i.get("file_path") or i.get("pattern") or i.get("query") or i.get("url") or i.get("skill") or ""
-    if isinstance(alvo, str) and alvo.startswith(str(VAULT)):
-        alvo = alvo[len(str(VAULT)) + 1:]
+    for raiz in (str(VAULT), str(APP)):
+        if isinstance(alvo, str) and alvo.startswith(raiz):
+            alvo = alvo[len(raiz) + 1:]
     return str(alvo)[:90]
 
 
@@ -99,13 +207,16 @@ def _erro_legivel(msg: str) -> str:
     return msg[:400]
 
 
-async def conversar(conversa: str, texto: str, sinal_id: int | None = None) -> AsyncIterator[dict]:
+async def conversar(conversa: str, texto: str, sinal_id: int | None = None, modo: str = "vault") -> AsyncIterator[dict]:
     """Envia uma mensagem e devolve eventos para o front: texto (delta), ferramenta, fim, erro."""
     db.guardar_mensagem(conversa, "usuario", texto)
     sessao = db.sessao_da_conversa(conversa)
     resposta: list[str] = []
     try:
-        async with ClaudeSDKClient(_opcoes(sessao, _contexto_sinal(sinal_id))) as cli:
+        if modo == "app":
+            construtor.ponto(texto)
+        opcoes = _opcoes_app(sessao) if modo == "app" else _opcoes(sessao, _contexto_sinal(sinal_id))
+        async with ClaudeSDKClient(opcoes) as cli:
             await cli.query(texto)
             async for m in cli.receive_response():
                 if isinstance(m, StreamEvent):

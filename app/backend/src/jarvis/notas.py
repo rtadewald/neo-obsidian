@@ -28,10 +28,14 @@ PASTAS = {
     "publicados": COPIES / "2 Publicados",
 }
 PRIORIZAR = PASTAS["priorizar"]
+IDEIAS = COPIES / "0 Ideias"
+# 💡 ideias e entradas (material bruto) do canvas: abrem no mesmo editor, mas não têm status nem entram na agenda
+EXTRAS = {"ideias": IDEIAS, "entradas": IDEIAS / "Entradas"}
+TODAS = {**PASTAS, **EXTRAS}
 SKILLS = VAULT / "3 Skills"
 LIXEIRA = VAULT / ".trash"
 TEMPLATE_COPY = VAULT / "2 Notas" / "Engine" / "templates" / "T - Copy.md"
-RAIZES = {**{k: str(p.relative_to(VAULT)) for k, p in PASTAS.items()}, "skills": "3 Skills"}
+RAIZES = {**{k: str(p.relative_to(VAULT)) for k, p in TODAS.items()}, "skills": "3 Skills"}
 NOME_RUIM = re.compile(r"[/\\\x00]|^\.|\.\.")
 PINS = VAULT / ".obsidian" / "plugins" / "file-explorer-plus" / "data.json"
 PREFIXO = {"edicao": "🧑🏼‍🔧", "agendado": "🔹"}
@@ -46,8 +50,8 @@ class Conflito(Exception):
 def _caminho(raiz: str, nome: str) -> Path | None:
     if NOME_RUIM.search(nome):
         return None
-    if raiz in PASTAS:
-        return PASTAS[raiz] / (nome if nome.endswith(".md") else nome + ".md")
+    if raiz in TODAS:
+        return TODAS[raiz] / (nome if nome.endswith(".md") else nome + ".md")
     if raiz == "skills":
         return SKILLS / nome / "SKILL.md"
     return None
@@ -60,8 +64,8 @@ def _previa(texto: str) -> str:
 
 
 def _arquivos(raiz: str) -> list[tuple[str, Path]]:
-    if raiz in PASTAS:
-        return [(p.stem, p) for p in PASTAS[raiz].glob("*.md")] if PASTAS[raiz].is_dir() else []
+    if raiz in TODAS:
+        return [(p.stem, p) for p in TODAS[raiz].glob("*.md")] if TODAS[raiz].is_dir() else []
     if raiz == "skills":
         return [(p.parent.name, p) for p in SKILLS.glob("*/SKILL.md")]
     return []
@@ -100,7 +104,7 @@ def listar(raiz: str) -> list[dict]:
 def indice() -> list[dict]:
     """Só nomes e datas de todas as pastas, para a busca rápida (⌘P). Barato: não abre os arquivos."""
     out = []
-    for raiz in [*PASTAS, "skills"]:
+    for raiz in [*TODAS, "skills"]:
         for nome, p in _arquivos(raiz):
             try:
                 out.append({"nome": nome, "raiz": raiz, "mtime": p.stat().st_mtime, "status": status(raiz, nome)})
@@ -242,7 +246,7 @@ def mudar_status(raiz: str, nome: str, novo_status: str) -> dict:
 
 def renomear(raiz: str, nome: str, novo: str) -> dict:
     novo = re.sub(r"[/\\:]", "-", novo).strip().removesuffix(".md")
-    if raiz not in PASTAS or not novo or NOME_RUIM.search(novo):
+    if raiz not in TODAS or not novo or NOME_RUIM.search(novo):
         raise ValueError("nome inválido")
     p = _caminho(raiz, nome)
     if not p or not p.is_file():
@@ -252,7 +256,23 @@ def renomear(raiz: str, nome: str, novo: str) -> dict:
         raise FileExistsError(alvo.name)
     os.rename(p, alvo)
     _trocar_fixada(f"{raiz}/{nome}", f"{raiz}/{novo}")
+    if raiz in EXTRAS:
+        trocar_links(nome, novo)
     return {"nome": novo, "raiz": raiz, "mtime": alvo.stat().st_mtime}
+
+
+def trocar_links(antes: str, depois: str):
+    """Renomeou uma 💡 ou entrada: acompanha os [[links]] em `1 Copies` (o Obsidian faria o mesmo)."""
+    padrao = re.compile(r"\[\[" + re.escape(antes) + r"(?=[\]|#])")
+    for p in COPIES.rglob("*.md"):
+        try:
+            t = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if f"[[{antes}" in t:
+            novo_t = padrao.sub("[[" + depois, t)
+            if novo_t != t:
+                _escrever(p, novo_t)
 
 
 def para_lixeira(raiz: str, nome: str) -> dict:

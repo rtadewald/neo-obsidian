@@ -56,7 +56,7 @@ export type EventoChat =
   | { t: 'erro'; v: string }
 
 /** POST /api/chat e lê o SSE linha a linha. */
-export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null }, cb: (e: EventoChat) => void) {
+export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; modo?: 'vault' | 'app' }, cb: (e: EventoChat) => void) {
   const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
   if (!r.ok || !r.body) throw new Error(`${r.status}`)
   const leitor = r.body.getReader()

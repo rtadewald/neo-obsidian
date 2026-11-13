@@ -7,12 +7,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agente, anuncios, auth, db, metricool, notas, planejamento, preferencias, radar, skills, videos_x
+from . import agente, anuncios, auth, canvas, construtor, db, metricool, notas, planejamento, preferencias, radar, skills, videos_x
 from .config import FRONT_DIST
 
 MODO_AUTH = auth.preparar()
 db.iniciar()
-app = FastAPI(title="Jarvis Conteúdo")
+app = FastAPI(title="Neo-Obsidian")
 
 
 @app.get("/api/saude")
@@ -99,12 +99,13 @@ class Mensagem(BaseModel):
     conversa: str = "radar"
     texto: str
     sinal: int | None = None
+    modo: str = "vault"   # vault | app (modo construtor: o agente mexe no código do próprio app)
 
 
 @app.post("/api/chat")
 async def chat(m: Mensagem):
     async def eventos():
-        async for ev in agente.conversar(m.conversa, m.texto, m.sinal):
+        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.modo):
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
     return StreamingResponse(eventos(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -223,6 +224,13 @@ class Acao(BaseModel):
 
 @app.post("/api/notas/{raiz}/{nome:path}/acao")
 def nota_acao(raiz: str, nome: str, corpo: Acao):
+    d = _nota_acao(raiz, nome, corpo)
+    if isinstance(d, dict) and d.get("nome") and (d["nome"] != nome or d.get("raiz") != raiz):
+        canvas.renomeou(raiz, nome, d["raiz"], d["nome"])
+    return d
+
+
+def _nota_acao(raiz: str, nome: str, corpo: Acao):
     try:
         if corpo.acao in ("fixar", "desafixar"):
             return {"fixadas": notas.fixar(raiz, nome, corpo.acao == "fixar")}
@@ -283,6 +291,131 @@ def nota_nova(corpo: Nova):
         return notas.criar(corpo.titulo)
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")
+
+
+# ---------- canvas ----------
+
+def _erros(f):
+    try:
+        return f()
+    except FileExistsError as e:
+        raise HTTPException(409, f"já existe: {e}")
+    except FileNotFoundError as e:
+        raise HTTPException(404, f"não encontrada: {e}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class Pos(BaseModel):
+    x: float
+    y: float
+
+
+@app.get("/api/canvas")
+def canvas_estado():
+    return canvas.estado()
+
+
+@app.put("/api/canvas/posicoes")
+def canvas_posicoes(corpo: dict[str, Pos]):
+    canvas.posicoes({k: v.model_dump() for k, v in corpo.items()})
+    return {"ok": True}
+
+
+class Arquivar(BaseModel):
+    id: str
+    sim: bool = True
+
+
+@app.post("/api/canvas/arquivar")
+def canvas_arquivar(corpo: Arquivar):
+    canvas.arquivar(corpo.id, corpo.sim)
+    return {"ok": True}
+
+
+class NovaIdeia(BaseModel):
+    titulo: str
+    brief: str = ""
+    pos: Pos | None = None
+
+
+@app.post("/api/canvas/ideia")
+def canvas_ideia(corpo: NovaIdeia):
+    return _erros(lambda: canvas.criar_ideia(corpo.titulo, corpo.brief, pos=corpo.pos and corpo.pos.model_dump()))
+
+
+class NovaEntrada(BaseModel):
+    conteudo: str
+    ideia: str | None = None
+    pos: Pos | None = None
+
+
+@app.post("/api/canvas/entrada")
+def canvas_entrada(corpo: NovaEntrada):
+    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump()))
+
+
+class Fonte(BaseModel):
+    ideia: str
+    entrada: str
+    sim: bool = True
+
+
+@app.post("/api/canvas/fonte")
+def canvas_fonte(corpo: Fonte):
+    _erros(lambda: canvas.ligar_fonte(corpo.ideia, corpo.entrada, corpo.sim))
+    return {"ok": True}
+
+
+class Ref(BaseModel):
+    raiz: str
+    nome: str
+
+
+class Ligar(BaseModel):
+    producao: Ref
+    ideia: str | None = None
+
+
+@app.post("/api/canvas/ligar")
+def canvas_ligar(corpo: Ligar):
+    _erros(lambda: canvas.ligar_producao(corpo.producao.raiz, corpo.producao.nome, corpo.ideia))
+    return {"ok": True}
+
+
+class Agrupar(BaseModel):
+    titulo: str
+    producoes: list[Ref]
+    pos: Pos | None = None
+
+
+@app.post("/api/canvas/agrupar")
+def canvas_agrupar(corpo: Agrupar):
+    return _erros(lambda: canvas.agrupar(corpo.titulo, [r.model_dump() for r in corpo.producoes],
+                                         corpo.pos and corpo.pos.model_dump()))
+
+
+class Saida(BaseModel):
+    ideia: str
+    formato: str
+    titulo: str = ""
+
+
+@app.post("/api/canvas/saida")
+def canvas_saida(corpo: Saida):
+    return _erros(lambda: canvas.criar_saida(corpo.ideia, corpo.formato, corpo.titulo))
+
+
+# ---------- modo construtor ----------
+
+@app.get("/api/construtor")
+def construtor_estado():
+    return construtor.estado()
+
+
+@app.post("/api/construtor/desfazer")
+def construtor_desfazer():
+    return _erros(construtor.desfazer)
 
 
 _ads: asyncio.Task | None = None
