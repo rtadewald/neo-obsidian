@@ -82,8 +82,9 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
 
   const tabs: { alvo: Alvo; rotulo: string; prod?: Producao }[] = grupo
     ? [
-        ...(grupo.ideia ? [{ alvo: { raiz: 'ideias' as Raiz, nome: grupo.ideia.nome }, rotulo: '💡 Ideia' }] : []),
-        ...grupo.saidas.map((p) => ({ alvo: { raiz: p.raiz as Raiz, nome: p.nome }, rotulo: p.nome, prod: p })),
+        // a ideia abre sozinha (mostra os filhos); a produção abre com uma tab por formato
+        ...(ativa.raiz === 'ideias' && grupo.ideia ? [{ alvo: { raiz: 'ideias' as Raiz, nome: grupo.ideia.nome }, rotulo: '💡 Ideia' }] : []),
+        ...(ativa.raiz !== 'ideias' && ativa.raiz !== 'entradas' ? grupo.saidas.map((p) => ({ alvo: { raiz: p.raiz as Raiz, nome: p.nome }, rotulo: p.nome, prod: p })) : []),
         ...(ativa.raiz === 'entradas' ? [{ alvo: ativa, rotulo: ativa.nome }] : []),
       ]
     : [{ alvo: ativa, rotulo: ativa.nome }]
@@ -92,6 +93,11 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
     <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
       <div className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}>
         <header className="modal-tabs">
+          {ativa.raiz !== 'ideias' && ativa.raiz !== 'entradas' && grupo?.ideia && (
+            <button className="modal-volta" onClick={() => setAtiva({ raiz: 'ideias', nome: grupo.ideia!.nome })} title="Voltar para a ideia desta produção">
+              <Icone n="seta" t={12} /> 💡 {grupo.ideia.nome.replace(/^💡\s*/, '')}
+            </button>
+          )}
           <nav role="tablist">
             {tabs.map((t) => (
               <button key={`${t.alvo.raiz}/${t.alvo.nome}`} role="tab" aria-selected={t.alvo.nome === ativa.nome && t.alvo.raiz === ativa.raiz}
@@ -122,6 +128,15 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
                 {e.thumb && <img src={e.thumb} alt="" referrerPolicy="no-referrer" />}<span>{e.nome}</span>
               </button>
             ))}
+          </div>
+        )}
+        {ativa.raiz === 'ideias' && grupo && grupo.saidas.length > 0 && (
+          <div className="modal-entradas">
+            <span className="mudo">Produção</span>
+            <button className="modal-entrada modal-filho" onClick={() => setAtiva({ raiz: grupo.saidas[0].raiz as Raiz, nome: grupo.saidas[0].nome })} title="Abrir a produção (uma tab por formato)">
+              <span>🎬 {grupo.ideia?.nome.replace(/^💡\s*/, '')}</span>
+              <em>{grupo.saidas.map((p) => p.formato || '📄').join(' ')}</em>
+            </button>
           </div>
         )}
         {ativa.raiz === 'entradas' && grupo && grupo.usadaEm.length > 0 && (

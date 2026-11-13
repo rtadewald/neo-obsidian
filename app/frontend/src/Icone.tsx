@@ -37,6 +37,7 @@ const P: Record<string, React.ReactNode> = {
   olho: <><path d="M1.8 10S4.8 4.6 10 4.6 18.2 10 18.2 10 15.2 15.4 10 15.4 1.8 10 1.8 10Z" /><circle cx="10" cy="10" r="2.6" /></>,
   grafo: <><rect x="2.6" y="3" width="6" height="4.6" rx="1.4" /><rect x="11.4" y="12.4" width="6" height="4.6" rx="1.4" /><rect x="11.4" y="3" width="6" height="4.6" rx="1.4" /><path d="M8.6 5.3h2.8M5.6 7.6v4.6c0 1.2.8 2.5 2.4 2.5h3.4" /></>,
   ferramenta: <path d="M12.6 3.2a4 4 0 0 0-4.9 5.2l-4.6 4.6a1.7 1.7 0 0 0 2.4 2.4l4.6-4.6a4 4 0 0 0 5.2-4.9l-2.4 2.4-2.1-.6-.6-2.1Z" />,
+  expandir: <path d="M3.4 7.6V3.4h4.2M12.4 3.4h4.2v4.2M16.6 12.4v4.2h-4.2M7.6 16.6H3.4v-4.2" />,
   usuario:<><circle cx="10" cy="6.4" r="3.6" /><path d="M3 17.6c.4-3.6 3-5.4 7-5.4s6.6 1.8 7 5.4" /></>,
 }
 

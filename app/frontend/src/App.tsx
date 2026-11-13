@@ -79,10 +79,15 @@ export default function App() {
   paginaRef.current = pagina
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && ['p', 'o'].includes(e.key.toLowerCase())) {   // ⌘P ou ⌘O: busca de notas
         e.preventDefault()
         if (paginaRef.current === 'Ideias') setBusca((n) => n + 1)
         else setPaleta(true)
+      }
+      // ⌘B mostra/oculta o chat do agente (no editor de nota fica livre para o negrito)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !(e.target as HTMLElement)?.closest?.('.cm-editor')) {
+        e.preventDefault()
+        setChat((c) => !c)
       }
       // ⌘1…⌘7 trocam de aba, na ordem da navbar
       const n = Number(e.key)

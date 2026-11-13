@@ -277,8 +277,8 @@ def trocar_links(antes: str, depois: str):
 
 def para_lixeira(raiz: str, nome: str) -> dict:
     """Não apaga: move para `.trash` do vault (dá para recuperar pelo Obsidian ou pelo Finder)."""
-    if raiz not in PASTAS:
-        raise ValueError("só copies vão para a lixeira")
+    if raiz not in TODAS:
+        raise ValueError("só copies, ideias e entradas vão para a lixeira")
     p = _caminho(raiz, nome)
     if not p or not p.is_file():
         raise FileNotFoundError(nome)
