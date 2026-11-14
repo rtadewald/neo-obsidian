@@ -107,7 +107,9 @@ def gravar_sinais(itens: list[dict]) -> int:
 
 def listar_sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None, limite: int = 120):
     sql, args = "select * from sinais where 1=1", []
-    if status:
+    if status == "curtido":  # os que levaram like, em qualquer status (para retreinar o gosto depois)
+        sql += " and voto > 0"
+    elif status:
         sql += " and status=?"; args.append(status)
     else:
         sql += " and status!='descartado'"

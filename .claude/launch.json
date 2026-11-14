@@ -24,22 +24,22 @@
       "port": 8730
     },
     {
-      "name": "jarvis-api",
+      "name": "neo-obsidian-api",
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
         "--directory",
-        "/Users/rtadewald/Projetos Locais/Tools/20-jarvisOS/app/backend",
+        "/Users/rtadewald/Projetos Locais/Tools/20-neo-obsidian/app/backend",
         "jarvis"
       ],
       "port": 8740
     },
     {
-      "name": "jarvis-web",
+      "name": "neo-obsidian-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/rtadewald/Projetos Locais/Tools/20-jarvisOS/app/frontend",
+        "/Users/rtadewald/Projetos Locais/Tools/20-neo-obsidian/app/frontend",
         "run",
         "dev"
       ],

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import type { Raiz } from './Ideias'
+import type { Raiz } from './notas'
 
 /** Calendário editorial, dentro de Ideias: as notas de `1 Copies` pela propriedade `scheduled`
  *  (arraste para outro dia reagenda) e blocos de planejamento tracejados (arraste vazio numa

@@ -1,30 +1,32 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Background, BackgroundVariant, ControlButton, Controls, Handle, MarkerType, MiniMap, Position, ConnectionMode, ReactFlow, ReactFlowProvider, SelectionMode, useEdgesState, useNodesInitialized, useNodesState, useReactFlow,
+  Background, BackgroundVariant, NodeResizer, ControlButton, Controls, Handle, MarkerType, MiniMap, Position, ConnectionMode, ReactFlow, ReactFlowProvider, SelectionMode, useEdgesState, useNodesInitialized, useNodesState, useReactFlow,
   type Connection, type Edge, type Node, type NodeProps, type OnBeforeDelete,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
-import { PASTA, type Raiz, type Trecho } from './Ideias'
+import { ModalTabela, tabelaNova, type EstadoTabela } from './Tabela'
+import { PASTA, type Raiz, type Trecho } from './notas'
 import {
   STATUS, carregarCanvas, pedidoSaida, porFormato, post,
-  type Alvo, type Entrada, type EstadoCanvas, type Ideia, type Producao, type StatusProd,
+  CORES_CAIXA, type Alvo, type Voltar, type Caixa, type Entrada, type EstadoCanvas, type Ideia, type Producao, type Midia, type StatusProd,
 } from './canvasApi'
 
-/** O canvas do Neo-Obsidian: 💡 ideias com as saídas dentro, entradas de material bruto ligadas por linhas,
+/** O canvas do Neo-Obsidian: 💡 ideias (um nome, ou já com link/texto/imagem dentro) e as saídas delas,
  *  copies soltas. Pastas voando à direita abrem o mesmo canvas filtrado (em edição, agendado, publicado por ano).
- *  Botão direito cria; arrastar um card em cima de outro agrupa; puxar a linha de uma entrada até a ideia liga.
+ *  Botão direito cria; arrastar um card em cima de outro agrupa; colar um link cria uma ideia com o material.
  *  Navegação do Neo-Stitch: arrastar no vazio = navegar · scroll, pinça ou ⌘+/⌘− = zoom · ⌘ + arrastar = caixa de
  *  seleção · ⌘ + clique = põe/tira da seleção · duplo clique no vazio = mostra tudo · clique do meio num card = enquadra. */
 /** `foco:<id>` é o canvas próprio de um card: ele e tudo o que está ligado a ele. */
-type Visao = 'principal' | 'edicao' | 'agendado' | `pub-${string}` | `foco:${string}`
+type Visao = 'principal' | 'edicao' | 'agendado' | `pub-${string}` | `foco:${string}` | `caixa:${string}`
 type DadosIdeia = { ideia: Ideia; saidas: Producao[] }
 type DadosEntrada = { entrada: Entrada }
 type DadosProd = { prod: Producao }
 /** A produção: as saídas de uma ideia (📱 💰 🏞️…) num card só; no vault continuam notas separadas. */
 type DadosGrupo = { ideia: Ideia; saidas: Producao[]; destaque: StatusProd | null }
-type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'>
+type DadosCaixa = { caixa: Caixa; onMudar: (c: Partial<Caixa>) => void }
+type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'> | Node<DadosCaixa, 'caixa'>
 /** O que o canvas principal mostra: tudo o que não saiu, ou só um status. */
 type Filtro = 'todos' | 'ideia' | 'edicao' | 'agendado'
 const FILTROS: { k: Filtro; nome: string }[] = [{ k: 'todos', nome: 'Todos' }, { k: 'ideia', nome: 'Backlog' }, { k: 'edicao', nome: 'Em edição' }, { k: 'agendado', nome: 'Agendado' }]
@@ -43,8 +45,8 @@ const nomeDoId = (id: string) => {
   return r
 }
 const NOME_VISAO = (v: Visao) => v === 'principal' ? 'Canvas' : v === 'edicao' ? 'Em edição' : v === 'agendado' ? 'Agendado'
-  : v.startsWith('foco:') ? nomeDoId(v.slice(5)) : `Publicado · ${v.slice(4)}`
-const chavePos = (v: Visao, id: string) => (v === 'principal' ? id : `${v}|${id}`)
+  : v.startsWith('foco:') ? nomeDoId(v.slice(5)) : v.startsWith('caixa:') ? 'Caixa' : `Publicado · ${v.slice(4)}`
+const chavePos = (v: Visao, id: string) => (v === 'principal' || v.startsWith('caixa:') ? id : `${v}|${id}`)
 const ICONE_ENTRADA: Record<string, string> = { youtube: '▶️', instagram: '📸', link: '🔗', texto: '💭' }
 const dataCurta = (d: string | null) => d ? new Date(`${d}T12:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '') : ''
 
@@ -54,13 +56,48 @@ const dataCurta = (d: string | null) => d ? new Date(`${d}T12:00`).toLocaleDateS
 const LADOS = [['t', Position.Top], ['r', Position.Right], ['b', Position.Bottom], ['l', Position.Left]] as const
 const Alcas = () => <>{LADOS.map(([id, pos]) => <Handle key={id} id={id} type="source" position={pos} className={`cartao-alca cartao-alca--${id}`} />)}</>
 
+const ehX = (u: string) => /^https?:\/\/(www\.)?(x|twitter)\.com\/[^/]+\/status\/\d+/.test(u)
+const ytId = (u: string) => u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/)?.[1]
+const xCache = new Map<string, Promise<{ video?: { url: string; w?: number; h?: number } | null; imagem?: string | null }>>()
+
+/** Post do X no card: toca o vídeo (mudo, em loop) ou mostra a imagem, como no radar. */
+function MidiaX({ url }: { url: string }) {
+  const [info, setInfo] = useState<{ video?: { url: string; w?: number; h?: number } | null; imagem?: string | null }>()
+  useEffect(() => {
+    if (!xCache.has(url)) xCache.set(url, fetch(`/api/canvas/x?url=${encodeURIComponent(url)}`).then((r) => r.json()).catch(() => ({})))
+    let vivo = true
+    xCache.get(url)!.then((d) => { if (vivo) setInfo(d) })
+    return () => { vivo = false }
+  }, [url])
+  if (!info) return <div className="cartao-midia is-carregando" />
+  if (info.video?.url) return <video className="cartao-midia nodrag" src={info.video.url} poster={info.imagem ?? undefined} muted autoPlay loop playsInline preload="metadata" />
+  if (info.imagem) return <img className="cartao-midia" src={info.imagem} alt="" referrerPolicy="no-referrer" loading="lazy" />
+  return null
+}
+
+/** Imagem da nota (ou capa do YouTube / post do X do primeiro link) e os links, clicáveis. */
+function MidiaCard({ m }: { m: Partial<Midia> }) {
+  const links = m.links ?? []
+  const x = !m.imagem ? links.find(ehX) : undefined
+  const yt = !m.imagem && !x ? links.map(ytId).find(Boolean) : undefined
+  return <>
+    {m.imagem ? <img className="cartao-midia" src={m.imagem} alt="" referrerPolicy="no-referrer" loading="lazy" />
+      : x ? <MidiaX url={x} />
+      : yt ? <img className="cartao-midia" src={`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`} alt="" loading="lazy" /> : null}
+    {links.length > 0 && <div className="cartao-links">{links.slice(0, 3).map((u) => (
+      <a key={u} className="nodrag" href={u} target="_blank" rel="noreferrer" title={u}>{u.replace(/^https?:\/\/(www\.)?/, '')}</a>
+    ))}</div>}
+  </>
+}
+
 const CardIdeia = memo(({ data, selected }: NodeProps<Node<DadosIdeia, 'ideia'>>) => {
   const { ideia, saidas } = data
   return (
     <div className={`cartao cartao--ideia ${selected ? 'is-sel' : ''}`}>
       <Alcas />
       <header><span className="cartao-tipo">💡</span><b>{ideia.nome.replace(/^💡\s*/, '')}</b></header>
-      {ideia.previa && <p className="cartao-previa">{ideia.previa}</p>}
+      <MidiaCard m={ideia} />
+      {ideia.previa && !ideia.links?.length && <p className="cartao-previa">{ideia.previa}</p>}
       {saidas.length === 0 && <footer className="mudo">sem produção ainda · botão direito → gerar</footer>}
     </div>
   )
@@ -77,9 +114,9 @@ const CardGrupo = memo(({ data, selected }: NodeProps<Node<DadosGrupo, 'grupo'>>
       {previa && <p className="cartao-previa">{previa}</p>}
       <div className="cartao-formatos">
         {saidas.map((s) => (
-          <span key={s.nome} className={`cartao-formato ${destaque && s.status !== destaque ? 'is-apagada' : ''}`} title={`${s.nome} · ${STATUS.find((x) => x.k === s.status)?.nome}`}>
+          <button key={s.nome} type="button" data-raiz={s.raiz} data-nome={s.nome} className={`cartao-formato ${destaque && s.status !== destaque ? 'is-apagada' : ''}`} title={`Abrir ${s.nome} · ${STATUS.find((x) => x.k === s.status)?.nome}`}>
             {s.formato || '📄'}<i className={`ponto is-${s.status}`} />
-          </span>
+          </button>
         ))}
       </div>
       {prox && <footer>próxima · {dataCurta(prox)}</footer>}
@@ -102,17 +139,44 @@ const CardEntrada = memo(({ data, selected }: NodeProps<Node<DadosEntrada, 'entr
 
 const CardProd = memo(({ data, selected }: NodeProps<Node<DadosProd, 'producao'>>) => {
   const p = data.prod
+  const ideia = p.status === 'ideia' && !p.copia   // em Priorizar e ainda sem copy: é uma ideia
   return (
-    <div className={`cartao cartao--prod ${selected ? 'is-sel' : ''}`}>
+    <div className={`cartao ${ideia ? 'cartao--ideia' : 'cartao--prod'} ${selected ? 'is-sel' : ''}`}>
       <Alcas />
-      <header><span className="cartao-tipo">{p.formato}</span><b>{p.nome.replace(/^[^\p{L}\p{N}]+/u, '')}</b></header>
-      {p.previa && <p className="cartao-previa">{p.previa}</p>}
+      <header><span className="cartao-tipo">{ideia ? '💡' : p.formato}</span><b>{p.nome.replace(/^[^\p{L}\p{N}]+/u, '')}</b></header>
+      <MidiaCard m={p} />
+      {p.previa && !p.links.length && <p className="cartao-previa">{p.previa}</p>}
       <footer><i className={`ponto is-${p.status}`} />{STATUS.find((s) => s.k === p.status)?.nome}{p.scheduled ? ` · ${dataCurta(p.scheduled)}` : ''}</footer>
     </div>
   )
 })
 
-const TIPOS_NO = { ideia: CardIdeia, entrada: CardEntrada, producao: CardProd, grupo: CardGrupo }
+/** Caixa: retângulo pastel atrás dos cards. Arrasta pelo miolo ou pela etiqueta, redimensiona pelos cantos. */
+/** Qual caixa está sob o mouse e o que os botões dela fazem (o miolo da caixa não pega o mouse, então a mesa calcula o hover). */
+const CaixaUI = createContext<{ hover: string | null; acao: (e: React.MouseEvent, id: string, a: 'menu' | 'abrir' | 'renomear') => void }>({ hover: null, acao: () => {} })
+const CardCaixa = memo(({ data, selected }: NodeProps<Node<DadosCaixa, 'caixa'>>) => {
+  const { caixa, onMudar } = data
+  const ui = useContext(CaixaUI)
+  const sobre = ui.hover === caixa.id
+  const botao = (a: 'menu' | 'abrir' | 'renomear', rotulo: ReactNode, dica: string) => (
+    <button className="caixa-acao nodrag" title={dica} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); ui.acao(e, caixa.id, a) }}>{rotulo}</button>
+  )
+  return (
+    <div className={`caixa ${selected ? 'is-sel' : ''} ${sobre ? 'is-sobre' : ''}`} style={{ '--cor': caixa.cor } as React.CSSProperties}>
+      <div className="caixa-acoes">
+        {botao('abrir', <><Icone n="grafo" t={15} />Abrir</>, 'Abrir em canvas próprio')}
+        {botao('renomear', <><Icone n="editar" t={15} />Renomear</>, 'Renomear a caixa')}
+        {botao('menu', <><i className="caixa-bolinha" />Cor e mais</>, 'Cor, arquivar e deletar')}
+      </div>
+      <span className="caixa-dica">Arraste para mover · cantos redimensionam</span>
+      <NodeResizer isVisible={selected || sobre} minWidth={260} minHeight={160} lineClassName="caixa-borda" handleClassName="caixa-canto"
+        onResizeEnd={(_, r) => onMudar({ x: r.x, y: r.y, w: r.width, h: r.height })} />
+      <div className="caixa-titulo" title="Arraste para mover a caixa"><span className="caixa-pega" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((k) => <i key={k} />)}</span><span>{caixa.nome}</span></div>
+    </div>
+  )
+})
+
+const TIPOS_NO = { ideia: CardIdeia, entrada: CardEntrada, producao: CardProd, grupo: CardGrupo, caixa: CardCaixa }
 
 /* ---------- montagem dos nós de cada visão ---------- */
 
@@ -128,34 +192,64 @@ function ligados(est: EstadoCanvas, raiz: string): Set<string> {
   const viz = new Map<string, Set<string>>()
   const liga = (a: string, b: string) => { viz.set(a, (viz.get(a) ?? new Set()).add(b)); viz.set(b, (viz.get(b) ?? new Set()).add(a)) }
   const ideias = new Set(est.ideias.map((i) => i.nome))
-  for (const p of est.producoes) if (p.ideia && ideias.has(p.ideia)) liga(`i:${p.ideia}`, `g:${p.ideia}`)
+  for (const p of est.producoes) if (p.ideia) { liga(`g:${p.ideia}`, `p:${p.raiz}/${p.nome}`); if (ideias.has(p.ideia)) liga(`i:${p.ideia}`, `g:${p.ideia}`) }
   for (const i of est.ideias) for (const f of i.fontes) liga(`e:${f}`, `i:${i.nome}`)
   const vistos = new Set([raiz]), fila = [raiz]
   while (fila.length) for (const v of viz.get(fila.shift()!) ?? []) if (!vistos.has(v)) { vistos.add(v); fila.push(v) }
   return vistos
 }
 
-function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arestas: Edge[]; novos: Record<string, { x: number; y: number }> } {
+/** Id do card que mostra esta nota no canvas principal (sem filtro), ou null se ela está oculta lá
+ *  (arquivada, publicada fora de caixa ativa, dentro de caixa arquivada). */
+export function cardNoCanvas(est: EstadoCanvas, a: Alvo): string | null {
+  const ids = new Set(montar(est, 'principal', 'todos', () => {}).nos.map((n) => n.id))
+  const prod = est.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)
+  const candidatos = a.raiz === 'ideias' ? [`i:${a.nome}`, `g:${a.nome}`] : a.raiz === 'entradas' ? [`e:${a.nome}`]
+    : [`p:${a.raiz}/${a.nome}`, ...(prod?.ideia ? [`g:${prod.ideia}`] : [])]
+  return candidatos.find((c) => ids.has(c)) ?? null
+}
+
+function montar(est: EstadoCanvas, v: Visao, filtro: Filtro, mudarCaixa: (id: string, c: Partial<Caixa>) => void): { nos: No[]; arestas: Edge[]; novos: Record<string, { x: number; y: number }> } {
   const arq = new Set(est.arquivados)
   const nomesIdeias = new Set(est.ideias.map((i) => i.nome))
   const saidasDe = new Map<string, Producao[]>()
-  for (const p of est.producoes) if (p.ideia && nomesIdeias.has(p.ideia)) saidasDe.set(p.ideia, [...(saidasDe.get(p.ideia) ?? []), p])
+  for (const p of est.producoes) if (p.ideia) saidasDe.set(p.ideia, [...(saidasDe.get(p.ideia) ?? []), p])
+  // grupo sem nota 💡: só a chave `ideia:` nas copies. Vale a partir de 2 saídas (1 sozinha fica solta)
+  for (const [k, ps] of saidasDe) if (!nomesIdeias.has(k) && ps.length < 2) saidasDe.delete(k)
+  const grupos = [...est.ideias, ...[...saidasDe.keys()].filter((k) => !nomesIdeias.has(k)).map((k): Ideia => ({ nome: k, previa: '', fontes: [], mtime: Math.max(...saidasDe.get(k)!.map((p) => p.mtime)) }))]
   const foco = v.startsWith('foco:') ? ligados(est, v.slice(5)) : null
-  const casa = (p: Producao) => v === 'principal' ? (filtro === 'todos' ? p.status !== 'publicado' : p.status === filtro) : v.startsWith('pub-') ? p.status === 'publicado' && p.ano === v.slice(4) : p.status === v
+  // publicada conta como arquivada, a não ser que esteja numa caixa ativa (aí fica no canvas junto com a caixa)
+  const ativas = new Set(est.caixas.filter((c) => !c.arquivada).map((c) => c.nome))
+  const pubArquivada = (p: Producao) => p.status === 'publicado' && !(p.grupo && ativas.has(p.grupo))
+  const casa = (p: Producao) => v === 'principal' ? (filtro === 'todos' ? !pubArquivada(p) : p.status === filtro) : v.startsWith('pub-') ? p.status === 'publicado' && p.ano === v.slice(4) : p.status === v
   const destaque: StatusProd | null = foco ? null : v === 'principal' ? (filtro === 'todos' ? null : filtro) : v.startsWith('pub-') ? 'publicado' : (v as StatusProd)
-  const entra = (id: string, regra: boolean) => (foco ? foco.has(id) : regra)
+  // caixa: o canvas próprio mostra só quem tem `grupo` com o nome dela; caixa arquivada some do principal com o que tem dentro
+  const caixaV = v.startsWith('caixa:') ? est.caixas.find((c) => c.id === v.slice(6)) : undefined
+  const arquivadas = new Set(est.caixas.filter((c) => c.arquivada).map((c) => c.nome))
+  const grupoDe = (id: string): string | null | undefined => {
+    const r = id.slice(2)
+    if (id.startsWith('i:')) return est.ideias.find((i) => i.nome === r)?.grupo
+    if (id.startsWith('e:')) return est.entradas.find((e) => e.nome === r)?.grupo
+    if (id.startsWith('g:')) return est.producoes.find((p) => p.ideia === r && p.grupo)?.grupo
+    return est.producoes.find((p) => `${p.raiz}/${p.nome}` === r)?.grupo
+  }
+  const entra = (id: string, regra: boolean) => {
+    if (caixaV) return grupoDe(id) === caixaV.nome
+    if (v === 'principal' && arquivadas.has(grupoDe(id) ?? '')) return false
+    return foco ? foco.has(id) : regra
+  }
 
   const itens: { id: string; no: Omit<No, 'position'>; ordem: number }[] = []
   const add = (id: string, no: Omit<No, 'position' | 'id'>, ordem: number) => itens.push({ id, no: { ...no, id: '' } as Omit<No, 'position'>, ordem })
-  for (const i of est.ideias) {
+  for (const i of grupos) {
     const s = (saidasDe.get(i.nome) ?? []).sort(porFormato)
     const vivo = s.some(casa)
-    if (entra(`i:${i.nome}`, v === 'principal' ? (s.length === 0 && filtro === 'todos') || vivo : vivo)) add(`i:${i.nome}`, { type: 'ideia', data: { ideia: i, saidas: s } }, -i.mtime)
+    if (nomesIdeias.has(i.nome) && entra(`i:${i.nome}`, v === 'principal' ? (s.length === 0 && filtro === 'todos') || vivo : vivo)) add(`i:${i.nome}`, { type: 'ideia', data: { ideia: i, saidas: s } }, -i.mtime)
     if (s.length && entra(`g:${i.nome}`, vivo)) add(`g:${i.nome}`, { type: 'grupo', data: { ideia: i, saidas: s, destaque } }, -i.mtime + 0.5)
   }
   for (const e of est.entradas) if (entra(`e:${e.nome}`, v === 'principal' && filtro === 'todos')) add(`e:${e.nome}`, { type: 'entrada', data: { entrada: e } }, -e.mtime)
   for (const p of est.producoes) {
-    if (p.ideia && nomesIdeias.has(p.ideia)) continue   // está dentro do card da produção
+    if (p.ideia && saidasDe.has(p.ideia)) continue   // está dentro do card da produção
     const id = `p:${p.raiz}/${p.nome}`
     if (entra(id, casa(p))) add(id, { type: 'producao', data: { prod: p } }, -(p.scheduled ? Date.parse(p.scheduled) / 1000 : p.mtime))
   }
@@ -185,6 +279,9 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
   }
   for (const [i, k] of filho) { const p = pos(i); if (p) aoLado(p, k) }   // ideia já posicionada: a produção nova ao lado
   const nos = visiveis.map((x) => ({ ...x.no, id: x.id, position: pos(x.id) ?? novos[chavePos(v, x.id)] }) as No)
+  const caixas = v === 'principal' ? est.caixas.filter((c) => !c.arquivada) : caixaV ? [caixaV] : []
+  nos.unshift(...caixas.map((c): No => ({ id: `c:${c.id}`, type: 'caixa', position: { x: c.x, y: c.y }, width: c.w, height: c.h, zIndex: -1000,
+    selectable: true, data: { caixa: c, onMudar: (m) => mudarCaixa(c.id, m) } })))
   const onde = new Map(nos.map((n) => [n.id, n.position]))
   const seta = (de: string, para: string, classe: string, cor: string, extra: Partial<Edge> = {}): Edge => {
     const [sh, th] = lados(onde.get(de)!, onde.get(para)!)
@@ -199,7 +296,8 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
 /* ---------- canvas ---------- */
 
 type Props = {
-  onAbrir: (a: Alvo) => void
+  onAbrir: (a: Alvo, voltar?: Voltar) => void
+  mostrar?: { alvo: Alvo; n: number }   // "Mostrar no canvas" do modal: enquadra e seleciona o card
   onTrecho?: (t: Trecho, pedido?: string) => void
   onPedido?: (texto: string) => void
   versao?: number
@@ -209,7 +307,7 @@ export function Canvas(p: Props) {
   return <ReactFlowProvider><Mesa {...p} /></ReactFlowProvider>
 }
 
-function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
+function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar }: Props) {
   const [est, setEst] = useState<EstadoCanvas | null>(null)
   const [visao, setVisao] = useState<Visao>('principal')
   const [filtro, setFiltro] = useState<Filtro>(() => { try { return (localStorage.getItem('canvas-filtro') as Filtro) || 'todos' } catch { return 'todos' } })
@@ -237,9 +335,25 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
     return linhas ? e : { ...e, hidden: true }
   }), [arestas, selecionados, linhas])
   const [menu, setMenu] = useState<MenuCtx | null>(null)
+  const [sobreCaixa, setSobreCaixa] = useState<string | null>(null)
+  const sobreRef = useRef<string | null>(null)
+  // a caixa sob o mouse: retângulo dela com folga nas bordas e em cima (etiqueta e botões ficam acima)
+  const moverMouse = (e: React.PointerEvent) => {
+    if (e.buttons) return   // arrastando: mantém o estado de antes
+    const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+    const z = rf.getViewport().zoom, f = 14 / z
+    const c = (rf.getNodes() as No[]).filter((n) => n.type === 'caixa').reverse().find((n) => {
+      const w = n.width ?? 0, h = n.height ?? 0
+      return p.x > n.position.x - f && p.x < n.position.x + w + f && p.y > n.position.y - 110 && p.y < n.position.y + h + f
+    })
+    const id = c ? (c.data as DadosCaixa).caixa.id : null
+    if (id !== sobreRef.current) { sobreRef.current = id; setSobreCaixa(id) }
+  }
   const [pergunta, setPergunta] = useState<Pergunta | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
-  const [anos, setAnos] = useState(false)
+  // modal de tabela das pastas; ao abrir uma copy dali ele some e o "voltar" do modal da nota o traz de volta como estava
+  const [tabela, setTabela] = useState<EstadoTabela | null>(null)
+  const [listaCaixas, setListaCaixas] = useState(false)
   const caixa = useRef<HTMLDivElement>(null)
   const rf = useReactFlow<No, Edge>()
   const visaoAntes = useRef<Visao | null>(null)
@@ -249,10 +363,28 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
   const avisar = useCallback((m: string, ms = 2600) => { setAviso(m); window.setTimeout(() => setAviso((a) => (a === m ? null : a)), ms) }, [])
   const recarregar = useCallback(() => carregarCanvas().then(setEst).catch(() => avisar('Não consegui ler o canvas.')), [avisar])
   useEffect(() => { recarregar() }, [recarregar, versao])
+  // Mostrar no canvas: volta ao principal sem filtro, espera o card ter tamanho, enquadra e seleciona
+  const mostrarFeito = useRef(0)
+  useEffect(() => {
+    if (!mostrar || !est || mostrarFeito.current === mostrar.n) return
+    mostrarFeito.current = mostrar.n
+    const id = cardNoCanvas(est, mostrar.alvo)
+    if (!id) { avisar('Essa nota está oculta no canvas (arquivada ou publicada fora de caixa ativa).'); return }
+    if (visao !== 'principal') setVisao('principal')
+    if (filtro !== 'todos') setFiltro('todos')
+    const ir = (k = 0) => {
+      const n = rf.getInternalNode(id)
+      if (!n && k < 40) { window.setTimeout(() => ir(k + 1), 60); return }   // card ainda não montado nesta visão
+      if (!n?.measured?.width && k < 8) { window.setTimeout(() => ir(k + 1), 60); return }   // espera o tamanho um pouco, mas não trava sem ele
+      setNos((ns) => ns.map((x) => (x.selected !== (x.id === id) ? { ...x, selected: x.id === id } : x)))
+      enquadrarTudo(450, [id])
+    }
+    window.setTimeout(() => ir(), visao !== 'principal' ? 250 : 0)
+  }, [mostrar, est])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!est) return
-    const { nos: n, arestas: a, novos } = montar(est, visao, filtro)
+    const { nos: n, arestas: a, novos } = montar(est, visao, filtro, (id, c) => mudarCaixaRef.current(id, c))
     setNos(n); setArestas(a)
     if (Object.keys(novos).length) post('posicoes', novos, 'PUT').then(() => setEst((e) => e && { ...e, pos: { ...e.pos, ...novos } })).catch(() => {})
     if (visaoAntes.current !== visao) { visaoAntes.current = visao; enquadrar.current = true }
@@ -279,7 +411,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
     const lista = ids ? rf.getNodes().filter((n) => ids.includes(n.id)) : rf.getNodes()
     const r = caixa.current?.getBoundingClientRect()
     if (!lista.length || !r) return
-    const b = rf.getNodesBounds(lista)
+    const b = { ...rf.getNodesBounds(lista) }
+    // a etiqueta da caixa fica acima do retângulo dela: entra no enquadramento
+    if (lista.some((n) => n.type === 'caixa' && n.position.y <= b.y + 1)) { b.y -= 90; b.height += 90 }
     const f = 48
     const z = Math.min(ids ? 1.2 : 1, Math.max(0.05, Math.min((r.width - 2 * f) / b.width, (r.height - 2 * f) / b.height)))
     rf.setViewport({ x: r.left + (r.width - b.width * z) / 2 - b.x * z, y: r.top + (r.height - b.height * z) / 2 - b.y * z, zoom: z }, { duration: dur })
@@ -337,16 +471,84 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
   }, [aplicarPos, avisar])
 
   const perguntar = (p: Pergunta) => setPergunta(p)
+
+  /* ---------- caixas ---------- */
+  // as notas de um card (o card de produção tem várias)
+  const notasDe = (n: No): Alvo[] => n.type === 'grupo' ? n.data.saidas.map((s) => ({ raiz: s.raiz, nome: s.nome }))
+    : n.type === 'ideia' ? [{ raiz: 'ideias', nome: n.data.ideia.nome }] : n.type === 'entrada' ? [{ raiz: 'entradas', nome: n.data.entrada.nome }]
+    : n.type === 'producao' ? [{ raiz: n.data.prod.raiz, nome: n.data.prod.nome }] : []
+  const grupoAtual = (n: No): (string | null | undefined)[] => n.type === 'grupo' ? n.data.saidas.map((s) => s.grupo) : n.type === 'ideia' ? [n.data.ideia.grupo]
+    : n.type === 'entrada' ? [n.data.entrada.grupo] : n.type === 'producao' ? [n.data.prod.grupo] : []
+  const dentro = (n: No, c: Caixa) => {
+    const w = n.measured?.width ?? LARG, h = n.measured?.height ?? 120
+    const cx = n.position.x + w / 2, cy = n.position.y + h / 2
+    return cx > c.x && cx < c.x + c.w && cy > c.y && cy < c.y + c.h
+  }
+  // card solto dentro de uma caixa ganha `grupo` com o nome dela; fora de todas, perde (só no principal e na caixa, que dividem posições)
+  const atualizarGrupos = async (lista: No[], caixas = est?.caixas ?? []) => {
+    if (visao !== 'principal' && !visao.startsWith('caixa:')) return
+    const vivas = caixas.filter((c) => !c.arquivada || visao === `caixa:${c.id}`)
+    let mudou = 0
+    for (const n of lista) {
+      if (n.type === 'caixa') continue
+      const c = vivas.filter((x) => dentro(n, x)).sort((a, b) => a.w * a.h - b.w * b.h)[0]
+      // no canvas próprio da caixa, quem sai dela perde o grupo; no principal, um card de caixa arquivada nem aparece
+      const novo = c?.nome ?? null
+      if (grupoAtual(n).every((g) => (g ?? null) === novo)) continue
+      await post('grupo', { notas: notasDe(n), grupo: novo }); mudou++
+    }
+    if (mudou) { await recarregar(); avisar(mudou === 1 ? 'Grupo da nota atualizado' : `${mudou} notas com grupo atualizado`) }
+  }
+  const mudarCaixa = async (id: string, m: Partial<Caixa>) => {
+    try {
+      const c = await post<Caixa>('caixa', { id, ...m })
+      const caixas = (est?.caixas ?? []).map((x) => (x.id === id ? c : x))
+      setEst((e) => e && { ...e, caixas })
+      if (m.w !== undefined || m.x !== undefined) await atualizarGrupos(rf.getNodes(), caixas)
+    } catch (e) { avisar((e as Error).message) }
+  }
+  const atualizarGruposRef = useRef(atualizarGrupos)
+  atualizarGruposRef.current = atualizarGrupos
+  const mudarCaixaRef = useRef(mudarCaixa)
+  mudarCaixaRef.current = mudarCaixa
+  const novaCaixa = (nome: string, r: { x: number; y: number; w: number; h: number }) => tentar(async () => {
+    const c = await post<Caixa>('caixa', { nome, cor: CORES_CAIXA[(est?.caixas.length ?? 0) % CORES_CAIXA.length], ...r })
+    const caixas = [...(est?.caixas ?? []), c]
+    setEst((e) => e && { ...e, caixas })
+    await atualizarGrupos(rf.getNodes(), caixas)
+  }, `Caixa ${nome} criada`)
+  const apagarCaixa = (c: Caixa) => perguntar({
+    titulo: `Deletar a caixa ${c.nome}?`, dica: 'Só a caixa sai do canvas: as notas de dentro continuam e perdem a propriedade grupo.', confirmar: 'Deletar caixa',
+    ok: () => tentar(async () => { await post(`caixa/${c.id}`, {}, 'DELETE'); if (visao === `caixa:${c.id}`) setVisao('principal') }, 'Caixa deletada'),
+  })
+  // arrastar a caixa leva junto os cards de dentro
+  const levados = useRef<{ caixa: { x: number; y: number }; nos: Record<string, { x: number; y: number }> } | null>(null)
+  const comecouCaixa = (n: No) => {
+    if (n.type !== 'caixa') { levados.current = null; return }
+    const c = { ...n.data.caixa, x: n.position.x, y: n.position.y }
+    levados.current = { caixa: { ...n.position }, nos: Object.fromEntries(rf.getNodes().filter((x) => x.type !== 'caixa' && dentro(x, c)).map((x) => [x.id, { ...x.position }])) }
+  }
+  const arrastandoCaixa = (n: No) => {
+    const l = levados.current
+    if (!l || n.type !== 'caixa') return
+    const dx = n.position.x - l.caixa.x, dy = n.position.y - l.caixa.y
+    setNos((ns) => ns.map((x) => (l.nos[x.id] ? { ...x, position: { x: l.nos[x.id].x + dx, y: l.nos[x.id].y + dy } } : x)))
+  }
   const tentar = async (f: () => Promise<unknown>, ok?: string) => {
     try { await f(); if (ok) avisar(ok); await recarregar() } catch (e) { avisar((e as Error).message) }
   }
+  const tentarRef = useRef(tentar)
+  tentarRef.current = tentar
   const alvoDe = (n: No): Alvo => {
     if (n.type === 'ideia') return { raiz: 'ideias', nome: n.data.ideia.nome }
     if (n.type === 'entrada') return { raiz: 'entradas', nome: n.data.entrada.nome }
     if (n.type === 'producao') return { raiz: n.data.prod.raiz, nome: n.data.prod.nome }
-    // a produção abre na saída que interessa nesta visão (a próxima a sair, ou a do filtro)
+    if (n.type === 'caixa') return { raiz: 'ideias', nome: '' }
+    // a produção abre sempre no 📱 Reels quando houver; entre várias, a que interessa nesta visão
     const { saidas, destaque } = n.data
-    const s = saidas.find((x) => (destaque ? x.status === destaque : x.status !== 'publicado')) ?? saidas[0]
+    const reels = saidas.filter((x) => x.formato === '📱')
+    const lista = reels.length ? reels : saidas
+    const s = lista.find((x) => (destaque ? x.status === destaque : x.status !== 'publicado')) ?? lista[0]
     return { raiz: s.raiz, nome: s.nome }
   }
   const existe = useCallback((id: string) => {
@@ -373,18 +575,36 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
 
   // arrastar em cima de outro card: liga ou agrupa
   const soltou = useCallback((_: unknown, no: No, lista: No[]) => {
+    if (no.type === 'caixa') {
+      const l = levados.current
+      levados.current = null
+      if (l) {   // posição final dos cards de dentro (o arraste pode ter tido poucos eventos de movimento)
+        const dx = no.position.x - l.caixa.x, dy = no.position.y - l.caixa.y
+        const movidos = (rf.getNodes() as No[]).filter((x) => l.nos[x.id]).map((x) => ({ ...x, position: { x: l.nos[x.id].x + dx, y: l.nos[x.id].y + dy } }) as No)
+        if (movidos.length && (dx || dy)) { setNos((ns) => ns.map((x) => movidos.find((m) => m.id === x.id) ?? x)); guardarPos(movidos) }
+      }
+      mudarCaixaRef.current(no.data.caixa.id, { x: no.position.x, y: no.position.y })
+      return
+    }
     registrar(lista)
     guardarPos(lista)
+    // o grupo (caixa) grava antes de qualquer ligação: as duas mexem no frontmatter da mesma nota
+    const grupos = atualizarGruposRef.current(lista)
     if (lista.length !== 1) return
-    const alvo = rf.getIntersectingNodes(no).find((x) => x.id !== no.id) as No | undefined
+    // só liga/agrupa quando o meio do card solto cai dentro do outro (encostar a borda não conta)
+    const w = no.measured?.width ?? LARG, h = no.measured?.height ?? 120
+    const meio = { x: no.position.x + w / 2, y: no.position.y + h / 2 }
+    const alvo = rf.getIntersectingNodes(no).find((x) => x.id !== no.id && x.type !== 'caixa' && meio.x > x.position.x && meio.x < x.position.x + (x.measured?.width ?? LARG)
+      && meio.y > x.position.y && meio.y < x.position.y + (x.measured?.height ?? 120)) as No | undefined
     if (!alvo) return
+    const tentar = (f: () => Promise<unknown>, ok?: string) => grupos.then(() => tentarRef.current(f, ok))
     if (no.type === 'producao' && (alvo.type === 'ideia' || alvo.type === 'grupo')) {
       tentar(() => post('ligar', { producao: { raiz: no.data.prod.raiz, nome: no.data.prod.nome }, ideia: alvo.data.ideia.nome }), `Entrou em ${alvo.data.ideia.nome}`)
     } else if (no.type === 'producao' && alvo.type === 'producao') {
       const base = alvo.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '')
-      perguntar({ titulo: 'Agrupar numa ideia nova', dica: 'Nome da 💡 ideia', inicial: base, ok: (t) => tentar(
+      perguntar({ titulo: 'Agrupar numa produção 🎬', dica: 'Nome da produção', inicial: base, ok: (t) => tentar(
         () => post('agrupar', { titulo: t, pos: alvo.position, producoes: [no, alvo].map((x) => ({ raiz: (x as Node<DadosProd>).data.prod.raiz, nome: (x as Node<DadosProd>).data.prod.nome })) }),
-        'Ideia criada') })
+        'Produção criada') })
     } else if (no.type === 'entrada' && (alvo.type === 'ideia' || alvo.type === 'grupo')) {
       const p = { x: alvo.position.x - LARG - 60, y: alvo.position.y }
       rf.updateNode(no.id, { position: p })
@@ -407,8 +627,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
       // duas notas: se uma já tem ideia, a outra entra nela; senão, nasce uma ideia nova para as duas
       const ja = [a, b].find((x) => (x as Node<DadosProd>).data.prod.ideia) as Node<DadosProd> | undefined
       if (ja) return tentar(() => post('ligar', { producao: ref(outro(ja as No)), ideia: ja.data.prod.ideia }), `Entrou em ${ja.data.prod.ideia}`)
-      return perguntar({ titulo: 'Agrupar numa ideia nova', dica: 'Nome da 💡 ideia', inicial: b.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, ''), ok: (t) => tentar(
-        () => post('agrupar', { titulo: t, pos: { x: a.position.x - LARG - 80, y: a.position.y }, producoes: [ref(a), ref(b)] }), 'Ideia criada') })
+      return perguntar({ titulo: 'Agrupar numa produção 🎬', dica: 'Nome da produção', inicial: b.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, ''), ok: (t) => tentar(
+        () => post('agrupar', { titulo: t, pos: { x: a.position.x - LARG - 80, y: a.position.y }, producoes: [ref(a), ref(b)] }), 'Produção criada') })
     }
     if (ent && outro(ent).type === 'producao') return avisar('Ligue a entrada a uma 💡 ideia; a nota liga na ideia.')
     avisar('Essa ligação não tem sentido aqui.')
@@ -445,8 +665,12 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
 
   async function novaEntrada(conteudo: string, pos: { x: number; y: number }, ideia?: string) {
     avisar('Lendo o material…', 20000)
-    await tentar(() => post('entrada', { conteudo, pos, ideia }), 'Entrada criada')
+    await tentar(() => post('entrada', { conteudo, pos, ideia }), ideia ? 'Adicionado à ideia' : 'Ideia criada')
   }
+  // 💡 ideia: um nome curto vira a nota; link ou texto maior vira a ideia já com o material dentro
+  const novaIdeia = (t: string, pos: { x: number; y: number }) =>
+    /https?:\/\//.test(t) || t.includes('\n') || t.length > 90 ? novaEntrada(t, pos) : tentar(() => post('ideia', { titulo: t, pos }), 'Ideia criada')
+  const pedirIdeia = (pos: { x: number; y: number }) => perguntar({ titulo: 'Nova ideia', dica: 'Um nome, ou cole um link (YouTube, Instagram, X, matéria) ou um texto', longo: true, ok: (t) => novaIdeia(t, pos) })
 
   async function novaSaida(ideia: string, formato: string, nome: string) {
     try {
@@ -457,7 +681,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
     } catch (e) { avisar((e as Error).message) }
   }
 
-  // colar um link ou texto no canvas cria uma entrada
+  // colar um link ou texto no canvas cria uma 💡 ideia com o material dentro
   useEffect(() => {
     const colar = (e: ClipboardEvent) => {
       const alvo = e.target as HTMLElement
@@ -557,10 +781,22 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
   }
 
   const formatos = est?.formatos ?? []
+  const acaoCaixa = useRef<(e: React.MouseEvent, id: string, a: 'menu' | 'abrir' | 'renomear') => void>(() => {})
+  acaoCaixa.current = (e, id, a) => {
+    const n = rf.getNode(`c:${id}`) as No | undefined
+    const c = est?.caixas.find((x) => x.id === id)
+    if (!n || !c) return
+    if (a === 'abrir') setVisao(`caixa:${id}`)
+    else if (a === 'renomear') perguntar({ titulo: 'Renomear caixa', dica: 'As notas de dentro mudam o grupo junto', inicial: c.nome, ok: (t) => tentar(async () => { await post('caixa', { id, nome: t }); await recarregar() }, 'Caixa renomeada') })
+    else abrirMenu(e, { no: n })
+  }
+  const caixaUI = useMemo(() => ({ hover: sobreCaixa, acao: (e: React.MouseEvent, id: string, a: 'menu' | 'abrir' | 'renomear') => acaoCaixa.current(e, id, a) }), [sobreCaixa])
 
   return (
+    <CaixaUI.Provider value={caixaUI}>
     <div className="canvas" ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
+        onPointerMove={moverMouse} onPointerLeave={() => { sobreRef.current = null; setSobreCaixa(null) }}
         onDoubleClick={(e) => { if (!(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
         onMouseDown={(e) => { if (e.button === 1) meio.current = { x: e.clientX, y: e.clientY } }}
         onAuxClick={(e) => {
@@ -572,9 +808,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
         }}>
         <ReactFlow<No, Edge>
           nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO}
-          onNodeDragStart={(_, __, ns) => comecouArraste(ns)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
-          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMoveEnd={lembrarVista} onBeforeDelete={antesDeApagar}
-          onNodeClick={(e, n) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onAbrir(alvoDe(n)) }}
+          onNodeDragStart={(_, n, ns) => { comecouArraste(ns); comecouCaixa(n) }} onNodeDrag={(_, n) => arrastandoCaixa(n)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
+          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]); atualizarGruposRef.current(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => fundo.current?.style.setProperty('--z', String(v.zoom))} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
+          onNodeClick={(e, n) => {
+            if (n.type === 'caixa' || e.metaKey || e.ctrlKey || e.shiftKey || (e.target as HTMLElement).closest('a, video')) return
+            // chip de formato no card de produção: abre aquela saída direto
+            const chip = (e.target as HTMLElement).closest<HTMLElement>('.cartao-formato[data-nome]')
+            onAbrir(chip ? { raiz: chip.dataset.raiz as Alvo['raiz'], nome: chip.dataset.nome! } : alvoDe(n))
+          }}
           onPaneContextMenu={(e) => abrirMenu(e)}
           onNodeContextMenu={(e, n) => { const sel = rf.getNodes().filter((x) => x.selected); abrirMenu(e, sel.length > 1 && sel.some((x) => x.id === n.id) ? { selecao: sel } : { no: n }) }}
           onSelectionContextMenu={(e, sel) => abrirMenu(e, { selecao: sel })}
@@ -589,7 +830,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
               onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={12} /></ControlButton>
           </Controls>
           <MiniMap pannable zoomable position="bottom-right" className="canvas-mapa" nodeStrokeWidth={0}
-            nodeColor={(n) => (n.type === 'ideia' ? '#d4e34a' : n.type === 'grupo' ? '#1d1d1f' : n.type === 'entrada' ? '#c9c3bf' : '#ffffff')} maskColor="rgba(236,233,230,.7)" />
+            nodeColor={(n) => (n.type === 'caixa' ? (n.data as DadosCaixa).caixa.cor : n.type === 'ideia' ? '#d4e34a' : n.type === 'grupo' ? '#1d1d1f' : n.type === 'entrada' ? '#c9c3bf' : '#ffffff')} maskColor="rgba(236,233,230,.7)" />
         </ReactFlow>
         {(selecionando || caixaSel) && !menu && (
           <div className="capa-selecao" onPointerDown={capaSelecao} onWheel={zoomNaCapa}>
@@ -600,16 +841,32 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
 
       <div className="canvas-barra">
         {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
-        <span className="canvas-nome">{NOME_VISAO(visao)}<em>{nos.length} cards</em></span>
+        <span className="canvas-nome">{visao.startsWith('caixa:') ? `▢ ${est?.caixas.find((c) => `caixa:${c.id}` === visao)?.nome ?? 'Caixa'}` : NOME_VISAO(visao)}<em>{nos.filter((n) => n.type !== 'caixa').length} cards</em></span>
         {visao.startsWith('foco:') && (() => { const id = visao.slice(5), sim = vistas.pinados.includes(id)
           return <button className={`btn-icone canvas-pin ${sim ? 'is-on' : ''}`} onClick={() => pinar(id, !sim)} title={sim ? 'Despinar (volta ao histórico)' : 'Pinar na barra da esquerda'}><Icone n="pin" t={14} /></button> })()}
         {visao === 'principal' && <>
           <select className="canvas-filtro" value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} title="O que o canvas mostra">
             {FILTROS.map((f) => <option key={f.k} value={f.k}>{f.nome}{f.k !== 'todos' ? ` (${contagem[f.k]})` : ''}</option>)}
           </select>
-          <button className="pilula glass glass--light" onClick={() => perguntar({ titulo: 'Nova ideia', dica: 'Nome da 💡 ideia', ok: (t) => tentar(() => post('ideia', { titulo: t, pos: noMeio() }), 'Ideia criada') })}>💡 Ideia</button>
-          <button className="pilula glass glass--light" onClick={() => perguntar({ titulo: 'Nova entrada', dica: 'Cole um link (YouTube, Instagram, matéria) ou escreva a ideia bruta', longo: true, ok: (t) => novaEntrada(t, noMeio()) })}>🔗 Entrada</button>
+          <button className="pilula glass glass--light" onClick={() => pedirIdeia(noMeio())}>💡 Ideia</button>
         </>}
+        {(est?.caixas.length ?? 0) > 0 && (
+          <div className="canvas-caixas">
+            <button className={`pilula glass glass--light ${listaCaixas ? 'is-on' : ''}`} onClick={() => setListaCaixas((v) => !v)}>▢ Caixas<em>{est!.caixas.length}</em></button>
+            {listaCaixas && (
+              <div className="caixas-lista glass glass--light">
+                {[...est!.caixas].sort((a, b) => Number(a.arquivada) - Number(b.arquivada) || a.nome.localeCompare(b.nome)).map((c) => (
+                  <div key={c.id} className={`caixas-item ${c.arquivada ? 'is-arquivada' : ''}`}>
+                    <button className="caixas-abrir" onClick={() => { setListaCaixas(false); setVisao(`caixa:${c.id}`) }} title="Abrir em canvas próprio">
+                      <i style={{ background: c.cor }} />{c.nome}<em>{(est!.ideias.filter((x) => x.grupo === c.nome).length + est!.entradas.filter((x) => x.grupo === c.nome).length + est!.producoes.filter((x) => x.grupo === c.nome).length)}</em>
+                    </button>
+                    <button className="caixas-acao" onClick={() => tentar(() => post('caixa', { id: c.id, arquivada: !c.arquivada }), c.arquivada ? 'Caixa de volta ao canvas' : 'Caixa arquivada')}>{c.arquivada ? 'Desarquivar' : 'Arquivar'}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {(() => {
@@ -617,32 +874,34 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
         if (!pins.length && !hist.length) return null
         const item = (id: string, pinado: boolean) => (
           <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''}`}>
-            <button className="trilho-abrir" onClick={() => abrirVista(id)} title={nomeDoId(id)}>{nomeDoId(id)}</button>
+            <button className="trilho-abrir" onClick={() => abrirVista(id)} title={nomeDoId(id)}>
+              {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
+            </button>
             <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
           </div>
         )
         return (
           <nav className="canvas-trilho" aria-label="Canvas pinados e últimos abertos">
-            {pins.length > 0 && <><span className="trilho-secao"><Icone n="pin" t={12} /> Pinados</span>{pins.map((id) => item(id, true))}</>}
+            {pins.length > 0 && <><span className="trilho-secao" title="Pinados"><Icone n="pin" t={13} /></span>{pins.map((id) => item(id, true))}</>}
             {pins.length > 0 && hist.length > 0 && <span className="trilho-sep" />}
-            {hist.length > 0 && <><span className="trilho-secao"><Icone n="atualizar" t={12} /> Últimos</span>{hist.map((id) => item(id, false))}</>}
+            {hist.length > 0 && <><span className="trilho-secao" title="Últimos abertos"><Icone n="atualizar" t={13} /></span>{hist.map((id) => item(id, false))}</>}
           </nav>
         )
       })()}
 
       <aside className="canvas-pastas" aria-label="Pastas">
-        <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao'} cor="edicao" onClick={() => setVisao(visao === 'edicao' ? 'principal' : 'edicao')} />
-        <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado'} cor="agendado" onClick={() => setVisao(visao === 'agendado' ? 'principal' : 'agendado')} />
-        <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-')} cor="publicado" onClick={() => setAnos((v) => !v)}>
-          {anos && (
-            <div className="pasta-anos">
-              {contagem.anos.map(([a, n]) => (
-                <button key={a} className={visao === `pub-${a}` ? 'is-ativa' : ''} onClick={(e) => { e.stopPropagation(); setVisao(`pub-${a}`); setAnos(false) }}>{a}<em>{n}</em></button>
-              ))}
-            </div>
-          )}
-        </Pasta>
+        <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
+        <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaNova('agendado'))} />
+        <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-')} cor="publicado" onClick={() => setTabela(tabelaNova('publicado'))} />
+        <Pasta nome="Caixas" n={est?.caixas.length ?? 0} ativa={visao.startsWith('caixa:')} cor="caixas" onClick={() => setTabela(tabelaNova('caixas'))} />
       </aside>
+      {tabela && est && (
+        <ModalTabela est={est} t={tabela} onMudar={setTabela} onFechar={() => setTabela(null)}
+          onAbrir={(a) => { const t = tabela; setTabela(null); onAbrir(a, { rotulo: STATUS.find((s) => s.k === t.pasta)?.nome ?? 'Tabela', fn: () => setTabela(t) }) }}
+          onCaixa={(id) => { setTabela(null); setVisao(`caixa:${id}`) }}
+          onArquivarCaixa={(c) => tentar(() => post('caixa', { id: c.id, arquivada: !c.arquivada }), c.arquivada ? 'Caixa de volta ao canvas' : 'Caixa arquivada')}
+          onCanvas={(pasta, ano) => { setTabela(null); setVisao(pasta === 'publicado' ? `pub-${ano || contagem.anos[0]?.[0] || new Date().getFullYear()}` : pasta as Visao) }} />
+      )}
 
       {menu && (
         <MenuCanvas m={menu} onFechar={() => setMenu(null)}>
@@ -650,10 +909,25 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
             const prods = menu.selecao!.filter((n): n is Node<DadosProd, 'producao'> => n.type === 'producao')
             return <>
               <p className="menu-ctx-t">{menu.selecao!.length} cards</p>
-              <Op icone="pasta" desligado={prods.length < 1} onClick={() => perguntar({ titulo: 'Agrupar numa ideia nova', dica: 'Nome da 💡 ideia', inicial: prods[0]?.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, ''),
-                ok: (t) => tentar(() => post('agrupar', { titulo: t, pos: prods[0].position, producoes: prods.map((x) => ({ raiz: x.data.prod.raiz, nome: x.data.prod.nome })) }), 'Ideia criada') })}>
-                Agrupar copies em ideia{prods.length ? ` (${prods.length})` : ''}</Op>
+              <Op icone="pasta" desligado={prods.length < 1} onClick={() => perguntar({ titulo: 'Agrupar numa produção 🎬', dica: 'Nome da produção', inicial: prods[0]?.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, ''),
+                ok: (t) => tentar(() => post('agrupar', { titulo: t, pos: prods[0].position, producoes: prods.map((x) => ({ raiz: x.data.prod.raiz, nome: x.data.prod.nome })) }), 'Produção criada') })}>
+                Agrupar copies em produção{prods.length ? ` (${prods.length})` : ''}</Op>
               <Op icone="olho" onClick={() => tentar(async () => { for (const n of menu.selecao!) await post('arquivar', { id: n.id }) }, 'Escondidos do canvas')}>Arquivar (esconder)</Op>
+              {(visao === 'principal') && <Op emoji="▢" onClick={() => {
+                const b = rf.getNodesBounds(menu.selecao!.filter((x) => x.type !== 'caixa'))
+                perguntar({ titulo: 'Caixa em volta da seleção', dica: 'Nome da caixa (vira a propriedade grupo das notas)', ok: (t) => novaCaixa(t, { x: b.x - 40, y: b.y - 70, w: b.width + 80, h: b.height + 110 }) })
+              }}>Caixa em volta da seleção</Op>}
+            </>
+          })() : menu.no?.type === 'caixa' ? (() => {
+            const c = menu.no.data.caixa
+            return <>
+              <p className="menu-ctx-t">▢ {c.nome}</p>
+              <div className="menu-cores">{CORES_CAIXA.map((k) => <button key={k} data-fecha className={k === c.cor ? 'is-on' : ''} style={{ background: k }} title="Cor da caixa" onClick={() => mudarCaixa(c.id, { cor: k })} />)}</div>
+              <hr />
+              {visao !== `caixa:${c.id}` && <Op icone="grafo" onClick={() => setVisao(`caixa:${c.id}`)}>Abrir em canvas próprio</Op>}
+              <Op icone="editar" onClick={() => perguntar({ titulo: 'Renomear caixa', dica: 'As notas de dentro mudam o grupo junto', inicial: c.nome, ok: (t) => tentar(async () => { await post('caixa', { id: c.id, nome: t }); await recarregar() }, 'Caixa renomeada') })}>Renomear</Op>
+              <Op icone="olho" onClick={() => tentar(async () => { await post('caixa', { id: c.id, arquivada: !c.arquivada }); if (visao === `caixa:${c.id}`) setVisao('principal') }, c.arquivada ? 'Caixa de volta ao canvas' : 'Caixa arquivada: abra pelo botão Caixas')}>{c.arquivada ? 'Desarquivar' : 'Arquivar caixa'}</Op>
+              <Op icone="lixeira" perigo onClick={() => apagarCaixa(c)}>Deletar caixa</Op>
             </>
           })() : menu.no ? (() => {
             const n = menu.no!
@@ -665,7 +939,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
               {(n.type === 'ideia' || n.type === 'grupo') && <>
                 <hr /><p className="menu-ctx-t"><span className="orb orb--msg" />{n.type === 'grupo' ? 'Nova saída nesta produção' : 'Gerar saída'}</p>
                 <div className="menu-formatos">{formatos.map((f) => <button key={f.emoji} title={f.nome} onClick={() => { setMenu(null); novaSaida(n.data.ideia.nome, f.emoji, f.nome) }}><span>{f.emoji}</span>{f.nome}</button>)}</div>
-                {n.type === 'ideia' && <Op icone="link" onClick={() => perguntar({ titulo: `Entrada para ${n.data.ideia.nome}`, dica: 'Link ou texto', longo: true, ok: (t) => novaEntrada(t, { x: n.position.x - LARG - 60, y: n.position.y + 40 }, n.data.ideia.nome) })}>Adicionar entrada</Op>}
+                {n.type === 'ideia' && <Op icone="link" onClick={() => perguntar({ titulo: `Adicionar a ${n.data.ideia.nome}`, dica: 'Link ou texto: entra no fim da nota da ideia', longo: true, ok: (t) => novaEntrada(t, n.position, n.data.ideia.nome) })}>Adicionar link ou texto</Op>}
               </>}
               <hr />
               {onTrecho && <Op icone="chat" onClick={() => onTrecho({ texto: '', linhaIni: 1, linhaFim: 999, raiz: alvo.raiz, nome: alvo.nome, caminho: `${PASTA[alvo.raiz as Raiz]}/${alvo.nome}.md` })}>Perguntar ao Jarvis</Op>}
@@ -673,12 +947,16 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
                 const r = await fetch(`/api/notas/${alvo.raiz}/${encodeURIComponent(alvo.nome)}/acao`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'renomear', novo: t }) })
                 if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Não consegui renomear.')
               }) })}>Renomear</Op>}
+              {n.type === 'grupo' && <Op icone="pasta" onClick={() => tentar(async () => {
+                for (const s of n.data.saidas) await post('ligar', { producao: { raiz: s.raiz, nome: s.nome }, ideia: null })
+              }, `${n.data.saidas.length} saídas soltas no canvas`)}>Desagrupar</Op>}
+              {n.type === 'producao' && n.data.prod.ideia && <Op icone="pasta" onClick={() => tentar(() => post('ligar', { producao: { raiz: n.data.prod.raiz, nome: n.data.prod.nome }, ideia: null }), 'Saiu do grupo')}>Tirar do grupo</Op>}
               <Op icone="olho" onClick={() => tentar(() => post('arquivar', { id: n.id }), 'Escondido do canvas (a nota continua no vault)')}>Arquivar (esconder)</Op>
               <Op icone="lixeira" perigo onClick={() => deletar(n)}>{n.type === 'grupo' ? `Deletar produção (${n.data.saidas.length})` : 'Deletar'}</Op>
             </>
           })() : <>
-            <Op emoji="💡" onClick={() => perguntar({ titulo: 'Nova ideia', dica: 'Nome da 💡 ideia', ok: (t) => tentar(() => post('ideia', { titulo: t, pos: livre(menu.flow) }), 'Ideia criada') })}>Nova ideia</Op>
-            <Op emoji="🔗" onClick={() => perguntar({ titulo: 'Nova entrada', dica: 'Cole um link (YouTube, Instagram, matéria) ou escreva a ideia bruta', longo: true, ok: (t) => novaEntrada(t, livre(menu.flow)) })}>Nova entrada</Op>
+            <Op emoji="💡" onClick={() => pedirIdeia(livre(menu.flow))}>Nova ideia</Op>
+            {visao === 'principal' && <Op emoji="▢" onClick={() => perguntar({ titulo: 'Nova caixa', dica: 'Nome da caixa (vira a propriedade grupo das notas de dentro)', ok: (t) => novaCaixa(t, { x: menu.flow.x, y: menu.flow.y, w: 720, h: 460 }) })}>Nova caixa</Op>}
             <Op emoji="📄" onClick={() => perguntar({ titulo: 'Nova copy solta (em Priorizar)', inicial: '📱 ', ok: (t) => tentar(async () => {
               const r = await fetch('/api/notas/priorizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ titulo: t }) })
               if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : 'Não consegui criar.')
@@ -686,7 +964,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
               await post('posicoes', { [`p:priorizar/${d.nome}`]: menu.flow }, 'PUT')
             }, 'Copy criada') })}>Nova copy solta</Op>
             <hr />
-            <Op icone="seta" onClick={() => navigator.clipboard.readText().then((t) => { if (t.trim()) novaEntrada(t.trim(), menu.flow) }).catch(() => avisar('Sem permissão para ler a área de transferência: use ⌘V.'))}>Colar como entrada <kbd>⌘V</kbd></Op>
+            <Op icone="seta" onClick={() => navigator.clipboard.readText().then((t) => { if (t.trim()) novaEntrada(t.trim(), menu.flow) }).catch(() => avisar('Sem permissão para ler a área de transferência: use ⌘V.'))}>Colar como ideia <kbd>⌘V</kbd></Op>
             <Op icone="atualizar" onClick={() => enquadrarTudo()}>Ver tudo <kbd>2× clique</kbd></Op>
           </>}
         </MenuCanvas>
@@ -695,6 +973,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao }: Props) {
       {pergunta && <Perguntar p={pergunta} onFechar={() => setPergunta(null)} />}
       {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
     </div>
+    </CaixaUI.Provider>
   )
 }
 

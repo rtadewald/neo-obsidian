@@ -1,18 +1,26 @@
-import type { Raiz } from './Ideias'
+import type { Raiz } from './notas'
 
-export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number }
-export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number }
+export type Midia = { links: string[]; imagem: string | null; copia: boolean }
+export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null } & Partial<Midia>
+export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number; grupo?: string | null }
 export type StatusProd = 'ideia' | 'edicao' | 'agendado' | 'publicado'
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
-  formato: string; ideia: string | null; previa: string; mtime: number
-}
+  formato: string; ideia: string | null; previa: string; mtime: number; grupo?: string | null
+  palavras?: number; criado?: number
+} & Midia
 export type Formato = { emoji: string; nome: string }
 export type EstadoCanvas = {
   ideias: Ideia[]; entradas: Entrada[]; producoes: Producao[]
-  pos: Record<string, { x: number; y: number }>; arquivados: string[]; formatos: Formato[]
+  pos: Record<string, { x: number; y: number }>; arquivados: string[]; formatos: Formato[]; caixas: Caixa[]
 }
+/** Caixa do canvas: demarcação colorida; as notas dentro dela têm `grupo: <nome>`. */
+export type Caixa = { id: string; nome: string; cor: string; x: number; y: number; w: number; h: number; arquivada: boolean }
+/** Tons pastel das caixas. */
+export const CORES_CAIXA = ['#f6e3b4', '#f8d3c5', '#f3c9d9', '#dccff2', '#c9daf5', '#c4e6e0', '#d3ecc4', '#e6e1d8']
 export type Alvo = { raiz: Raiz; nome: string }
+/** De onde a nota foi aberta: o modal mostra um botão para voltar para lá. */
+export type Voltar = { rotulo: string; fn: () => void }
 
 export const ORDEM_FORMATO = ['📱', '💰', '🏞️', '📝', '📺', '🎥', '🗣️', '🎙️']
 export const STATUS: { k: StatusProd; nome: string; marca: string }[] = [

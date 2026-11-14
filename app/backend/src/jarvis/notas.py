@@ -1,4 +1,4 @@
-"""Notas do vault abertas na aba Ideias: as copies de `1 Copies` e as skills de `3 Skills`.
+"""Notas do vault abertas no modal: as copies de `1 Copies` e as skills de `3 Skills`.
 
 Status da copy, do jeito que o Rodrigo já marca no Obsidian:
 - working   → fixada no explorador do Obsidian (plugin File Explorer++); o app lê e grava a mesma lista
@@ -80,25 +80,6 @@ def status(raiz: str, nome: str) -> str:
     if not m:
         return "ideia"
     return "agendado" if "\U0001F539" in m.group(0) else "edicao"
-
-
-def listar(raiz: str) -> list[dict]:
-    fix = set(fixadas())
-    itens = []
-    for nome, p in _arquivos(raiz):
-        try:
-            st = p.stat()
-            cabeca = p.read_text(encoding="utf-8", errors="replace")[:3000]
-        except OSError:
-            continue
-        itens.append({"nome": nome, "raiz": raiz, "mtime": st.st_mtime, "tamanho": st.st_size,
-                      "previa": _previa(cabeca), "fixada": f"{raiz}/{nome}" in fix,
-                      "status": status(raiz, nome)})
-    if raiz == "skills":
-        itens.sort(key=lambda i: i["nome"].lower())
-    else:
-        itens.sort(key=lambda i: -i["mtime"])
-    return itens
 
 
 def indice() -> list[dict]:
@@ -291,8 +272,7 @@ def para_lixeira(raiz: str, nome: str) -> dict:
     return {"lixeira": str(alvo.relative_to(VAULT))}
 
 
-# --- fixadas = "working": a mesma lista de pins do File Explorer++ no Obsidian ---
-# O plugin recarrega a configuração quando o arquivo muda (onExternalSettingsChange), então pinar aqui aparece lá.
+# --- pins do File Explorer++ no Obsidian: renomear, mover ou apagar uma nota acompanha o pin dela ---
 
 def _rel(raiz: str, nome: str) -> str | None:
     p = _caminho(raiz, nome)
@@ -324,33 +304,6 @@ def _gravar_pins(d: dict):
 
 def _caminhos_fixados(d: dict) -> list[dict]:
     return (d.get("pinFilters") or {}).get("paths") or []
-
-
-def fixadas() -> list[str]:
-    d = _pins()
-    if not (d.get("pinFilters") or {}).get("active", True):
-        return []
-    out = []
-    for f in _caminhos_fixados(d):
-        if f.get("active") and f.get("patternType") == "STRICT" and f.get("type") in ("FILES", "FILES_AND_DIRECTORIES"):
-            k = _de_rel(f.get("pattern", ""))
-            if k:
-                out.append(k)
-    return out
-
-
-def fixar(raiz: str, nome: str, sim: bool) -> list[str]:
-    rel = _rel(raiz, nome)
-    if not rel or not PINS.parent.is_dir():
-        raise ValueError("não dá para fixar essa nota")
-    d = _pins()
-    d.setdefault("pinFilters", {"active": True, "tags": [], "paths": [], "frontMatter": []})
-    lista = [f for f in _caminhos_fixados(d) if f.get("pattern") != rel]
-    if sim:
-        lista.append({"name": "", "active": True, "type": "FILES", "pattern": rel, "patternType": "STRICT"})
-    d["pinFilters"]["paths"] = lista
-    _gravar_pins(d)
-    return fixadas()
 
 
 def _trocar_fixada(antes: str, depois: str | None):

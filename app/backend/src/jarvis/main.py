@@ -217,7 +217,7 @@ def planejamento_apagar(id_: str):
 
 
 class Acao(BaseModel):
-    acao: str                   # fixar | desafixar | mover | renomear | status | lixeira
+    acao: str                   # mover | renomear | status | lixeira
     destino: str | None = None  # mover: priorizar | publicados · status: ideia | edicao | agendado
     novo: str | None = None     # para renomear
 
@@ -232,8 +232,6 @@ def nota_acao(raiz: str, nome: str, corpo: Acao):
 
 def _nota_acao(raiz: str, nome: str, corpo: Acao):
     try:
-        if corpo.acao in ("fixar", "desafixar"):
-            return {"fixadas": notas.fixar(raiz, nome, corpo.acao == "fixar")}
         if corpo.acao == "mover":
             return notas.mover(raiz, nome, corpo.destino or "")
         if corpo.acao == "renomear":
@@ -249,13 +247,6 @@ def _nota_acao(raiz: str, nome: str, corpo: Acao):
     except ValueError as e:
         raise HTTPException(400, str(e))
     raise HTTPException(400, "ação desconhecida")
-
-
-@app.get("/api/notas/{raiz}")
-def notas_lista(raiz: str):
-    if raiz not in notas.RAIZES:
-        raise HTTPException(404, "pasta desconhecida")
-    return {"pasta": notas.RAIZES[raiz], "itens": notas.listar(raiz)}
 
 
 @app.get("/api/notas/{raiz}/{nome:path}")
@@ -316,6 +307,51 @@ def canvas_estado():
     return canvas.estado()
 
 
+@app.get("/api/anexo/{nome:path}")
+def anexo(nome: str):
+    p = canvas.anexo(nome)
+    if not p:
+        raise HTTPException(404, "anexo não encontrado")
+    return FileResponse(p)
+
+
+@app.get("/api/canvas/x")
+def canvas_x(url: str):
+    return canvas.video_x(url) or {}
+
+
+class Caixa(BaseModel):
+    id: str | None = None
+    nome: str | None = None
+    cor: str | None = None
+    x: float | None = None
+    y: float | None = None
+    w: float | None = None
+    h: float | None = None
+    arquivada: bool | None = None
+
+
+@app.post("/api/canvas/caixa")
+def canvas_caixa(corpo: Caixa):
+    return _erros(lambda: canvas.salvar_caixa(corpo.model_dump()))
+
+
+@app.delete("/api/canvas/caixa/{id_}")
+def canvas_apagar_caixa(id_: str):
+    return {"soltas": _erros(lambda: canvas.apagar_caixa(id_))}
+
+
+class GrupoNotas(BaseModel):
+    notas: list[dict]
+    grupo: str | None = None
+
+
+@app.post("/api/canvas/grupo")
+def canvas_grupo(corpo: GrupoNotas):
+    _erros(lambda: canvas.definir_grupo(corpo.notas, corpo.grupo))
+    return {"ok": True}
+
+
 @app.put("/api/canvas/posicoes")
 def canvas_posicoes(corpo: dict[str, Pos]):
     canvas.posicoes({k: v.model_dump() for k, v in corpo.items()})
@@ -348,11 +384,12 @@ class NovaEntrada(BaseModel):
     conteudo: str
     ideia: str | None = None
     pos: Pos | None = None
+    pronto: dict | None = None   # {titulo, url, thumb}: ideia vinda de um card do radar
 
 
 @app.post("/api/canvas/entrada")
 def canvas_entrada(corpo: NovaEntrada):
-    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump()))
+    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump(), corpo.pronto))
 
 
 class Fonte(BaseModel):

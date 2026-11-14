@@ -1,8 +1,8 @@
 """O canvas do Neo-Obsidian: ideias (💡), entradas (material bruto) e produções (as copies de sempre).
 
-- 💡 ideia      → `1 Copies/0 Ideias/💡 Nome.md`, sem status. Lista as entradas em `fontes:`.
-- entrada       → `1 Copies/0 Ideias/Entradas/<emoji> Título.md` (▶️ YouTube, 📸 Instagram, 🔗 link, 💭 texto),
-                  com `url`, `tipo` e `thumb` no frontmatter e o material (transcrição, texto da página) no corpo.
+- 💡 ideia      → `1 Copies/0 Ideias/💡 Nome.md`, sem status. Pode ser só um nome ou já trazer o material bruto:
+                  link ou texto colado vira ideia com `url`, `tipo` e `thumb` no frontmatter e o material
+                  (transcrição, texto da página) no corpo. (Antes isso era um tipo à parte, "entrada"; agora é tudo ideia.)
 - produção      → as copies de `1 Priorizar` e `2 Publicados`, que seguem o fluxo de status por nome/pasta.
                   Pertence a uma ideia quando tem `ideia: "[[💡 Nome]]"` no frontmatter; nota sem ideia é normal.
 
@@ -118,6 +118,7 @@ def _layout() -> dict:
         d = {}
     d.setdefault("pos", {})
     d.setdefault("arquivados", [])
+    d.setdefault("caixas", [])
     return d
 
 
@@ -128,31 +129,58 @@ def _gravar_layout(d: dict):
     tmp.replace(ARQ)
 
 
+URL = re.compile(r"https?://[^\s)\]>\"']+")
+IMG = re.compile(r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\((https?://[^)\s]+)\)")
+EXT_IMG = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif")
+
+
+def _midia(texto: str) -> dict:
+    """Links, primeira imagem e se a nota já tem copy (texto além de links, imagens e títulos)."""
+    corpo = FM.sub("", texto, count=1)
+    img = None
+    for m in IMG.finditer(corpo):
+        alvo = m.group(2) or f"/api/anexo/{m.group(1).strip()}"
+        if m.group(2) or m.group(1).lower().endswith(EXT_IMG):
+            img = alvo
+            break
+    links = list(dict.fromkeys(u.rstrip(".,;") for u in URL.findall(IMG.sub("", corpo))))[:6]
+    resto = re.sub(r"^#.*$", "", IMG.sub("", URL.sub("", corpo)), flags=re.M)
+    copia = len(re.sub(r"[\s\-*>#=_|`]+", " ", resto).strip()) >= 80
+    return {"links": links, "imagem": img, "copia": copia}
+
+
 def estado() -> dict:
     ideias, entradas, producoes = [], [], []
     for nome, p in notas._arquivos("ideias"):
         t = _ler(p)
         fm = _fm(t)
-        ideias.append({"nome": nome, "previa": notas._previa(t), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
+        m = _midia(t)
+        if not m["imagem"] and _valor(fm, "thumb"):
+            m["imagem"] = _valor(fm, "thumb")
+        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
                        "mtime": p.stat().st_mtime})
     for nome, p in notas._arquivos("entradas"):
         t = _ler(p)
         fm = _fm(t)
         entradas.append({"nome": nome, "url": _valor(fm, "url") or "", "tipo": _valor(fm, "tipo") or "link",
-                         "thumb": _valor(fm, "thumb") or "", "previa": notas._previa(t), "mtime": p.stat().st_mtime})
+                         "thumb": _valor(fm, "thumb") or "", "grupo": _valor(fm, "grupo"), "previa": notas._previa(t), "mtime": p.stat().st_mtime})
     for raiz in notas.PASTAS:
         for nome, p in notas._arquivos(raiz):
-            t = _ler(p, 3000)
+            inteiro = _ler(p, None)
+            t = inteiro[:3000]
             fm = _fm(t)
             sched = notas._scheduled(t)
             st = p.stat()
+            corpo = FM.sub("", inteiro, count=1)
+            palavras = len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo))))
             producoes.append({"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome), "scheduled": sched,
                               "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
-                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")),
-                              "previa": notas._previa(t), "mtime": st.st_mtime})
+                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "grupo": _valor(fm, "grupo"),
+                              "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
+                              "palavras": palavras, **_midia(t)})
     lay = _layout()
     return {"ideias": ideias, "entradas": entradas, "producoes": producoes, "pos": lay["pos"],
-            "arquivados": lay["arquivados"], "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
+            "arquivados": lay["arquivados"], "caixas": lay["caixas"], "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
 def posicoes(pos: dict[str, dict]):
@@ -218,15 +246,24 @@ def _texto_pagina(url: str) -> dict:
             "corpo": corpo}
 
 
-def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = None) -> dict:
-    """Link ou texto colado no canvas vira uma nota de entrada já com o material dentro."""
+def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = None, pronto: dict | None = None) -> dict:
+    """Link ou texto colado no canvas vira uma 💡 ideia já com o material dentro.
+    Com `ideia`, o link/texto entra no fim daquela ideia em vez de virar outra.
+    Com `pronto` ({titulo, url, thumb}), a ideia vem de um card do radar: usa o que o card já tem, sem ler a página."""
     conteudo = conteudo.strip()
     if not conteudo:
-        raise ValueError("entrada vazia")
+        raise ValueError("ideia vazia")
+    if ideia:
+        p = _caminho_ideia(ideia)
+        notas._escrever(p, _ler(p, None).rstrip() + f"\n\n{conteudo}\n")
+        return {"nome": p.stem, "raiz": "ideias"}
     url = conteudo if re.fullmatch(r"https?://\S+", conteudo) else ""
     fm = {"url": url, "tipo": "texto", "thumb": ""}
     corpo, titulo, emoji = conteudo, conteudo.split("\n")[0][:70], "💭"
-    if url and youtube.id_do_link(url):
+    if pronto:
+        fm.update(url=pronto.get("url") or "", tipo="radar", thumb=pronto.get("thumb") or "")
+        titulo = pronto.get("titulo") or titulo
+    elif url and youtube.id_do_link(url):
         vid = youtube.id_do_link(url)
         fm.update(tipo="youtube", thumb=f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg")
         emoji, titulo = "▶️", vid
@@ -250,17 +287,14 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
         except Exception as e:
             titulo = re.sub(r"^https?://(www\.)?", "", url)[:60]
             corpo = f"{url}\n\n(não consegui ler a página: {type(e).__name__})"
-    titulo = _limpo(re.sub(r"\s+", " ", titulo))[:80] or "Entrada"
-    pasta = notas.EXTRAS["entradas"]
-    pasta.mkdir(parents=True, exist_ok=True)
-    p = _livre(pasta, f"{emoji} {titulo}")
+    titulo = _limpo(re.sub(r"\s+", " ", titulo))[:80] or "Nova ideia"
+    notas.IDEIAS.mkdir(parents=True, exist_ok=True)
+    p = _livre(notas.IDEIAS, f"💡 {titulo}")
     cab = "---\n" + "".join(f'{k}: "{v}"\n' for k, v in fm.items() if v or k in ("url", "tipo")) + "tags:\n---\n\n"
     notas._escrever(p, cab + corpo.strip() + "\n")
     if pos:
-        posicoes({f"e:{p.stem}": pos})
-    if ideia:
-        ligar_fonte(ideia, p.stem, True)
-    return {"nome": p.stem, "raiz": "entradas"}
+        posicoes({f"i:{p.stem}": pos})
+    return {"nome": p.stem, "raiz": "ideias"}
 
 
 def _caminho_ideia(ideia: str) -> Path:
@@ -281,8 +315,6 @@ def ligar_fonte(ideia: str, entrada: str, sim: bool):
 def ligar_producao(raiz: str, nome: str, ideia: str | None):
     if raiz not in notas.PASTAS:
         raise ValueError("só copies de 1 Priorizar ou 2 Publicados")
-    if ideia:
-        _caminho_ideia(ideia)
     p = notas._caminho(raiz, nome)
     if not p or not p.is_file():
         raise FileNotFoundError(nome)
@@ -291,15 +323,17 @@ def ligar_producao(raiz: str, nome: str, ideia: str | None):
 
 
 def agrupar(titulo: str, producoes: list[dict], pos: dict | None = None) -> dict:
-    i = criar_ideia(titulo, pos=pos)
+    """Junta copies num card de produção 🎬. Não cria nota 💡: o grupo é só a chave `ideia:` em cada copy."""
+    nome = f"💡 {_limpo(re.sub(r'^💡\s*', '', titulo)) or 'Produção'}"
     for pr in producoes:
-        ligar_producao(pr["raiz"], pr["nome"], i["nome"])
-    return i
+        ligar_producao(pr["raiz"], pr["nome"], nome)
+    if pos:
+        posicoes({f"g:{nome}": pos})
+    return {"nome": nome, "raiz": "ideias"}
 
 
 def criar_saida(ideia: str, formato: str, titulo: str = "", texto: str = "") -> dict:
     """Nova produção em Priorizar ligada à ideia: `<formato> <nome da ideia>` (ou o título dado)."""
-    _caminho_ideia(ideia)
     if formato not in FORMATOS:
         raise ValueError(f"formato inválido (use um de {' '.join(FORMATOS)})")
     nome = _limpo(titulo) if titulo.strip() else f"{formato} {_base(ideia)}"
@@ -331,3 +365,103 @@ def _id(raiz: str, nome: str) -> str:
 def renomeou(raiz: str, antes: str, raiz_depois: str, depois: str):
     """Renomeou, mudou status ou publicou: o card continua no mesmo lugar do canvas."""
     _renomear_pos(_id(raiz, antes), _id(raiz_depois, depois))
+
+
+# ---------- mídia dos cards ----------
+
+ANEXOS = notas.VAULT / "2 Notas" / "Engine" / "attachments"
+_videos_x: dict[str, dict | None] = {}
+
+
+def anexo(nome: str) -> Path | None:
+    """Imagem colada numa nota (`![[Pasted image ….png]]`): fica em attachments, ou em outro canto do vault."""
+    nome = Path(nome).name
+    p = ANEXOS / nome
+    if p.is_file():
+        return p
+    return next((q for q in notas.VAULT.rglob(nome) if ".trash" not in q.parts and ".obsidian" not in q.parts), None)
+
+
+def video_x(url: str) -> dict | None:
+    """Capa e MP4 de um post do X (via FxTwitter), para o card tocar o vídeo como no radar."""
+    m = re.search(r"(?:x|twitter)\.com/[^/]+/status/(\d+)", url)
+    if not m:
+        return None
+    if m.group(1) in _videos_x:
+        return _videos_x[m.group(1)]
+    from . import videos_x
+    try:
+        r = httpx.get(videos_x.API.format(m.group(1)), timeout=12, headers={"User-Agent": "jarvis-conteudo/0.1"})
+        r.raise_for_status()
+        tw = r.json().get("tweet") or {}
+    except Exception:
+        return None
+    media = tw.get("media") or {}
+    capa = next((f.get("thumbnail_url") or f.get("url") for f in media.get("all") or [] if f.get("thumbnail_url") or f.get("type") == "photo"), None)
+    info = {"video": videos_x._melhor(media), "imagem": capa, "texto": (tw.get("text") or "")[:200]}
+    _videos_x[m.group(1)] = info
+    return info
+
+
+# ---------- caixas: demarcações coloridas no canvas que agrupam assuntos ----------
+# A caixa (nome, cor, retângulo, arquivada) fica no layout; quem está dentro dela ganha `grupo: "<nome>"` na nota.
+
+def _notas_do_canvas():
+    for raiz in ("ideias", "entradas", *notas.PASTAS):
+        for nome, p in notas._arquivos(raiz):
+            yield raiz, nome, p
+
+
+def definir_grupo(alvos: list[dict], grupo: str | None):
+    for a in alvos:
+        p = notas._caminho(a["raiz"], a["nome"])
+        if not p or not p.is_file():
+            raise FileNotFoundError(a["nome"])
+        t = _ler(p, None)
+        if _valor(_fm(t), "grupo") != grupo:
+            notas._escrever(p, _definir(t, "grupo", grupo or None))
+
+
+def _trocar_grupo(antigo: str, novo: str | None) -> int:
+    n = 0
+    for _, _, p in _notas_do_canvas():
+        t = _ler(p, None)
+        if _valor(_fm(t), "grupo") == antigo:
+            notas._escrever(p, _definir(t, "grupo", novo))
+            n += 1
+    return n
+
+
+def salvar_caixa(c: dict) -> dict:
+    """Cria ou atualiza uma caixa. Renomear leva o novo nome para a propriedade `grupo` das notas de dentro."""
+    d = _layout()
+    atual = next((x for x in d["caixas"] if x["id"] == c.get("id")), None)
+    nome = _limpo(c.get("nome") or "") or (atual["nome"] if atual else "Caixa")   # sem nome no pedido: mantém o atual
+    if any(x["nome"] == nome and x is not atual for x in d["caixas"]):
+        raise FileExistsError(f"caixa {nome}")
+    if atual is None:
+        atual = {"id": c.get("id") or f"cx{int(datetime.now().timestamp() * 1000)}", "nome": nome, "cor": "#f6e3b4",
+                 "x": 0, "y": 0, "w": 640, "h": 420, "arquivada": False}
+        d["caixas"].append(atual)
+    elif atual["nome"] != nome:
+        _trocar_grupo(atual["nome"], nome)
+    atual["nome"] = nome
+    for k in ("cor", "arquivada"):
+        if c.get(k) is not None:
+            atual[k] = c[k]
+    for k in ("x", "y", "w", "h"):
+        if c.get(k) is not None:
+            atual[k] = round(float(c[k]))
+    _gravar_layout(d)
+    return atual
+
+
+def apagar_caixa(id_: str) -> int:
+    """Tira a caixa do canvas; as notas de dentro continuam, só perdem a propriedade `grupo`."""
+    d = _layout()
+    c = next((x for x in d["caixas"] if x["id"] == id_), None)
+    if not c:
+        raise FileNotFoundError(id_)
+    d["caixas"] = [x for x in d["caixas"] if x["id"] != id_]
+    _gravar_layout(d)
+    return _trocar_grupo(c["nome"], None)

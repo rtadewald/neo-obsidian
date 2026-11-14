@@ -1,30 +1,12 @@
 import { EditorState, StateField, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
 import { ensureSyntaxTree } from '@codemirror/language'
+import { extraCampo, painelProps } from './propriedades'
 
 /** "Live preview" do Obsidian: o markdown aparece formatado e as marcas (#, **, >, [[ ]], ---)
  *  só aparecem na linha onde está o cursor. O texto do arquivo nunca muda, só o que se vê. */
 
 type Abrir = (nome: string) => void
-
-class Props extends WidgetType {
-  constructor(readonly linhas: [string, string][]) { super() }
-  eq(o: Props) { return JSON.stringify(o.linhas) === JSON.stringify(this.linhas) }
-  toDOM() {
-    const dl = document.createElement('dl')
-    dl.className = 'cm-lp-props'
-    for (const [k, v] of this.linhas) {
-      const d = document.createElement('div')
-      const dt = document.createElement('dt'); dt.textContent = k
-      const dd = document.createElement('dd'); dd.textContent = v || '—'
-      if (!v) dd.className = 'is-vazio'
-      d.append(dt, dd); dl.append(d)
-    }
-    if (!this.linhas.length) dl.textContent = 'Propriedades'
-    return dl
-  }
-  ignoreEvent() { return false }   // clique coloca o cursor dentro do frontmatter, que vira texto
-}
 
 class Bolinha extends WidgetType {
   eq() { return true }
@@ -72,19 +54,12 @@ function montar(state: EditorState): DecorationSet {
   const d: Range<Decoration>[] = []
   const texto = doc.toString()
 
-  // frontmatter → quadro de propriedades, enquanto o cursor estiver fora dele
+  // frontmatter → painel de propriedades editável (como no Obsidian), sempre visível
   let inicio = 0
-  const fm = /^---\n([\s\S]*?)\n---[ \t]*(\n|$)/.exec(texto)
-  if (fm) {
-    const fim = fm[0].length - fm[2].length
-    inicio = fim
-    const dentro = state.selection.ranges.some((r) => r.from <= fim && r.to >= 0)
-    if (!dentro) {
-      const linhas = fm[1].split('\n').filter((l) => /^[\w-]+:/.test(l)).map((l): [string, string] => {
-        const i = l.indexOf(':'); return [l.slice(0, i), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]
-      })
-      d.push(Decoration.replace({ widget: new Props(linhas), block: true }).range(0, fim))
-    }
+  const painel = painelProps(state)
+  if (painel) {
+    if (painel.fim >= 0) { inicio = painel.fim; d.push(Decoration.replace({ widget: painel.widget, block: true }).range(0, painel.fim)) }
+    else d.push(Decoration.widget({ widget: painel.widget, block: true, side: -1 }).range(0))
   }
 
   const tree = ensureSyntaxTree(state, doc.length, 200)
@@ -174,14 +149,14 @@ function montar(state: EditorState): DecorationSet {
 
 const campo = StateField.define<DecorationSet>({
   create: montar,
-  update(v, tr) { return tr.docChanged || tr.selection || tr.reconfigured ? montar(tr.state) : v },
+  update(v, tr) { return tr.docChanged || tr.selection || tr.reconfigured || tr.effects.length ? montar(tr.state) : v },
   provide: (f) => EditorView.decorations.from(f),
 })
 
 /** ⌘/Ctrl+clique abre o [[link]] (como no Obsidian) e o link normal em outra aba. */
 export function livePreview(abrir?: Abrir) {
   return [
-    campo,
+    extraCampo, campo,
     EditorView.domEventHandlers({
       mousedown(e) {
         if (!(e.metaKey || e.ctrlKey)) return false

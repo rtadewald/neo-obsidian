@@ -42,7 +42,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
 
   const carregar = useCallback(async () => {
     try {
-      const [s, e] = await Promise.all([api.sinais(salvos ? 'salvo' : undefined, tipo === 'fora' ? 'fora' : undefined), api.estado()])
+      const [s, e] = await Promise.all([api.sinais(salvos ? 'curtido' : undefined, tipo === 'fora' ? 'fora' : undefined), api.estado()])
       setSinais(s); setRodando(e.rodando); setReavaliando(e.reavaliando); setUltima(e.ultima); setErro('')
       api.gosto().then(setGosto).catch(() => {})
     } catch (e) { setErro(String(e)) }
@@ -117,10 +117,10 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
     return () => window.removeEventListener('keydown', f)
   }, [modo, fila.length, sortear, irPara, onConversar])
 
-  // no foco, salvar e descartar já passam para o próximo (descartar tira da fila, então a posição fica)
-  const marcarFoco = (s: Sinal, st: 'salvo' | 'descartado' | 'novo') => {
-    marcar(s, st)
-    if (st === 'salvo' && !salvos) setPos((p) => Math.min(p + 1, fila.length - 1))
+  // no foco, o like já passa para o próximo (o deslike tira da fila, então a posição fica)
+  const votarFoco = (s: Sinal, v: number) => {
+    votar(s, v)
+    if (v === 1 && s.voto !== 1 && !salvos) setPos((p) => Math.min(p + 1, fila.length - 1))
   }
 
   async function marcar(s: Sinal, status: 'salvo' | 'descartado' | 'novo') {
@@ -130,7 +130,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
 
   async function votar(s: Sinal, v: number) {
     const voto = s.voto === v ? 0 : v
-    setSinais((l) => (voto === -1 ? l.filter((x) => x.id !== s.id) : l.map((x) => (x.id === s.id ? { ...x, voto, pontuacao: voto > 0 ? 100 : x.pontuacao } : x))))
+    setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((x) => (x.id === s.id ? { ...x, voto, pontuacao: voto > 0 ? 100 : x.pontuacao } : x))))
     await api.votar(s.id, voto)
     api.gosto().then(setGosto).catch(() => {})
   }
@@ -192,7 +192,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
             </button>
           )}
           <button className={`pilula ${salvos ? 'is-on' : ''}`} onClick={() => setSalvos((v) => !v)}>
-            <Icone n="salvar" t={15} /> Salvos
+            <Icone n="like" t={15} /> Curtidos
           </button>
           <button className="pilula pilula--escura" onClick={atualizar} disabled={rodando}>
             <span className={rodando ? 'gira' : ''}><Icone n="atualizar" t={15} /></span>
@@ -205,7 +205,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
       {erro && <div className="vazio glass glass--light">Não consegui falar com o backend: {erro}</div>}
       {!erro && visiveis.length === 0 && (
         <div className="vazio glass glass--light">
-          {salvos ? 'Nada salvo ainda. Use o marcador nos cards.' : 'Nenhum sinal. Clique em Atualizar para coletar.'}
+          {salvos ? 'Nenhum curtido ainda. Dê like nos cards que você gostou.' : 'Nenhum sinal. Clique em Atualizar para coletar.'}
         </div>
       )}
 
@@ -213,7 +213,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
         <div className="foco-radar">
           <div className="foco-radar-modo">{seletorModo}{chipsFonte}</div>
           <div className="foco-radar-card" key={atual.id}>
-            <Card s={atual} grande ativo={foco?.id === atual.id} onMarcar={marcarFoco} onVotar={votar} onConversar={onConversar} />
+            <Card s={atual} grande ativo={foco?.id === atual.id} onMarcar={marcar} onVotar={votarFoco} onConversar={onConversar} />
           </div>
           <div className="foco-radar-nav">
             <button className="btn-icone foco-radar-seta" onClick={() => setPos((p) => Math.max(p - 1, 0))} disabled={pos === 0} aria-label="Anterior (←)" title="Anterior (←)">
@@ -332,18 +332,38 @@ const fmt = (n: unknown) => (typeof n === 'number' ? n.toLocaleString('pt-BR') :
 const dataPost = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', '') : ''
 
-function Acoes({ s, onMarcar, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>) {
+/** Card do radar → 💡 ideia no canvas, já com o título, o link, a imagem e o texto do card. */
+async function criarIdeia(s: Sinal) {
+  const m = s.metricas as { texto?: string }
+  const titulo = s.fonte === 'x' ? `${s.autor ?? 'X'}: ${(m.texto || s.titulo || '').replace(/\s+/g, ' ').slice(0, 60)}` : s.titulo
+  const conteudo = [s.url, s.porque && `> ${s.porque}`, m.texto || s.resumo, s.autor && `Fonte: ${s.autor}`].filter(Boolean).join('\n\n')
+  const r = await fetch('/api/canvas/entrada', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conteudo: conteudo || titulo, pronto: { titulo, url: s.url, thumb: s.imagem } }),
+  })
+  if (!r.ok) throw new Error('Não consegui criar a ideia.')
+}
+
+function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>) {
+  const [criando, setCriando] = useState(false)
+  const [feita, setFeita] = useState(false)
+  const virarIdeia = async () => {
+    if (feita) return
+    setCriando(true)
+    try { await criarIdeia(s); setFeita(true) } catch (e) { alert((e as Error).message) } finally { setCriando(false) }
+  }
   return (
     <span className="acoes">
-      <button className={`btn-icone ${s.voto === 1 ? 'is-on' : ''}`} aria-label="Curti" title="Curti: mais disso" aria-pressed={s.voto === 1}
+      <button className={`btn-icone ${s.voto === 1 ? 'is-on' : ''}`} aria-label="Curti" title="Curti: mais disso (ensina o radar e fica em Curtidos)" aria-pressed={s.voto === 1}
         onClick={() => onVotar(s, 1)}><Icone n="like" t={16} /></button>
-      <button className="btn-icone" aria-label="Não curti" title="Não curti: menos disso (some do feed)"
+      <button className="btn-icone" aria-label="Não curti" title="Não curti: tira do feed e ensina o radar"
         onClick={() => onVotar(s, -1)}><Icone n="deslike" t={16} /></button>
       <span className="acoes-sep" />
-      <button className={`btn-icone ${s.status === 'salvo' ? 'is-on' : ''}`} aria-label="Salvar" title="Salvar"
-        onClick={() => onMarcar(s, s.status === 'salvo' ? 'novo' : 'salvo')}><Icone n="salvar" t={16} /></button>
-      <button className="btn-icone" aria-label="Descartar" title="Descartar (sem ensinar nada)" onClick={() => onMarcar(s, 'descartado')}><Icone n="fechar" t={16} /></button>
-      <button className="btn-icone" aria-label="Conversar sobre" title="Levar para o chat" onClick={() => onConversar(s)}><Icone n="chat" t={16} /></button>
+      <button className={`btn-icone ${feita ? 'is-on' : ''}`} aria-label="Virar ideia" disabled={criando}
+        title={feita ? 'Já virou 💡 ideia no canvas' : 'Transformar em 💡 ideia (vai para o canvas principal)'}
+        onClick={virarIdeia}><Icone n="ideia" t={16} /></button>
+      <button className="btn-icone acoes-jarvis" aria-label="Perguntar ao Jarvis" title="Perguntar ao Jarvis sobre este card (⌘I)" onClick={() => onConversar(s)}>
+        <span className="orb orb--msg" /></button>
     </span>
   )
 }

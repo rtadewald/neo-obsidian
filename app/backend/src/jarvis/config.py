@@ -2,7 +2,7 @@
 from pathlib import Path
 
 VAULT = Path("/Users/rtadewald/Obsidian Notes")
-APP = Path(__file__).resolve().parents[3]          # 20-jarvisOS/app
+APP = Path(__file__).resolve().parents[3]          # 20-neo-obsidian/app
 DADOS = APP / "dados"
 DB = DADOS / "jarvis.db"
 FRONT_DIST = APP / "frontend" / "dist"

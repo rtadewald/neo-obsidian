@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
+import type { Extra } from './propriedades'
 import { Icone } from './Icone'
-import { PASTA, obsidian, type Raiz, type Trecho } from './Ideias'
-import { STATUS, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Producao } from './canvasApi'
+import { cardNoCanvas } from './Canvas'
+import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
+import { STATUS, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao } from './canvasApi'
 
 /** Modal estilo Notion: uma ideia e as saídas dela, uma por tab. Abre do canvas, do calendário e do ⌘P. */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
@@ -19,8 +21,10 @@ async function acao(a: Alvo, corpo: Record<string, string>) {
   return d as Alvo
 }
 
-export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao }: {
+export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao, voltar, onMostrar }: {
   alvo: Alvo; onFechar: () => void
+  voltar?: Voltar                              // aberta da tabela das pastas: botão para voltar a ela
+  onMostrar?: (a: Alvo) => void               // fecha o modal e aponta o card no canvas
   onTrecho?: (t: Trecho, pedido?: string) => void
   onPedido?: (texto: string) => void          // manda um pedido pronto para o chat
   onMudou?: () => void                        // algo mudou no vault (o canvas recarrega)
@@ -49,23 +53,50 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
     const prod = est.producoes.find((p) => p.raiz === ativa.raiz && p.nome === ativa.nome)
     const nomeIdeia = ativa.raiz === 'ideias' ? ativa.nome : prod?.ideia ?? null
     const ideia = nomeIdeia ? est.ideias.find((i) => i.nome === nomeIdeia) ?? null : null
-    const saidas = ideia ? est.producoes.filter((p) => p.ideia === ideia.nome).sort(porFormato) : prod ? [prod] : []
+    // as saídas são as notas com o mesmo `ideia:`, exista ou não a nota 💡 (o grupo 🎬 do canvas é só essa propriedade)
+    const saidas = nomeIdeia ? est.producoes.filter((p) => p.ideia === nomeIdeia).sort(porFormato) : prod ? [prod] : []
     const entradas = ideia ? est.entradas.filter((e) => ideia.fontes.includes(e.nome)) : []
     const usadaEm = ativa.raiz === 'entradas' ? est.ideias.filter((i) => i.fontes.includes(ativa.nome)) : []
-    return { ideia, saidas, entradas, usadaEm, prod }
+    return { ideia, chave: nomeIdeia, saidas, entradas, usadaEm, prod }
   }, [est, ativa])
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.menu-ctx')) { e.preventDefault(); onFechar() } }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.menu-ctx, .modal-apagar')) { e.preventDefault(); onFechar() } }
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
+
+  // deletar a nota aberta: botão da lixeira ou ⌘⌫ (fora do editor, onde ⌘⌫ apaga a linha), sempre com confirmação
+  const [apagar, setApagar] = useState(false)
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Backspace' || e.shiftKey || e.altKey) return
+      if ((e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable="true"], .cm-editor')) return
+      e.preventDefault()
+      setApagar(true)
+    }
+    window.addEventListener('keydown', tecla)
+    return () => window.removeEventListener('keydown', tecla)
+  }, [])
+  async function deletar() {
+    try {
+      const r = await fetch(`/api/notas/${ativa.raiz}/${encodeURIComponent(ativa.nome)}/acao`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'lixeira' }) })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Não consegui deletar.')
+      setApagar(false)
+      onMudou?.()
+      // outra saída da mesma produção continua aberta; senão volta para a tabela (ou fecha)
+      const outra = grupo?.saidas.find((p) => !(p.raiz === ativa.raiz && p.nome === ativa.nome))
+      if (outra && ativa.raiz !== 'ideias') { setAtiva({ raiz: outra.raiz, nome: outra.nome }); recarregar(); avisar('Foi para a lixeira do vault (.trash)') }
+      else if (voltar) voltar.fn()
+      else onFechar()
+    } catch (e) { setApagar(false); avisar((e as Error).message) }
+  }
 
   async function novaSaida(formato: string, nomeFormato: string) {
     setMais(false)
     if (!grupo) return
     try {
-      let ideia = grupo.ideia?.nome
+      let ideia = grupo.ideia?.nome ?? grupo.chave ?? undefined
       if (!ideia && grupo.prod) {   // card solto: vira ideia primeiro, com o nome da copy
         const base = grupo.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '').trim() || grupo.prod.nome
         ideia = (await post<Alvo>('agrupar', { titulo: base, producoes: [{ raiz: grupo.prod.raiz, nome: grupo.prod.nome }] })).nome
@@ -93,6 +124,11 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
     <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
       <div className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}>
         <header className="modal-tabs">
+          {voltar && (
+            <button className="modal-volta modal-volta--tabela" onClick={voltar.fn} title={`Voltar para a tabela ${voltar.rotulo}`}>
+              <span className="modal-volta-seta">←</span> {voltar.rotulo}
+            </button>
+          )}
           {ativa.raiz !== 'ideias' && ativa.raiz !== 'entradas' && grupo?.ideia && (
             <button className="modal-volta" onClick={() => setAtiva({ raiz: 'ideias', nome: grupo.ideia!.nome })} title="Voltar para a ideia desta produção">
               <Icone n="seta" t={12} /> 💡 {grupo.ideia.nome.replace(/^💡\s*/, '')}
@@ -103,7 +139,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
               <button key={`${t.alvo.raiz}/${t.alvo.nome}`} role="tab" aria-selected={t.alvo.nome === ativa.nome && t.alvo.raiz === ativa.raiz}
                 className={`modal-tab ${t.alvo.nome === ativa.nome && t.alvo.raiz === ativa.raiz ? 'is-ativa' : ''}`} onClick={() => setAtiva(t.alvo)} title={t.alvo.nome}>
                 {t.prod && <i className={`ponto is-${t.prod.status}`} />}
-                <span>{t.prod ? rotuloSaida(t.prod, grupo?.ideia?.nome) : t.rotulo}</span>
+                <span>{t.prod ? rotuloSaida(t.prod, grupo?.chave ?? undefined) : t.rotulo}</span>
               </button>
             ))}
             {ativa.raiz !== 'entradas' && est && (
@@ -117,6 +153,14 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
               </span>
             )}
           </nav>
+          {onMostrar && est && (() => {
+            const card = cardNoCanvas(est, ativa)
+            return <button className="modal-mostrar" disabled={!card} onClick={() => onMostrar(ativa)}
+              title={card ? 'Fechar e apontar o card no canvas' : 'Oculta no canvas: arquivada, ou publicada fora de uma caixa ativa'}>
+              <Icone n="grafo" t={13} /> {card ? 'Mostrar no canvas' : 'Oculta no canvas'}
+            </button>
+          })()}
+          <button className="btn-icone modal-lixeira" onClick={() => setApagar(true)} aria-label="Deletar nota" title="Deletar esta nota (⌘⌫)"><Icone n="lixeira" t={15} /></button>
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
 
@@ -150,6 +194,19 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao 
           versao={versao} onTrecho={onTrecho} avisar={avisar}
           onMudou={(novo) => { if (novo) setAtiva(novo); recarregar(); onMudou?.() }} />
         {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
+        {apagar && (
+          <div className="modal-apagar" role="alertdialog" aria-label="Confirmar exclusão" onMouseDown={(e) => e.target === e.currentTarget && setApagar(false)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setApagar(false) } }}>
+            <div className="modal-apagar-caixa glass glass--light">
+              <b>Deletar {ativa.nome}?</b>
+              <p>A nota vai para a lixeira do vault (.trash). Dá para recuperar pelo Obsidian.</p>
+              <div className="modal-apagar-botoes">
+                <button onClick={() => setApagar(false)}>Cancelar</button>
+                <button className="is-perigo" autoFocus onClick={deletar}>Deletar</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -246,14 +303,12 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
   }
 
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
-  const tags = useMemo(() => {
-    const fm = /^---\n([\s\S]*?)\n---/.exec(texto)?.[1] ?? ''
-    const m = /^tags:[ \t]*(.*)$/m.exec(fm)
-    if (!m) return []
-    if (m[1].trim()) return m[1].replace(/[[\]]/g, '').split(',').map((t) => t.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
-    return fm.slice(m.index + m[0].length).split('\n').slice(1).map((l) => /^\s+-\s*(.*)$/.exec(l)?.[1]).filter((x): x is string => x !== undefined)
-      .map((t) => t.replace(/^["']|["']$/g, '')).filter(Boolean)
-  }, [texto])
+
+  const extra: Extra | undefined = prod ? {
+    status: { valor: prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
+    onData: mudarData,
+    onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
+  } : undefined
 
   if (!nota) return <div className="modal-corpo"><p className="mudo">Carregando…</p></div>
 
@@ -272,24 +327,6 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
         <span className={`ideias-estado is-${estado}`}>
           {estado === 'conflito' ? <button onClick={abrir}>{ROTULO[estado]} · recarregar</button> : ROTULO[estado]}
         </span>
-        <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
-      </div>
-
-      <div className="modal-props">
-        {prod && (
-          <label className="modal-prop"><span>Status</span>
-            <select value={prod.status} onChange={(e) => mudarStatus(e.target.value)}>
-              {STATUS.map((s) => <option key={s.k} value={s.k}>{s.marca} {s.nome}</option>)}
-            </select>
-          </label>
-        )}
-        {prod && (
-          <label className="modal-prop"><span>Scheduled</span>
-            <input type="date" value={prod.scheduled ?? ''} onChange={(e) => mudarData(e.target.value)} />
-          </label>
-        )}
-        {prod && <span className="modal-prop"><span>Publicado</span><b>{prod.status === 'publicado' ? 'sim' : 'não'}</b></span>}
-        <span className="modal-prop modal-tags"><span>Tags</span>{tags.length ? tags.map((t) => <i key={t}>{t}</i>) : <em className="mudo">nenhuma (edite no topo da nota)</em>}</span>
         {prod && ideia && (
           <button className="modal-desligar" onClick={() => executar(() => post('ligar', { producao: { raiz: prod.raiz, nome: prod.nome }, ideia: null }), 'Saiu da ideia')}
             title="Tira esta copy da ideia (a nota continua igual)">Desligar da ideia</button>
@@ -298,10 +335,11 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
           <button className="modal-desligar" onClick={async () => { await salvar(); onTrecho({ texto: '', linhaIni: 1, linhaFim: texto.split('\n').length, raiz: alvo.raiz, nome: alvo.nome, caminho }) }}
             title="Manda esta nota para o chat (⌘I manda só o trecho selecionado)"><span className="orb orb--msg" /> Perguntar ao Jarvis</button>
         )}
+        <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
       </div>
 
       <div className="modal-corpo">
-        <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view}
+        <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra}
           onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
       </div>
     </>

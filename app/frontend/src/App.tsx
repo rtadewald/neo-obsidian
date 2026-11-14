@@ -3,21 +3,22 @@ import { Calendario } from './Calendario'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { Canvas } from './Canvas'
 import { ModalNota } from './ModalNota'
-import type { Alvo } from './canvasApi'
+import type { Alvo, Voltar } from './canvasApi'
 import { Chat } from './Chat'
 import { Icone } from './Icone'
 import { EmBreve } from './EmBreve'
 import { Leque, Orbe, type SkillResumo } from './Menu'
 import { Radar } from './Radar'
-import { Ideias, Paleta, type Raiz, type Trecho } from './Ideias'
+import { Paleta } from './Paleta'
+import type { Trecho } from './notas'
 import type { Sinal } from './api'
 
-// navbar do topo, em três grupos: criar (canvas, planejamento, lista de ideias) | radares | agendamento (Metricool).
+// navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
 // Orbe no canto de baixo: as skills e as configurações. ⌘P busca notas e abre no modal.
-const GRUPOS = [['Canvas', 'Calendário', 'Ideias'], ['X', 'Instagram', 'Sites'], ['Agendamento']] as const
+const GRUPOS = [['Canvas', 'Calendário'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
-  Canvas: 'grafo', Calendário: 'calendario', Ideias: 'nota', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
+  Canvas: 'grafo', Calendário: 'calendario', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
 }
 /** Aba do radar de onde veio um sinal, pela fonte ou pelo link. */
 const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
@@ -28,6 +29,8 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
   // modal de nota (ideia + saídas em tabs): canvas, calendário e ⌘P abrem aqui
   const [modal, setModal] = useState<Alvo | null>(null)
+  const [voltar, setVoltar] = useState<Voltar | null>(null)
+  const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
   // sinal em conversa no chat: sobrevive a recarregar a página
@@ -38,7 +41,6 @@ export default function App() {
   const abrirSinal = useCallback((a: { id?: number; url?: string | null; fonte?: string }) => { setPagina(abaDoSinal(a)); setIrSinal((x) => ({ ...a, n: (x?.n ?? 0) + 1 })) }, [])
   const [leque, setLeque] = useState(false)
   const [skills, setSkills] = useState<SkillResumo[]>([])
-  const [abrir, setAbrir] = useState<{ raiz: Raiz; nome: string | null; n: number } | undefined>()
   const fechar = useCallback(() => setLeque(false), [])
   // trecho de nota mandado do editor para o chat (⌘I), pedido pronto das ações rápidas e aviso de que a nota pode ter mudado
   const [trecho, setTrecho] = useState<Trecho | null>(null)
@@ -49,7 +51,7 @@ export default function App() {
     if (p) setPedido((x) => ({ texto: p, n: x.n + 1 }))
   }, [])
   const mandarPedido = useCallback((p: string) => { setChat(true); setPedido((x) => ({ texto: p, n: x.n + 1 })) }, [])
-  const abrirModal = useCallback((a: Alvo) => setModal(a), [])
+  const abrirModal = useCallback((a: Alvo, v?: Voltar) => { setModal(a); setVoltar(v ?? null) }, [])
   const [chat, setChat] = useState(() => { try { return localStorage.getItem('chat') !== 'fechado' } catch { return true } })
   useEffect(() => { try { localStorage.setItem('chat', chat ? 'aberto' : 'fechado') } catch { /* sem storage */ } }, [chat])
   useEffect(() => { if (foco) setChat(true) }, [foco])
@@ -73,16 +75,12 @@ export default function App() {
   const corpo = useRef<HTMLElement>(null)
 
   useEffect(() => { fetch('/api/skills').then((r) => r.json()).then(setSkills).catch(() => {}) }, [])
-  // ⌘P: busca rápida de notas. Na aba Ideias abre lá; no resto abre a nota no modal
-  const [busca, setBusca] = useState(0)
-  const paginaRef = useRef(pagina)
-  paginaRef.current = pagina
+  // ⌘P: busca rápida de notas, que abre a nota no modal
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && ['p', 'o'].includes(e.key.toLowerCase())) {   // ⌘P ou ⌘O: busca de notas
         e.preventDefault()
-        if (paginaRef.current === 'Ideias') setBusca((n) => n + 1)
-        else setPaleta(true)
+        setPaleta(true)
       }
       // ⌘B mostra/oculta o chat do agente (no editor de nota fica livre para o negrito)
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !(e.target as HTMLElement)?.closest?.('.cm-editor')) {
@@ -99,8 +97,8 @@ export default function App() {
     window.addEventListener('keydown', tecla, true)
     return () => window.removeEventListener('keydown', tecla, true)
   }, [])
-  // as skills abrem na mesa de Ideias, na aba Skills (leitura e edição)
-  const abrirSkill = (nome: string | null) => { setAbrir((a) => ({ raiz: 'skills', nome, n: (a?.n ?? 0) + 1 })); setPagina('Ideias') }
+  // as skills abrem no modal de nota (leitura e edição); "Todas as skills" abre a busca
+  const abrirSkill = (nome: string) => abrirModal({ raiz: 'skills', nome })
 
   return (
     <div className={`app ${leque ? 'com-leque' : ''}`}>
@@ -125,15 +123,16 @@ export default function App() {
       <main ref={corpo} className={`corpo ${chat ? '' : 'sem-chat'}`}
         style={chat && chatW ? { gridTemplateColumns: `minmax(0, 1fr) ${chatW}px` } : undefined}>
         <section className="pagina">
-          {pagina === 'Canvas' ? <Canvas onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
-            : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => setModal({ raiz, nome })} />
+          {pagina === 'Canvas' ? <Canvas mostrar={mostrar} onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
+            : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => abrirModal({ raiz, nome })} />
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} foco={foco} onConversar={setFoco} ir={irSinal} />
-            : pagina === 'Ideias' ? <Ideias abrir={abrir} busca={busca} onTrecho={mandarTrecho} versao={versao} />
             : pagina === 'Agendamento' ? <Calendario />
             : <EmBreve pagina={pagina} />}
-          {modal && <ModalNota alvo={modal} onFechar={() => setModal(null)} onTrecho={mandarTrecho} onPedido={mandarPedido}
-        onMudou={() => setMudou((n) => n + 1)} versao={versao} />}
+          {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
+        voltar={voltar ? { rotulo: voltar.rotulo, fn: () => { setModal(null); setVoltar(null); voltar.fn() } } : undefined} onTrecho={mandarTrecho} onPedido={mandarPedido}
+        onMudou={() => setMudou((n) => n + 1)} versao={versao}
+        onMostrar={(a) => { setModal(null); setVoltar(null); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
         </section>
         <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
           alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}
@@ -142,12 +141,12 @@ export default function App() {
       </main>
 
       {paleta && <Paleta onFechar={() => setPaleta(false)}
-        onAbrir={(raiz, nome) => { setPaleta(false); if (raiz === 'skills') abrirSkill(nome); else setModal({ raiz, nome }) }}
+        onAbrir={(raiz, nome) => { setPaleta(false); setModal({ raiz, nome }) }}
         onCriar={(t) => { setPaleta(false); fetch('/api/canvas/ideia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ titulo: t }) })
           .then((r) => r.json()).then((d) => { if (d.nome) { setModal({ raiz: 'ideias', nome: d.nome }); setMudou((n) => n + 1) } }).catch(() => {}) }} />}
 
 
-      <Leque aberto={leque} skills={skills} onSkill={abrirSkill} onTodas={() => abrirSkill(null)}
+      <Leque aberto={leque} skills={skills} onSkill={abrirSkill} onTodas={() => setPaleta(true)}
         onConfig={() => setPagina('Config')} onFechar={fechar} />
       <Orbe aberto={leque} onClick={() => setLeque((v) => !v)} />
     </div>

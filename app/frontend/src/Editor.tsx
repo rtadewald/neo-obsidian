@@ -7,6 +7,7 @@ import { yamlFrontmatter } from '@codemirror/lang-yaml'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { livePreview } from './livePreview'
+import { definirExtra, type Extra } from './propriedades'
 
 /** Editor de markdown no jeito do Obsidian (modo fonte com estilo): títulos maiores, negrito e itálico
  *  visíveis, marcas de sintaxe apagadas, quebra de linha, sem numeração. */
@@ -80,9 +81,12 @@ type Props = {
   onJarvis?: (s: Selecao) => void                    // ⌘I: manda o trecho para o chat
   onMenu?: (x: number, y: number) => void            // botão direito
   viewRef?: MutableRefObject<EditorView | null>
+  extra?: Extra                                      // status e ações do app no painel de propriedades
 }
 
-export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, viewRef, chave }: Props) {
+export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, viewRef, chave, extra }: Props) {
+  const extraRef = useRef(extra)
+  extraRef.current = extra
   const caixa = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const cb = useRef({ onMudar, onSalvar, onLink, onJarvis, onMenu })
@@ -117,6 +121,19 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, vie
     return () => { v.destroy(); view.current = null; if (viewRef) viewRef.current = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave])
+
+  // painel de propriedades: os callbacks leem sempre a versão atual (o widget pode ficar com a antiga)
+  const assinatura = JSON.stringify([extra?.status?.valor, extra?.status?.opcoes, !!extra?.onData, !!extra?.onPublicado])
+  useEffect(() => {
+    const v = view.current, e = extraRef.current
+    if (!v) return
+    const fixo: Extra = {
+      status: e?.status && { valor: e.status.valor, opcoes: e.status.opcoes, mudar: (s) => extraRef.current?.status?.mudar(s) },
+      onData: e?.onData && ((d) => extraRef.current?.onData?.(d)),
+      onPublicado: e?.onPublicado && ((b) => extraRef.current?.onPublicado?.(b)),
+    }
+    v.dispatch({ effects: definirExtra.of(fixo) })
+  }, [assinatura, chave])
 
   useEffect(() => {  // texto trocado por fora (recarregar depois de conflito)
     const v = view.current

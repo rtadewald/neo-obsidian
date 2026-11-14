@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Markdown } from './Markdown'
-import type { Trecho } from './Ideias'
+import type { Trecho } from './notas'
 import { api, conversar, type Msg, type Sinal } from './api'
 import { Fonte, Icone } from './Icone'
 

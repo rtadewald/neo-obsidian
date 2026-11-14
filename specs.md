@@ -25,7 +25,7 @@
 >   um seletor de temas depois.
 > - **Wireframes (Q23):** não há mais rodada de wireframe; as telas são construídas direto no design system.
 > - **Stack (Q24):** FastAPI + `claude-agent-sdk` (Python), SQLite, coletores em Python, front React + Vite com SSE.
-> - **Código (Q25):** `20-jarvisOS/app/`, com `git init`; protótipos e design systems fora do git.
+> - **Código (Q25):** `20-neo-obsidian/app/`, com `git init`; protótipos e design systems fora do git.
 > - **Em aberto:** frequência da coleta do X (recomendação: 2x por dia + botão "Atualizar"); plano do Metricool (Q32);
 >   se o Claude in Chrome funciona em sessões do SDK e em execução agendada (em verificação).
 
@@ -160,7 +160,7 @@ não o custo por token.
   thumbnails grandes, números legíveis). É um painel de trabalho, não um HUD de filme.
 - Depois disso, a exploração foi para o **glass**: 31 design systems gerados no Neo Stitch
   (`21-neo-stitch/projects/jarvis-conteudo/ds/`, filtro **Design Systems** no canvas; cópia antiga em
-  `20-jarvisOS/design-systems/`). O que for escolhido vira a base do front.
+  `20-neo-obsidian/design-systems/`). O que for escolhido vira a base do front.
 - **Escala:** dashboard normal em 1536 px — corpo de 13 a 14,5 px, título de painel de 17 a 20 px, botões de 30 a 38 px
   de altura (tabela completa nas skills `img2html` e `video2html`, seção Scale).
 - Formato: desktop 16:9, tela cheia. Conteúdo em PT-BR.
@@ -169,7 +169,7 @@ não o custo por token.
 
 | O quê | Onde | Situação |
 |---|---|---|
-| Wireframes | `20-jarvisOS/wireframes/` (`.wf` e PNGs; aprovado: `v2/01a-painel-navbar-topo`) | Só o painel foi revisto; mesa, skills, calendário e config estão na v1 do wireframe, ainda com a barra lateral. |
+| Wireframes | `20-neo-obsidian/wireframes/` (`.wf` e PNGs; aprovado: `v2/01a-painel-navbar-topo`) | Só o painel foi revisto; mesa, skills, calendário e config estão na v1 do wireframe, ainda com a barra lateral. |
 | Brief do front | `21-neo-stitch/projects/jarvis-conteudo/brief.md` | Telas e visual, sem backend. |
 | Design systems | `21-neo-stitch/projects/jarvis-conteudo/ds/` | 31 catálogos (Overview e Components), reescalados em 09/nov. |
 | Editor de skills e grafo de notas | `21-neo-stitch/projects/jarvisos/impl/JAR-243/v1.2/` | Protótipo; as skills ficam em `localStorage`, sem gravar no disco. |
@@ -204,4 +204,4 @@ não o custo por token.
 4. **Stack do front e do backend:** framework do front, linguagem do backend (Python ou TypeScript para o SDK), banco do
    app (sinais e ideias salvas), agendador do radar.
 5. **Wireframes das telas restantes** (mesa, skills, calendário, config) no layout navbar + 70/30.
-6. **Onde o app mora:** este repositório (`20-jarvisOS`) ou uma pasta nova.
+6. **Onde o app mora:** este repositório (`20-neo-obsidian`) ou uma pasta nova.
