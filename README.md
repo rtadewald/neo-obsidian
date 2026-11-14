@@ -48,9 +48,10 @@ O Neo-Obsidian não substitui o vault: **ele lê e escreve os mesmos arquivos `.
 
 ## Recursos
 
-- **Canvas de ideias** (React Flow): cards de ideia, de produção e de grupo, ligações entre eles e **caixas** coloridas para juntar ideias por tema. A caixa se arrasta inteira e redimensiona pelos cantos, e dá para arquivar.
-- **O que já saiu, some.** Uma produção publicada é arquivada por padrão, a menos que esteja dentro de uma caixa ativa. O canvas fica só com o que está vivo.
-- **Pastas flutuantes** (Em edição, Agendado, Publicado, Caixas) abrem uma **tabela** com estatísticas, filtros por formato, ano e caixa, barras por mês e ordenação. Clique numa linha para abrir a copy, e o "voltar" retorna à tabela.
+- **Canvas por tema** (React Flow): cada nota vive num canvas (Skills, Hacks e Dicas…, pela propriedade `grupo`), com cards de ideia, de produção e de VSL e ligações entre eles. Nota sem canvas fica no 📥 Inbox.
+- **Produtos** (FIA, FID, Dados, PICO) são as tags da nota: dentro do canvas viram filtro e uma bolinha colorida no card.
+- **O que já saiu, some do Inbox.** Uma produção publicada sem canvas vai para a pasta Publicado; num canvas temático ela fica.
+- **Pastas** (Em edição, Agendado, Publicado) abrem uma **tabela** com estatísticas, filtros por formato, ano e canvas, barras por mês e ordenação. Clique numa linha para abrir a copy, e o "voltar" retorna à tabela.
 - **Modal de nota estilo Notion:** uma aba por versão da mesma ideia, **+ Saída** para criar o próximo formato, renomear no título, "Mostrar no canvas", lixeira com confirmação (`⌘⌫`).
 - **Editor como o do Obsidian** (CodeMirror 6, live preview): títulos, negrito, callouts, tarefas e `[[wikilinks]]` formatados, com as marcas aparecendo só na linha do cursor. Salva sozinho e avisa se o arquivo mudou no Obsidian em vez de sobrescrever.
 - **Propriedades editáveis no card:** o frontmatter vira uma tabela como a do Obsidian. Tags em chips, datas com calendário, `publicado` em caixinha, + Adicionar propriedade. Cada mudança reescreve só a linha daquela chave.
@@ -97,7 +98,7 @@ O app espera a estrutura de pastas do vault em `1 Copies/` (`0 Ideias`, `1 Prior
 | `⌘S` | Salvar agora (ele já salva sozinho depois de 1 s) |
 | `⌘⌫` | Mandar a nota aberta para a lixeira (com confirmação) |
 | `⌘` + clique | Abrir um `[[link]]` |
-| botão direito no canvas | Nova ideia, colar como ideia, nova caixa |
+| botão direito no canvas | Nova ideia, colar como ideia, nova copy; num card: Mover para › e Produto › |
 | `F` · `←` `→` · `R` | No radar: modo foco, anterior/próximo, embaralhar |
 
 ## Estrutura
@@ -107,7 +108,7 @@ app/
   neo-obsidian.sh       o comando: sobe API + front, para e abre
   backend/src/jarvis/   FastAPI (uv run jarvis, porta 8740)
     main.py             as rotas
-    canvas.py           ideias, produções, caixas e posições do canvas
+    canvas.py           ideias, produções, canvas, produtos e posições
     notas.py            ler, salvar, mover, renomear e mandar para a lixeira (com os links)
     agente.py           o chat: uma sessão do Claude Code dentro do vault
     construtor.py       modo construtor, com ponto de restauração por pedido

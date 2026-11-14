@@ -3,7 +3,7 @@ import { Calendario } from './Calendario'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { Canvas, type Passo } from './Canvas'
 import { Canvases, preCarregarCanvases } from './Canvases'
-import { cabecalhoCanvas, listarCanvases, onde, usarCanvas } from './canvasApi'
+import { INBOX, cabecalhoCanvas, listarCanvases, onde, usarCanvas } from './canvasApi'
 import { ModalNota } from './ModalNota'
 import type { Alvo, Voltar } from './canvasApi'
 import { Chat } from './Chat'
@@ -27,13 +27,13 @@ const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
 
 export default function App() {
   // canvas isolados: null = página de controle (lista dos canvas); clicar em NEO-OBSIDIAN volta para ela
-  const [canvasSlug, setCanvasSlug] = useState<string | null>(() => { try { return localStorage.getItem('canvas-atual') || 'fia' } catch { return 'geral' } })
+  const [canvasSlug, setCanvasSlug] = useState<string | null>(() => { try { return localStorage.getItem('canvas-atual') || INBOX } catch { return INBOX } })
   useEffect(() => { try { if (canvasSlug) localStorage.setItem('canvas-atual', canvasSlug) } catch { /* sem storage */ } }, [canvasSlug])
   if (canvasSlug) usarCanvas(canvasSlug)   // antes de qualquer chamada do canvas nesta renderização
   useEffect(() => { preCarregarCanvases() }, [canvasSlug])
-  // o canvas guardado pode ter saído da lista (o Geral ficou oculto): abre o primeiro que existe
+  // o canvas guardado pode ter saído da lista (apagado ou renomeado): volta para o Inbox
   useEffect(() => {
-    listarCanvases().then((l) => { if (canvasSlug && l.length && !l.some((c) => c.slug === canvasSlug)) setCanvasSlug(l[0].slug) }).catch(() => {})
+    listarCanvases().then((l) => { if (canvasSlug && l.length && !l.some((c) => c.slug === canvasSlug)) setCanvasSlug(INBOX) }).catch(() => {})
   }, [canvasSlug])
   const [pagina, setPagina] = useState<string>(() => { try { const p = localStorage.getItem('pagina'); return p && (NAV as readonly string[]).includes(p) ? p : 'Canvas' } catch { return 'Canvas' } })
   onde.pagina = pagina   // o chat manda isso ao Jarvis (ver canvasApi.onde)
@@ -152,7 +152,7 @@ export default function App() {
           {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
         voltar={voltar ? { rotulo: voltar.rotulo, fn: () => { setModal(null); setVoltar(null); voltar.fn() } } : undefined} onTrecho={mandarTrecho} onPedido={mandarPedido}
         onMudou={() => setMudou((n) => n + 1)} versao={versao}
-        onMostrar={(a) => { setModal(null); setVoltar(null); setCanvasSlug((c) => c ?? 'geral'); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
+        onMostrar={(a) => { setModal(null); setVoltar(null); setCanvasSlug((c) => c ?? INBOX); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
         </section>
         <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
           alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}

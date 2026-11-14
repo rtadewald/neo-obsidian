@@ -20,9 +20,10 @@ app = FastAPI(title="Neo-Obsidian")
 
 @app.middleware("http")
 async def canvas_da_requisicao(request, call_next):
-    """O app diz em qual canvas está (cabeçalho X-Canvas): layout, filtro por tag e tag das notas novas seguem ele."""
-    slug = request.headers.get("x-canvas") or "geral"
-    marca = canvas._atual.set(slug if any(c["slug"] == slug for c in canvas.lista_canvases()) else "geral")
+    """O app diz em qual canvas está (cabeçalho X-Canvas): o layout e o `grupo:` das notas novas seguem ele.
+    `todos` é o canvas interno com todas as notas (as pastas globais); o que não existir vira o Inbox."""
+    slug = request.headers.get("x-canvas") or "inbox"
+    marca = canvas._atual.set(slug if slug == "todos" or any(c["slug"] == slug for c in canvas.lista_canvases()) else "inbox")
     try:
         return await call_next(request)
     finally:
@@ -116,7 +117,7 @@ class Mensagem(BaseModel):
     texto: str
     sinal: int | None = None
     modo: str = "vault"   # vault | app (modo construtor: o agente mexe no código do próprio app)
-    onde: str = ""        # onde o Rodrigo está no app (tela, canvas, caixa, nota aberta): vai para o contexto do agente
+    onde: str = ""        # onde o Rodrigo está no app (tela, canvas, filtros, nota aberta): vai para o contexto do agente
 
 
 @app.post("/api/chat")
@@ -310,20 +311,32 @@ class Pos(BaseModel):
 
 @app.get("/api/canvases")
 def canvases():
-    """Os canvas, com quantos cards de cada tipo cada um tem (para a página de controle)."""
+    """Os canvas, com quantos cards de cada tipo (e de cada produto) cada um tem: página inicial e seletor."""
     return canvas.resumos()
+
+
+@app.get("/api/produtos")
+def produtos():
+    return canvas.lista_produtos()
 
 
 class NovoCanvas(BaseModel):
     slug: str | None = None
     nome: str | None = None
     icone: str | None = None
-    tags: list[str] | None = None
+    cor: str | None = None
 
 
 @app.post("/api/canvases")
 def canvases_salvar(corpo: NovoCanvas):
+    """Sem slug cria; com slug edita (renomear troca o `grupo:` das notas do canvas)."""
     return _erros(lambda: canvas.salvar_canvas(corpo.model_dump()))
+
+
+@app.delete("/api/canvases/{slug}")
+def canvases_apagar(slug: str):
+    """As notas do canvas voltam para o Inbox (perdem o `grupo:`)."""
+    return {"notas": _erros(lambda: canvas.apagar_canvas(slug))}
 
 
 @app.get("/api/canvas")
@@ -358,45 +371,14 @@ def canvas_x(url: str):
     return canvas.video_x(url) or {}
 
 
-class Caixa(BaseModel):
-    id: str | None = None
-    nome: str | None = None
-    cor: str | None = None
-    x: float | None = None
-    y: float | None = None
-    w: float | None = None
-    h: float | None = None
-    arquivada: bool | None = None
+class MoverCanvas(BaseModel):
+    notas: list[str]             # nomes das notas (uma por card basta: a ideia e as copies dela vão junto)
+    canvas: str | None = None    # nome do canvas; vazio ou "Inbox" tira o grupo
 
 
-@app.post("/api/canvas/caixa")
-def canvas_caixa(corpo: Caixa):
-    return _erros(lambda: canvas.salvar_caixa(corpo.model_dump()))
-
-
-@app.delete("/api/canvas/caixa/{id_}")
-def canvas_apagar_caixa(id_: str):
-    return {"soltas": _erros(lambda: canvas.apagar_caixa(id_))}
-
-
-class GrupoNotas(BaseModel):
-    notas: list[dict]
-    grupo: str | None = None
-
-
-@app.post("/api/canvas/grupo")
-def canvas_grupo(corpo: GrupoNotas):
-    return {"mudou": _erros(lambda: canvas.definir_grupo(corpo.notas, corpo.grupo))}
-
-
-class MoverCaixa(BaseModel):
-    notas: list[str]           # nomes das notas (uma basta para um card de produção: as saídas vão junto)
-    caixa: str | None = None   # None tira da caixa
-
-
-@app.post("/api/canvas/mover-caixa")
-def canvas_mover_caixa(corpo: MoverCaixa):
-    return _erros(lambda: canvas.colocar_na_caixa(corpo.notas, corpo.caixa))
+@app.post("/api/canvas/mover")
+def canvas_mover(corpo: MoverCanvas):
+    return _erros(lambda: canvas.mover_para_canvas(corpo.notas, corpo.canvas))
 
 
 class StatusNotas(BaseModel):
@@ -419,15 +401,15 @@ def canvas_importar(corpo: Importar):
     return _erros(lambda: canvas.importar(corpo.nome))
 
 
-class NoCanvas(BaseModel):
+class NoProduto(BaseModel):
     notas: list[str]
-    canvas: str
+    produto: str   # slug do produto (fia, fid…)
     sim: bool = True
 
 
-@app.post("/api/canvas/no-canvas")
-def canvas_no_canvas(corpo: NoCanvas):
-    return {"mudou": _erros(lambda: canvas.no_canvas(corpo.notas, corpo.canvas, corpo.sim))}
+@app.post("/api/canvas/produto")
+def canvas_produto(corpo: NoProduto):
+    return {"mudou": _erros(lambda: canvas.no_produto(corpo.notas, corpo.produto, corpo.sim))}
 
 
 class Winner(BaseModel):
@@ -438,15 +420,6 @@ class Winner(BaseModel):
 @app.post("/api/canvas/winner")
 def canvas_winner(corpo: Winner):
     return {"mudou": _erros(lambda: canvas.marcar_winner(corpo.notas, corpo.sim))}
-
-
-class VariosGrupos(BaseModel):
-    itens: list[GrupoNotas]
-
-
-@app.post("/api/canvas/grupos")
-def canvas_grupos(corpo: VariosGrupos):
-    return {"mudou": _erros(lambda: canvas.definir_grupos([i.model_dump() for i in corpo.itens]))}
 
 
 @app.put("/api/canvas/posicoes")

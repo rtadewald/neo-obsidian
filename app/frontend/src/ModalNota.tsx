@@ -156,7 +156,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
           {onMostrar && est && (() => {
             const card = cardNoCanvas(est, ativa)
             return <button className="modal-mostrar" disabled={!card} onClick={() => onMostrar(ativa)}
-              title={card ? 'Fechar e apontar o card no canvas' : 'Oculta no canvas: arquivada, ou publicada fora de uma caixa ativa'}>
+              title={card ? 'Fechar e apontar o card no canvas' : 'Oculta neste canvas: arquivada, de outro canvas ou publicada no Inbox'}>
               <Icone n="grafo" t={13} /> {card ? 'Mostrar no canvas' : 'Oculta no canvas'}
             </button>
           })()}

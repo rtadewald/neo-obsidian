@@ -796,7 +796,6 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .pasta-frente em { font-style: normal; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, .55); }
 .pasta.is-edicao { --pasta-fundo: #d9a92c; --pasta-frente: linear-gradient(180deg, #f1cc62, #e6b740); }
 .pasta.is-agendado { --pasta-fundo: #3f7fd1; --pasta-frente: linear-gradient(180deg, #8bb7f0, #6a9fe6); }
-.pasta.is-caixas { --pasta-fundo: #8a6fc9; --pasta-frente: linear-gradient(180deg, #d6c8f2, #bba6e8); }
 .pasta.is-publicado { --pasta-fundo: #4a9c31; --pasta-frente: linear-gradient(180deg, #a6dc79, #86cb57); }
 .pasta.is-ativa .pasta-frente { box-shadow: 0 0 0 2.5px #1d1d1f, 0 10px 22px -12px rgba(40, 34, 32, .55); }
 .pasta-anos { position: absolute; left: 50%; bottom: calc(100% + 10px); translate: -50% 0; display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 14px; background: rgba(250, 249, 247, .94); box-shadow: 0 18px 40px -16px rgba(40, 34, 32, .45); animation: menu-in .12s ease-out; }
@@ -902,56 +901,9 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .cartao-links a { font-size: 12px; color: #4b6ec2; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cartao-links a:hover { text-decoration: underline; }
 
-/* caixas: demarcações pastel atrás dos cards. Arrastar pelo miolo ou pela etiqueta leva a caixa (e os cards de dentro) */
-.react-flow__node-caixa { cursor: grab; }
-.react-flow__node-caixa.dragging { cursor: grabbing; }
-.caixa { width: 100%; height: 100%; border-radius: 26px; background: color-mix(in srgb, var(--cor) 42%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cor) 92%, #1d1d1f 4%); transition: box-shadow .15s; }
-.caixa.is-sel { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cor) 70%, #1d1d1f 18%); }
-.caixa-titulo { position: absolute; left: 12px; bottom: calc(100% + 10px); max-width: calc(100% - 24px); padding: 10px 20px 10px 14px; border-radius: 999px;
-  display: flex; align-items: center; gap: 10px; user-select: none;
-  background: color-mix(in srgb, var(--cor) 85%, #fff); font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: #1d1d1f; cursor: grab;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 1px 2px rgba(23, 24, 27, .08); }
-.caixa-titulo:active { cursor: grabbing; }
-.caixa-titulo:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--cor) 60%, #1d1d1f 40%), 0 2px 6px rgba(23, 24, 27, .12); }
-.caixa-titulo span { overflow: hidden; text-overflow: ellipsis; }
-.caixa-pega { flex: none; display: grid; grid-template-columns: repeat(2, 4px); gap: 3px; opacity: .45; }
-.caixa-pega i { width: 4px; height: 4px; border-radius: 50%; background: #1d1d1f; }
 /* área de pegar bem maior que o desenho: o canto pega a 16px da bolinha e a borda inteira redimensiona numa faixa de 16px.
-   Os cantos o React Flow já compensa o zoom sozinho; as bordas usam --z (zoom do canvas) */
-.react-flow .react-flow__resize-control.handle.caixa-canto { width: 32px; height: 32px; border-radius: 50%; background: transparent; border: 0; z-index: 2; }
-.react-flow .react-flow__resize-control.handle.caixa-canto::before { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%);
-  background: #fff; border: 1px solid color-mix(in srgb, var(--cor) 55%, #1d1d1f 25%); box-shadow: 0 1px 2px rgba(23, 24, 27, .1); transition: transform .12s; }
-.react-flow .react-flow__resize-control.line.caixa-borda { border-color: transparent; z-index: 1; }
-.react-flow .react-flow__resize-control.line.caixa-borda.left, .react-flow .react-flow__resize-control.line.caixa-borda.right { width: calc(16px / var(--z, 1)); }
-.react-flow .react-flow__resize-control.line.caixa-borda.top, .react-flow .react-flow__resize-control.line.caixa-borda.bottom { height: calc(16px / var(--z, 1)); }
-/* hover na caixa: borda realçada, cantos de redimensionar, botões ao lado da etiqueta e a dica embaixo */
-.caixa.is-sobre:not(.is-sel) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cor) 75%, #1d1d1f 12%); }
-.caixa-acoes { position: absolute; right: 12px; bottom: calc(100% + 18px); display: flex; gap: 8px; opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; pointer-events: none; }
-.caixa.is-sobre .caixa-acoes, .caixa.is-sel .caixa-acoes { opacity: 1; transform: none; pointer-events: all; }
-.caixa-acao { display: flex; align-items: center; gap: 7px; padding: 9px 15px; border: 0; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 550; color: #1d1d1f; cursor: pointer;
-  background: rgba(255, 255, 255, .9); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cor) 70%, #1d1d1f 15%), 0 2px 6px rgba(23, 24, 27, .08); }
-.caixa-acao:hover { background: #fff; box-shadow: 0 0 0 1.5px #1d1d1f, 0 3px 10px rgba(23, 24, 27, .12); }
-.caixa-bolinha { width: 14px; height: 14px; border-radius: 50%; background: var(--cor); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .25); }
-.caixa-dica { position: absolute; left: 50%; top: calc(100% + 10px); transform: translateX(-50%); white-space: nowrap; font-size: 13px; color: #6b6b70; opacity: 0; transition: opacity .15s; pointer-events: none; }
-.caixa.is-sobre .caixa-dica { opacity: 1; }
-.react-flow .react-flow__resize-control.handle.caixa-canto:hover::before { transform: translate(-50%, -50%) scale(1.4); }
 
-.menu-cores { display: grid; grid-template-columns: repeat(8, 20px); gap: 6px; padding: 6px 10px 4px; }
-.menu-cores button { width: 20px; height: 20px; border-radius: 50%; border: 0; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .15); }
-.menu-cores button.is-on { box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .15), 0 0 0 2px #fff, 0 0 0 3.5px #1d1d1f; }
 
-.canvas-caixas { position: relative; }
-.canvas-caixas .pilula em { margin-left: 6px; font-style: normal; opacity: .55; font-size: 11.5px; }
-.caixas-lista { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 260px; max-height: 360px; overflow-y: auto; padding: 6px; border-radius: 16px; display: flex; flex-direction: column; gap: 2px; }
-.caixas-item { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
-.caixas-item:hover { background: rgba(23, 24, 27, .05); }
-.caixas-item.is-arquivada .caixas-abrir { opacity: .55; }
-.caixas-abrir { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; background: none; font: inherit; font-size: 13px; color: inherit; text-align: left; cursor: pointer; }
-.caixas-abrir i { width: 12px; height: 12px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .15); }
-.caixas-abrir em { margin-left: auto; font-style: normal; font-size: 11.5px; opacity: .5; }
-.caixas-acao { border: 0; background: none; font: inherit; font-size: 11.5px; color: #6b6b70; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
-.caixas-acao:hover { background: rgba(23, 24, 27, .07); color: #1d1d1f; }
 
 /* modal de tabela das pastas: números no topo, filtros, tabela rolando */
 .modal-tabela { width: min(1480px, calc(100% - 32px)); height: 90vh; max-height: calc(100% - 24px); align-self: center; }
@@ -999,7 +951,7 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .tabela .col-ideia { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tabela .col-palavras { text-align: right; font-variant-numeric: tabular-nums; width: 80px; }
 .tabela th.col-palavras { text-align: right; }
-.tabela-caixa { display: inline-block; max-width: 150px; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--cor) 70%, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.tabela-caixa { display: inline-block; max-width: 150px; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: rgba(23, 24, 27, .06); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .tabela-vazia { padding: 40px; text-align: center; color: var(--ink-2); }
 .modal-volta--tabela { background: rgba(23, 24, 27, .06); }
 .modal-volta--tabela:hover { background: rgba(23, 24, 27, .1); }
@@ -1045,7 +997,6 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .canvas-zoom .is-desligado { opacity: .4; }
 /* barra do canvas no rodapé, na fileira das pastas: perde a posição absoluta e alinha com a base das pastas */
 .canvas-pastas .canvas-barra { position: static; align-self: center; margin-left: 6px; }
-.canvas-pastas .caixas-lista { top: auto; bottom: calc(100% + 6px); }
 /* se não couber numa linha (chat aberto), a barra sobe para uma linha própria acima das pastas, centralizada */
 .canvas-pastas { flex-wrap: wrap-reverse; align-content: center; row-gap: 12px; }
 .canvas-pastas .canvas-barra { flex-shrink: 0; white-space: nowrap; }
@@ -1069,7 +1020,7 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .campo-imagem.is-subindo { animation: acoes-x-pulsa 1s ease-in-out infinite; }
 .msg-imagens { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .msg-imagens img { max-width: 180px; max-height: 160px; border-radius: 10px; display: block; box-shadow: 0 0 0 1px rgba(23, 24, 27, .08); }
-/* "Mover para ›" do botão direito: abre a lista das caixas ali dentro */
+/* "Mover para ›" do botão direito: a lista dos canvas, ao lado */
 .menu-sub .menu-seta { margin-left: auto; color: var(--mute); transition: transform .15s; }
 .menu-sub.is-aberto .menu-seta { transform: rotate(90deg); }
 .menu-caixas { display: flex; flex-direction: column; margin: 0 0 4px 18px; padding-left: 8px; border-left: 1px solid rgba(23, 24, 27, .1); max-height: 260px; overflow-y: auto; }
@@ -1132,7 +1083,7 @@ button.neo-marca:hover { opacity: .7; }
 .canvas-trocar-lista button.is-on em { color: rgba(244, 242, 239, .6); }
 .canvas-trocar-icone { width: 20px; text-align: center; }
 .canvas-trocar-lista hr { border: 0; height: 1px; margin: 4px 6px; background: rgba(23, 24, 27, .08); }
-/* "Canvas ›": caixas de marcar dos canvas em que o card está */
+/* "Produto ›": caixas de marcar dos produtos do card */
 .menu-check { display: flex; align-items: center; gap: 8px; }
 .menu-caixinha { width: 16px; height: 16px; flex: none; border-radius: 5px; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; color: #fff; box-shadow: inset 0 0 0 1.5px rgba(23, 24, 27, .25); }
 .menu-caixinha.is-on { background: #1d1d1f; box-shadow: none; }
@@ -1210,3 +1161,18 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 .migalhas { overflow: hidden; padding-right: 12px; }
 .migalhas .neo-marca { flex: none; }
 .migalhas-item { flex: 0 1 auto; min-width: 0; }
+
+/* produto (FIA, FID…): bolinha da cor dele no canto do card e nos chips do filtro */
+.cartao-produtos { margin-left: auto; flex: none; display: inline-flex; gap: 3px; padding-top: 6px; }
+.cartao-produtos i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
+.canvas-produto-cor { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.canvas-tipo:not(.is-on) .canvas-produto-cor { opacity: .35; }
+/* página inicial: a cor do canvas numa faixa fina no topo do card, contagem por produto, ações embaixo */
+.canvases-item { display: flex; flex-direction: column; gap: 6px; }
+.canvases-item .canvases-card { box-shadow: inset 0 3px 0 var(--cor, transparent), 0 10px 26px -18px rgba(40, 34, 32, .4); }
+.canvases-tags i { display: inline-flex; align-items: center; gap: 5px; }
+.canvases-tags i b { width: 7px; height: 7px; border-radius: 50%; }
+.canvases-acoes { display: flex; gap: 6px; justify-content: flex-end; align-items: center; opacity: 0; transition: opacity .15s; font-size: 12px; color: var(--mute); }
+.canvases-acoes .pilula { height: 26px; padding: 0 10px; font-size: 11.5px; }
+.canvases-item:hover .canvases-acoes, .canvases-acoes.is-confirmar { opacity: 1; }
+.canvases-acoes span { margin-right: auto; }

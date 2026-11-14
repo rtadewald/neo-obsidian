@@ -111,22 +111,35 @@ async def _agendar(args: dict) -> dict:
         return _falha(e)
 
 
-@tool("colocar_na_caixa", "Põe notas numa caixa do canvas (grava `grupo:` nelas e põe o card dentro da caixa). `notas`: nomes "
-      "separados por | . `caixa`: nome exato de uma caixa existente (use listar_caixas); vazio tira da caixa.",
-      {"notas": str, "caixa": str})
-async def _colocar_na_caixa(args: dict) -> dict:
+@tool("mover_para_canvas", "Leva notas para outro canvas (grava `grupo:` nelas, com a 💡 ideia e as copies delas juntas, "
+      "e dá lugar aos cards lá). `notas`: nomes separados por | . `canvas`: nome de um canvas (use listar_canvas); "
+      "vazio ou 'Inbox' tira o grupo (a nota volta para o Inbox).",
+      {"notas": str, "canvas": str})
+async def _mover_para_canvas(args: dict) -> dict:
     try:
         nomes = [n.strip() for n in args["notas"].split("|") if n.strip()]
-        d = canvas.colocar_na_caixa(nomes, args.get("caixa") or None)
-        return _ok(f"{len(d['cards'])} card(s) {'na caixa ' + d['caixa'] if d['caixa'] else 'fora das caixas'}.")
+        d = canvas.mover_para_canvas(nomes, args.get("canvas") or None)
+        return _ok(f"{len(d['cards'])} card(s) em {d['canvas']}.")
     except Exception as e:
         return _falha(e)
 
 
-@tool("listar_caixas", "Lista as caixas do canvas (nome, se está arquivada e quantas notas têm o grupo dela).", {})
-async def _listar_caixas(args: dict) -> dict:
+@tool("listar_canvas", "Lista os canvas (onde as notas vivem; cada um é um valor de `grupo:`) com quantas notas cada um tem.", {})
+async def _listar_canvas(args: dict) -> dict:
     try:
-        return _ok(json.dumps(canvas.listar_caixas(), ensure_ascii=False))
+        return _ok(json.dumps(canvas.listar_canvas(), ensure_ascii=False))
+    except Exception as e:
+        return _falha(e)
+
+
+@tool("marcar_produto", "Põe (sim=true) ou tira (sim=false) notas de um produto: a tag dele nas tags da nota. "
+      "`notas`: nomes separados por | . `produto`: fia, fid, dados ou pico (ou outro de app/dados/produtos.json).",
+      {"notas": str, "produto": str, "sim": bool})
+async def _marcar_produto(args: dict) -> dict:
+    try:
+        nomes = [n.strip() for n in args["notas"].split("|") if n.strip()]
+        n = canvas.no_produto(nomes, args["produto"].strip().lower(), args.get("sim", True) is not False)
+        return _ok(f"{n} nota(s) mudaram.")
     except Exception as e:
         return _falha(e)
 
@@ -143,11 +156,11 @@ async def _marcar_winner(args: dict) -> dict:
 
 
 FERRAMENTAS_CANVAS = [_transcrever_youtube, _criar_ideia, _criar_saida, _ligar, _criar_entrada, _posicionar,
-                      _mudar_status, _agendar, _colocar_na_caixa, _listar_caixas, _marcar_winner]
+                      _mudar_status, _agendar, _mover_para_canvas, _listar_canvas, _marcar_produto, _marcar_winner]
 SERVIDOR_MCP = create_sdk_mcp_server("jarvis", tools=FERRAMENTAS_CANVAS)
 NOMES_MCP = [f"mcp__jarvis__{n}" for n in ("transcrever_youtube", "criar_ideia", "criar_saida", "ligar_ao_canvas",
-                                           "criar_entrada", "posicionar", "mudar_status", "agendar", "colocar_na_caixa",
-                                           "listar_caixas", "marcar_winner")]
+                                           "criar_entrada", "posicionar", "mudar_status", "agendar", "mover_para_canvas",
+                                           "listar_canvas", "marcar_produto", "marcar_winner")]
 
 INSTRUCOES = """
 # Você é o Jarvis, no app Neo-Obsidian
@@ -165,7 +178,7 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
 - Formato pelo emoji depois da marca: 📱 Reels · 💰 Ad · 🏞️ Carrossel · 📺 VSL · 🎥 YouTube · 📝 Feed · 🎙️ Live · 🗣️ Stories.
   (De-para já aplicado: 🔥 virou tag, não formato; ✅ CTA virou 💰; 🎣 virou 📱.)
 - Frontmatter de copy (`2 Notas/Engine/templates/T-Copy.md`): `publicado`, `scheduled: "AAAA-MM-DD"`,
-  `ideia: "[[💡 Nome]]"`, `grupo` (caixa), `notion` (link do card no Notion), `tags` (lista; vazia fica `tags:`, nunca
+  `ideia: "[[💡 Nome]]"`, `grupo` (o canvas onde a nota vive), `notion` (link do card no Notion), `tags` (lista; vazia fica `tags:`, nunca
   apague a chave).
 - **Notion ↔ Obsidian**: toda copy tem (ou deve ter) o card dela na base do Notion "Edição e Publicação - 2026"
   (Marketing). Quando você criar, agendar, publicar ou achar o card de uma copy no Notion, grave o link na propriedade
@@ -180,8 +193,12 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
   carrosséis, ads… com o mesmo `ideia:`), um chip por formato; copy sem `ideia:` é uma produção de uma nota só.
   Cada VSL (📺) tem card próprio, nunca entra numa produção, ligada por uma linha à ideia quando tem `ideia:`.
 - As saídas de uma ideia têm o mesmo nome; só muda o emoji (e um sufixo como "LP" ou "VSL" se precisar).
-- Caixas: retângulos coloridos que agrupam por tema; quem está dentro tem `grupo: "<caixa>"`. Publicada fora de caixa
-  ativa some do canvas (fica nas pastas da direita: Em edição, Agendado, Publicado, Caixas, que abrem tabelas).
+- Canvas = onde a nota vive, por tema (Skills, Hacks e Dicas, Storytelling…): a propriedade `grupo: "<canvas>"`, uma
+  só por nota. Sem grupo, a nota fica no 📥 Inbox. A página inicial (clique em NEO-OBSIDIAN) lista os canvas.
+- Produto (FIA 🤖fia, FID 🖼️fid, Dados 📊dados, PICO 💰bf26) = as tags da nota. Não é lugar: dentro de um canvas é só um
+  filtro (chips na barra) e uma bolinha colorida no card. Produtos diferentes convivem no mesmo canvas.
+- Publicada fica no canvas dela; no Inbox, publicada some (fica na pasta Publicado). As pastas do rodapé (Em edição,
+  Agendado, Publicado) são globais e abrem tabelas.
 - 🔥 winner = tag `🔥` nas tags: o card ganha borda vermelha.
 - As abas X e Sites são o radar (sinais da internet); 👍 ensina o gosto dele e 💡 vira ideia no canvas.
 
@@ -189,7 +206,7 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
 - Criar ideia: `criar_ideia` (ou `criar_entrada` com um link/texto, que lê a página ou a transcrição).
 - Criar uma versão de uma ideia: `criar_saida` (já com o texto). Juntar copies que já existem numa produção:
   `ligar_ao_canvas` com tipo=producao.
-- Mudar status ou publicar: `mudar_status`. Data: `agendar`. Caixa: `listar_caixas` e `colocar_na_caixa`.
+- Mudar status ou publicar: `mudar_status`. Data: `agendar`. Canvas: `listar_canvas` e `mover_para_canvas`. Produto: `marcar_produto`.
   Winner: `marcar_winner`. Posição: `posicionar`.
 - Nunca renomeie, mova ou apague arquivos à mão para mudar status ou pasta: a ferramenta faz isso direito.
 - Você escreve sem perguntar só em `1 Copies/0 Ideias/` e `1 Copies/1 Priorizar/` (Edit/Write); fora delas, proponha e
@@ -307,7 +324,7 @@ async def conversar(conversa: str, texto: str, sinal_id: int | None = None, modo
     try:
         if modo == "app":
             construtor.ponto(texto)
-        # onde o Rodrigo está no app agora (tela, canvas, caixa, nota aberta, seleção): vai em toda mensagem
+        # onde o Rodrigo está no app agora (tela, canvas, filtros, nota aberta, seleção): vai em toda mensagem
         aqui = f"\n## Onde o Rodrigo está no app agora\n{onde.strip()}\n" if onde.strip() else ""
         opcoes = _opcoes_app(sessao, aqui) if modo == "app" else _opcoes(sessao, _contexto_sinal(sinal_id) + aqui)
         async with ClaudeSDKClient(opcoes) as cli:

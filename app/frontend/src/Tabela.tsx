@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
-import { ORDEM_FORMATO, STATUS, type Alvo, type Caixa, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
+import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 
 /** Modal de tabela das pastas (Priorizar, Em edição, Agendado, Publicado): as copies em linhas, com números,
  *  filtros e ordenação. Clicar numa linha abre a copy no modal de nota, que tem "voltar" para cá. */
 
 export type Coluna = 'formato' | 'nome' | 'data' | 'ideia' | 'grupo' | 'palavras' | 'mtime'
-export type Pasta = StatusProd | 'caixas'
+export type Pasta = StatusProd
 export type EstadoTabela = {
   pasta: Pasta; busca: string; formatos: string[]; ano: string; mes: string; grupo: string
   ordem: { col: Coluna; asc: boolean }
@@ -24,13 +24,13 @@ const relativo = (t: number) => {
   const d = Math.floor((Date.now() / 1000 - t) / 86400)
   return d < 1 ? 'hoje' : d === 1 ? 'ontem' : d < 30 ? `há ${d} dias` : d < 365 ? `há ${Math.floor(d / 30)} m` : `há ${Math.floor(d / 365)} a`
 }
+const INBOX_NOME = '📥 Inbox'
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
-const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', ideia: 'Produção', grupo: 'Caixa', palavras: 'Palavras', mtime: 'Editada' }
+const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', ideia: 'Produção', grupo: 'Canvas', palavras: 'Palavras', mtime: 'Editada' }
 
-export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCaixa, onArquivarCaixa, onApagar, onStatus, onRenomear }: {
+export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear }: {
   est: EstadoCanvas; t: EstadoTabela; onMudar: (t: EstadoTabela) => void; onFechar: () => void
   onAbrir: (a: Alvo) => void; onCanvas: (pasta: StatusProd, ano: string) => void
-  onCaixa: (id: string) => void; onArquivarCaixa: (c: Caixa) => void
   onApagar?: (alvos: Alvo[]) => Promise<void>   // seleção múltipla → lixeira do vault
   onStatus?: (alvos: Alvo[], status: StatusProd) => Promise<void>
   onRenomear?: (alvo: Alvo, novo: string) => Promise<void>
@@ -59,18 +59,18 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
 
   const daPasta = useMemo(() => est.producoes.filter((p) => p.status === t.pasta), [est, t.pasta])
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
-  const grupos = useMemo(() => [...new Set(daPasta.map((p) => p.grupo).filter(Boolean) as string[])].sort(), [daPasta])
+  const grupos = useMemo(() => [...new Set(daPasta.map((p) => p.canvas || INBOX_NOME))].sort(), [daPasta])
   // filtros que valem antes dos chips de formato e das barras de mês (para os números deles não sumirem ao clicar)
   const base = useMemo(() => {
     const q = t.busca.trim().toLowerCase()
-    return daPasta.filter((p) => (!t.ano || dia(p).startsWith(t.ano)) && (!t.grupo || p.grupo === t.grupo)
+    return daPasta.filter((p) => (!t.ano || dia(p).startsWith(t.ano)) && (!t.grupo || (p.canvas || INBOX_NOME) === t.grupo)
       && (!q || p.nome.toLowerCase().includes(q) || (p.ideia ?? '').toLowerCase().includes(q) || p.previa.toLowerCase().includes(q)))
   }, [daPasta, t.busca, t.ano, t.grupo])
   const linhas = useMemo(() => {
     const l = base.filter((p) => (!t.formatos.length || t.formatos.includes(p.formato)) && (!t.mes || dia(p).startsWith(t.mes)))
     const { col, asc } = t.ordem
     const v = (p: Producao): string | number => col === 'data' ? dia(p) : col === 'palavras' ? p.palavras ?? 0 : col === 'mtime' ? p.mtime
-      : col === 'formato' ? ORDEM_FORMATO.indexOf(p.formato) : col === 'nome' ? semEmoji(p.nome).toLowerCase() : (col === 'ideia' ? p.ideia : p.grupo)?.toLowerCase() ?? '~'
+      : col === 'formato' ? ORDEM_FORMATO.indexOf(p.formato) : col === 'nome' ? semEmoji(p.nome).toLowerCase() : (col === 'ideia' ? p.ideia : p.canvas || INBOX_NOME)?.toLowerCase() ?? '~'
     return l.sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1) })
   }, [base, t.formatos, t.mes, t.ordem])
 
@@ -112,15 +112,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
                 <i className={`ponto is-${s.k}`} /><span>{s.nome}</span><em className="tabela-n">{contagem(s.k)}</em>
               </button>
             ))}
-            <button role="tab" aria-selected={t.pasta === 'caixas'} className={`modal-tab ${t.pasta === 'caixas' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('caixas'))}>
-              <span>▢ Caixas</span><em className="tabela-n">{est.caixas.length}</em>
-            </button>
           </nav>
-          {t.pasta !== 'ideia' && t.pasta !== 'caixas' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
+          {t.pasta !== 'ideia' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
 
-        {t.pasta === 'caixas' ? <TabelaCaixas est={est} t={t} mudar={mudar} onCaixa={onCaixa} onArquivar={onArquivarCaixa} /> : <>
         <section className="tabela-numeros">
           <div className="tabela-num"><b>{linhas.length}</b><span>{filtrando ? `de ${daPasta.length} copies` : 'copies'}</span></div>
           <div className="tabela-num"><b>{destaque.n}</b><span>{destaque.r}</span></div>
@@ -149,7 +145,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
           )}
           {grupos.length > 0 && (
             <select className="tabela-select" value={t.grupo} onChange={(e) => mudar({ grupo: e.target.value })}>
-              <option value="">Todas as caixas</option>{grupos.map((g) => <option key={g} value={g}>▢ {g}</option>)}
+              <option value="">Todos os canvas</option>{grupos.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           )}
           {filtrando ? <button className="tabela-limpar" onClick={() => mudar({ busca: '', formatos: [], ano: '', mes: '', grupo: '' })}>Limpar filtros</button> : null}
@@ -178,7 +174,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
                   <td className="col-nome"><b>{semEmoji(p.nome)}</b>{p.previa && <span>{p.previa}</span>}</td>
                   <td className="col-data">{p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : <span className="mudo">{dataBr(dia(p))}</span>}</td>
                   <td className="col-ideia">{p.ideia ? semEmoji(p.ideia) : <span className="mudo">—</span>}</td>
-                  <td className="col-grupo">{p.grupo ? <span className="tabela-caixa" style={{ '--cor': est.caixas.find((c) => c.nome === p.grupo)?.cor ?? '#e6e1d8' } as React.CSSProperties}>{p.grupo}</span> : <span className="mudo">—</span>}</td>
+                  <td className="col-grupo">{p.canvas ? <span className="tabela-caixa">{p.canvas}</span> : <span className="mudo">{INBOX_NOME}</span>}</td>
                   <td className="col-palavras">{p.palavras || <span className="mudo">0</span>}</td>
                   <td className="col-mtime">{relativo(p.mtime)}</td>
                 </tr>
@@ -229,59 +225,8 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
               : <button className="pilula is-perigo" onClick={() => setConfirmar(true)}>Deletar {sel.size}</button>}
           </div>
         )}
-        </>}
       </div>
     </div>
   )
   return alvo ? createPortal(corpo, alvo) : corpo
-}
-
-/** Aba das caixas (grupos de ideias): ativas e arquivadas, com quantas notas e de que status cada uma tem. */
-function TabelaCaixas({ est, t, mudar, onCaixa, onArquivar }: {
-  est: EstadoCanvas; t: EstadoTabela; mudar: (m: Partial<EstadoTabela>) => void; onCaixa: (id: string) => void; onArquivar: (c: Caixa) => void
-}) {
-  // o filtro "ano" guarda aqui ativas/arquivadas
-  const q = t.busca.trim().toLowerCase()
-  const notas = (c: Caixa) => [...est.ideias.filter((x) => x.grupo === c.nome), ...est.producoes.filter((x) => x.grupo === c.nome)]
-  const linhas = est.caixas
-    .filter((c) => (t.ano === 'ativas' ? !c.arquivada : t.ano === 'arquivadas' ? c.arquivada : true) && (!q || c.nome.toLowerCase().includes(q)))
-    .sort((a, b) => Number(a.arquivada) - Number(b.arquivada) || a.nome.localeCompare(b.nome))
-  const ativas = est.caixas.filter((c) => !c.arquivada).length
-  return <>
-    <section className="tabela-numeros">
-      <div className="tabela-num"><b>{est.caixas.length}</b><span>caixas</span></div>
-      <div className="tabela-num"><b>{ativas}</b><span>ativas no canvas</span></div>
-      <div className="tabela-num"><b>{est.caixas.length - ativas}</b><span>arquivadas</span></div>
-    </section>
-    <section className="tabela-filtros">
-      <label className="tabela-busca"><Icone n="busca" t={13} /><input value={t.busca} onChange={(e) => mudar({ busca: e.target.value })} placeholder="Buscar caixa" autoFocus /></label>
-      <div className="tabela-chips">
-        {([['', 'Todas'], ['ativas', 'Ativas'], ['arquivadas', 'Arquivadas']] as const).map(([k, r]) => (
-          <button key={k} className={`tabela-chip ${t.ano === k ? 'is-on' : ''}`} onClick={() => mudar({ ano: k })}>{r}</button>
-        ))}
-      </div>
-    </section>
-    <div className="tabela-rolo">
-      <table className="tabela">
-        <thead><tr><th className="col-formato" /><th>Caixa</th><th>Notas</th><th>Em edição · agendado · publicado</th><th>Situação</th><th /></tr></thead>
-        <tbody>
-          {linhas.map((c) => {
-            const ns = notas(c)
-            const st = (k: StatusProd) => est.producoes.filter((x) => x.grupo === c.nome && x.status === k).length
-            return (
-              <tr key={c.id} onClick={() => onCaixa(c.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onCaixa(c.id)} className={c.arquivada ? 'is-arquivada' : ''}>
-                <td className="col-formato"><i className="tabela-cor" style={{ background: c.cor }} /></td>
-                <td className="col-nome"><b>{c.nome}</b></td>
-                <td className="col-palavras">{ns.length}</td>
-                <td className="col-data">{st('edicao')} · {st('agendado')} · {st('publicado')}</td>
-                <td className="col-data">{c.arquivada ? 'Arquivada' : 'No canvas'}</td>
-                <td className="col-acao"><button className="tabela-acao" onClick={(e) => { e.stopPropagation(); onArquivar(c) }}>{c.arquivada ? 'Desarquivar' : 'Arquivar'}</button></td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      {!linhas.length && <p className="tabela-vazia">{est.caixas.length ? 'Nenhuma caixa com esse filtro.' : 'Nenhuma caixa ainda: botão direito no canvas → Nova caixa.'}</p>}
-    </div>
-  </>
 }
