@@ -182,7 +182,6 @@ a { color: inherit; text-decoration: none; }
 
 .vazio { padding: 22px 24px; margin-bottom: 16px; color: var(--ink-2); }
 .vazio p { margin: 0 0 6px; }
-.embreve .vazio { max-width: 620px; margin-top: 18px; }
 .embreve-tag { font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
 
 /* ---------- chat ---------- */
@@ -250,71 +249,6 @@ a { color: inherit; text-decoration: none; }
   font-size: 11px; font-weight: 500; background: rgba(250, 249, 249, .82); }
 .porque--x { display: flex; gap: 7px; align-items: baseline; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
 .porque--x .ponto { transform: translateY(-1px); }
-
-/* ---------- orbe no canto inferior esquerdo ---------- */
-.orbe { position: fixed; left: 22px; bottom: 22px; width: 44px; height: 44px; z-index: 60; border-radius: 50%; display: grid; place-items: center;
-  background: radial-gradient(circle at 45% 40%, #f6fca8 0, var(--lime) 48%, #c7d83e 100%);
-  box-shadow: 0 0 0 7px rgba(226, 240, 92, .2), 0 0 0 1px rgba(255, 255, 255, .5) inset, 0 10px 22px -8px rgba(90, 100, 20, .55);
-  transition: transform .45s var(--ease), box-shadow .45s var(--ease); }
-.orbe:hover { transform: scale(1.08); }
-.orbe.is-aberto { transform: scale(1.5); box-shadow: 0 0 0 12px rgba(226, 240, 92, .22), 0 0 0 24px rgba(190, 196, 120, .1), 0 0 40px rgba(226, 240, 92, .4); }
-.pupila { width: 8px; height: 8px; border-radius: 50%; background: #1d1d1f; transition: transform .3s var(--ease); }
-.orbe.is-aberto .pupila { transform: scale(1.2); }
-
-/* ---------- o leque ---------- */
-.leque-veu { position: fixed; inset: 0; z-index: 50;
-  background: radial-gradient(circle at 0% 100%, rgba(18, 16, 14, .5), rgba(10, 9, 8, .74) 70%);
-  opacity: 0; pointer-events: none; -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0);
-  transition: opacity .35s var(--ease), backdrop-filter .35s var(--ease), -webkit-backdrop-filter .35s var(--ease); }
-.leque-veu.is-aberto { opacity: 1; pointer-events: auto; -webkit-backdrop-filter: blur(10px) saturate(.85); backdrop-filter: blur(10px) saturate(.85); }
-.leque { position: absolute; left: 0; bottom: 0; width: 0; height: 0; transform-origin: 0 100%; }
-.leque-svg { position: absolute; left: 24px; bottom: 24px; transform: scaleY(-1); overflow: visible; }
-.leque-setor { fill: rgba(78, 73, 69, .88); stroke: rgba(78, 73, 69, .88); stroke-width: 18; stroke-linejoin: round;
-  transform-origin: 0 0; transform: scale(.3); opacity: 0; transition: transform .45s var(--ease), opacity .35s var(--ease); }
-.is-aberto .leque-setor { transform: none; opacity: 1; }
-.leque-base { position: absolute; transform: translate(-50%, 50%) scale(.5); opacity: 0; width: 104px;
-  display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--on-dark); font-size: 13px; font-weight: 500; text-align: center; line-height: 1.2;
-  transition: transform .45s var(--ease), opacity .35s var(--ease), color .2s; }
-.is-aberto .leque-base { transform: translate(-50%, 50%); opacity: 1; }
-.leque-base:hover { color: var(--lime); }
-
-.peca { position: absolute; width: 112px; height: 52px; padding: 0 12px; border-radius: 16px;
-  display: flex; align-items: center; gap: 8px; text-align: left;
-  color: var(--on-dark); font-size: 12.5px; font-weight: 500; line-height: 1.2;
-  background: rgba(70, 66, 62, .86); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14), 0 10px 22px -12px rgba(0, 0, 0, .6);
-  transform: translate(calc(-50% + var(--dx)), calc(50% + var(--dy))) scale(.2); opacity: 0;
-  transition: transform .55s var(--ease), opacity .35s var(--ease), background-color .2s, box-shadow .2s; }
-.is-aberto .peca { transform: translate(-50%, 50%); opacity: 1; }
-.peca i { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 8px currentColor; }
-.peca span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.is-aberto .peca:hover, .is-aberto .peca:focus-visible { background: rgba(112, 106, 100, .92); transform: translate(-50%, 50%) scale(1.06); transition-delay: 0ms !important; }
-
-.leque-legenda { position: fixed; right: 40px; bottom: 40px; width: min(380px, 32vw); padding: 18px 20px; border-radius: var(--r);
-  background: rgba(36, 34, 32, .72); color: var(--on-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
-  opacity: 0; transform: translateY(8px); transition: opacity .25s var(--ease), transform .25s var(--ease); pointer-events: none; }
-.leque-legenda.is-on { opacity: 1; transform: none; }
-.legenda-grupo { margin: 0 0 6px; display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); }
-.leque-legenda .legenda-grupo { color: var(--on-dark-mute); }
-.legenda-grupo i { width: 8px; height: 8px; border-radius: 50%; }
-.legenda-nome { margin: 0 0 6px; font-size: 19px; font-weight: 500; }
-.legenda-desc { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--on-dark); }
-.legenda-dica { margin: 10px 0 0; font-size: 11.5px; color: var(--lime); }
-
-/* ---------- página Skills ---------- */
-.skills-corpo { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; margin-top: 16px; }
-.skills-lista { padding: 8px; display: flex; flex-direction: column; gap: 2px; align-self: start; }
-.skills-item { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; border-radius: 12px; text-align: left; font-size: 13px; font-weight: 500; }
-.skills-item small { font-size: 11px; color: var(--mute); font-weight: 400; }
-.skills-item:hover { background: rgba(255, 255, 255, .45); }
-.skills-item.is-ativa { background: #1d1d1f; color: #f4f2ef; }
-.skills-item.is-ativa small { color: rgba(244, 242, 239, .6); }
-.skills-leitor { padding: 22px 26px; min-width: 0; }
-.skills-desc { margin: 0 0 14px; font-size: 13.5px; color: var(--ink-2); }
-.skills-md { font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; }
-.skills-md p { margin: 0 0 10px; }
-.skills-md ul { margin: 0 0 10px; padding-left: 20px; }
-.skills-md .md-h { font-weight: 600; font-size: 15px; margin-top: 16px; }
-.skills-md code { font: 12px/1.4 ui-monospace, Menlo, monospace; background: rgba(23, 24, 27, .07); padding: 1px 5px; border-radius: 5px; }
 
 /* ---------- calendário ---------- */
 .cal-mes { display: flex; align-items: center; gap: 4px; height: 38px; padding: 0 4px; border-radius: 999px; font-size: 13px; font-weight: 500; }
@@ -1098,3 +1032,181 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .acoes-x.is-indo { background: #1d9bf0; animation: acoes-x-pulsa 1s ease-in-out infinite; }
 .acoes-x.is-erro { background: #d64545; }
 @keyframes acoes-x-pulsa { 50% { opacity: .25; } }
+/* 🔥 winner: nota com a tag 🔥. Borda vermelha suave e o foguinho no canto do título */
+.cartao.is-winner { box-shadow: 0 0 0 1.5px rgba(229, 72, 77, .85), 0 0 0 5px rgba(229, 72, 77, .14), 0 10px 26px -12px rgba(229, 72, 77, .45); }
+.cartao.is-winner.is-sel { box-shadow: 0 0 0 2px #e5484d, 0 0 0 6px rgba(229, 72, 77, .2), 0 10px 26px -12px rgba(229, 72, 77, .5); }
+.cartao-fogo { margin-left: auto; flex: none; font-size: 13px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(229, 72, 77, .35)); }
+/* controles de zoom dentro da barra de cima do canvas */
+.canvas-sep { width: 1px; height: 18px; margin: 0 2px; background: rgba(23, 24, 27, .12); }
+.canvas-zoom { display: flex; align-items: center; gap: 1px; }
+.canvas-zoom .btn-icone { width: 30px; height: 30px; border-radius: 999px; color: var(--ink-2); }
+.canvas-zoom .btn-icone:hover { background: rgba(23, 24, 27, .06); color: var(--ink); }
+.canvas-zoom .btn-icone .i { stroke: currentColor; fill: none; stroke-width: 1.6; }
+.canvas-zoom .is-desligado { opacity: .4; }
+/* barra do canvas no rodapé, na fileira das pastas: perde a posição absoluta e alinha com a base das pastas */
+.canvas-pastas .canvas-barra { position: static; align-self: center; margin-left: 6px; }
+.canvas-pastas .caixas-lista { top: auto; bottom: calc(100% + 6px); }
+/* se não couber numa linha (chat aberto), a barra sobe para uma linha própria acima das pastas, centralizada */
+.canvas-pastas { flex-wrap: wrap-reverse; align-content: center; row-gap: 12px; }
+.canvas-pastas .canvas-barra { flex-shrink: 0; white-space: nowrap; }
+.canvas-pastas .canvas-barra .canvas-nome { white-space: nowrap; }
+/* rodapé centralizado: pastas + barra no meio do espaço livre (até o minimapa à direita) */
+.canvas-pastas { left: 16px; right: calc(var(--livre-dir, 0px) + 236px); justify-content: center; pointer-events: none; }
+.canvas-pastas > * { pointer-events: auto; }
+/* pastas encostadas à esquerda; a barra centralizada no espaço que sobra à direita delas (ou na linha de cima) */
+.canvas-pastas { justify-content: flex-start; }
+.canvas-pastas .canvas-barra { margin-left: auto; margin-right: auto; }
+/* 📺 VSL: card à parte, azul-ardósia para se distinguir das produções curtas */
+.cartao--vsl { background: linear-gradient(180deg, rgba(226, 232, 244, .97), rgba(248, 249, 252, .95) 55%); box-shadow: 0 0 0 1px rgba(52, 78, 140, .2), 0 12px 26px -16px rgba(40, 52, 90, .5); }
+.cartao--vsl .cartao-tipo { background: #2c3e66; }
+.cartao-selo { margin-left: auto; flex: none; height: 18px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #fff; background: #2c3e66; }
+.cartao--vsl header .cartao-fogo { margin-left: 4px; }
+/* imagens coladas no chat: miniaturas antes de enviar e na conversa */
+.campo-imagens { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.campo-imagem { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: rgba(23, 24, 27, .06); box-shadow: 0 0 0 1px rgba(23, 24, 27, .08); }
+.campo-imagem img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.campo-imagem button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: rgba(23, 24, 27, .7); color: #fff; font-size: 12px; line-height: 1; }
+.campo-imagem.is-subindo { animation: acoes-x-pulsa 1s ease-in-out infinite; }
+.msg-imagens { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.msg-imagens img { max-width: 180px; max-height: 160px; border-radius: 10px; display: block; box-shadow: 0 0 0 1px rgba(23, 24, 27, .08); }
+/* "Mover para ›" do botão direito: abre a lista das caixas ali dentro */
+.menu-sub .menu-seta { margin-left: auto; color: var(--mute); transition: transform .15s; }
+.menu-sub.is-aberto .menu-seta { transform: rotate(90deg); }
+.menu-caixas { display: flex; flex-direction: column; margin: 0 0 4px 18px; padding-left: 8px; border-left: 1px solid rgba(23, 24, 27, .1); max-height: 260px; overflow-y: auto; }
+.menu-caixas button { font-size: 12.5px; }
+.menu-caixas .tabela-cor { width: 10px; height: 10px; border-radius: 3px; flex: none; background: rgba(23, 24, 27, .12); }
+/* chips de tipo no rodapé do canvas */
+.canvas-tipos { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 999px; background: rgba(23, 24, 27, .05); }
+.canvas-tipo { height: 30px; padding: 0 11px; border-radius: 999px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.canvas-tipo:hover { color: var(--ink); background: rgba(255, 255, 255, .6); }
+.canvas-tipo.is-on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(23, 24, 27, .12); }
+/* NEO-OBSIDIAN é um botão: leva para a página de controle dos canvas */
+button.neo-marca { border: 0; background: none; cursor: pointer; font: inherit; color: inherit; padding: 0; }
+button.neo-marca:hover { opacity: .7; }
+
+/* página de controle dos canvas (como a home de projetos do Neo Stitch) */
+.canvases { height: 100%; overflow-y: auto; padding: 56px 48px 48px; }
+.canvases-topo h1 { margin: 0 0 6px; font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.canvases-topo p { margin: 0 0 28px; font-size: 13.5px; }
+.canvases-erro { color: #c83232; font-size: 13px; }
+.canvases-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; max-width: 1200px; }
+.canvases-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-height: 190px; padding: 22px; border-radius: 22px; text-align: left; cursor: pointer; border: 0; transition: transform .18s, box-shadow .18s; }
+.canvases-card:hover { transform: translateY(-2px); box-shadow: 0 18px 36px -22px rgba(40, 34, 32, .55); }
+.canvases-icone { font-size: 38px; line-height: 1; }
+.canvases-nome { font-size: 19px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
+.canvases-numeros { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--mute); }
+.canvases-numeros b { color: var(--ink); font-weight: 600; }
+.canvases-tags { margin-top: auto; display: flex; flex-wrap: wrap; gap: 4px; font-size: 11.5px; }
+.canvases-tags i { font-style: normal; padding: 2px 8px; border-radius: 999px; background: rgba(23, 24, 27, .06); }
+.canvases-tags em { color: var(--mute); }
+.canvases-novo { background: rgba(255, 255, 255, .25); box-shadow: inset 0 0 0 1.5px rgba(23, 24, 27, .12); justify-content: center; align-items: center; color: var(--mute); }
+.canvases-novo .canvases-nome { color: var(--ink-2); font-size: 15px; }
+.canvases-form { cursor: default; gap: 10px; }
+.canvases-form:hover { transform: none; }
+.canvases-linha { display: flex; gap: 8px; width: 100%; }
+.canvases-campo { flex: 1; width: 100%; height: 36px; padding: 0 12px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .8); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .1); font: inherit; font-size: 13.5px; outline: none; }
+.canvases-campo:focus { box-shadow: inset 0 0 0 1.5px #1d1d1f; }
+.canvases-campo--icone { flex: 0 0 52px; text-align: center; font-size: 18px; }
+.canvases-form p { margin: 0; font-size: 12px; }
+/* "Mover para ›": seletor lateral que abre ao passar o mouse (à direita, ou à esquerda se não couber) */
+.menu-sub-caixa { position: relative; display: flex; flex-direction: column; }
+.menu-sub.is-aberto { background: #1d1d1f; color: #f4f2ef; }
+.menu-lateral { position: absolute; top: -6px; z-index: 2; min-width: 220px; margin: 0; padding: 5px; border-left: 0; border-radius: 14px; max-height: 340px; overflow-y: auto;
+  background: rgba(250, 249, 247, .96); box-shadow: 0 18px 40px -16px rgba(40, 34, 32, .45), inset 0 0 0 1px rgba(255, 255, 255, .8); animation: menu-in .1s ease-out; }
+.menu-lateral.is-dir { left: calc(100% + 2px); }
+.menu-lateral.is-esq { right: calc(100% + 2px); }
+.menu-lateral::before { content: ''; position: absolute; top: 0; bottom: 0; width: 10px; }
+.menu-lateral.is-dir::before { left: -10px; }
+.menu-lateral.is-esq::before { right: -10px; }
+/* nome do canvas na barra = seletor de canvas */
+.canvas-trocar { position: relative; display: inline-flex; }
+.canvas-nome.is-botao { border: 0; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; padding: 4px 8px; border-radius: 999px; margin: 0 2px 0 -4px; }
+.canvas-nome.is-botao:hover, .canvas-nome.is-botao.is-aberto { background: rgba(23, 24, 27, .06); }
+.canvas-trocar-seta { font-size: 10px; color: var(--mute); margin-left: -4px; }
+.canvas-trocar-lista { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30; min-width: 220px; padding: 6px; border-radius: 16px; display: flex; flex-direction: column; gap: 1px;
+  background: rgba(250, 249, 247, .97); box-shadow: 0 18px 40px -16px rgba(40, 34, 32, .45), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.canvas-trocar-lista button { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; border-radius: 10px; font-size: 13px; color: var(--ink); text-align: left; }
+.canvas-trocar-lista button:hover { background: rgba(23, 24, 27, .06); }
+.canvas-trocar-lista button.is-on { background: #1d1d1f; color: #f4f2ef; }
+.canvas-trocar-lista button em { margin-left: auto; font-style: normal; font-size: 11.5px; color: var(--mute); }
+.canvas-trocar-lista button.is-on em { color: rgba(244, 242, 239, .6); }
+.canvas-trocar-icone { width: 20px; text-align: center; }
+.canvas-trocar-lista hr { border: 0; height: 1px; margin: 4px 6px; background: rgba(23, 24, 27, .08); }
+/* "Canvas ›": caixas de marcar dos canvas em que o card está */
+.menu-check { display: flex; align-items: center; gap: 8px; }
+.menu-caixinha { width: 16px; height: 16px; flex: none; border-radius: 5px; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; color: #fff; box-shadow: inset 0 0 0 1.5px rgba(23, 24, 27, .25); }
+.menu-caixinha.is-on { background: #1d1d1f; box-shadow: none; }
+/* propriedade que é link (notion:, url:): campo editável + botão que abre */
+.editor .cm-prop-campo-link { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.editor .cm-prop-campo-link .cm-prop-campo { flex: 1; color: var(--mute); }
+.editor .cm-prop-abrir { flex: none; height: 24px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 500; color: var(--ink); background: rgba(23, 24, 27, .06); text-decoration: none; }
+.editor .cm-prop-abrir:hover { background: #1d1d1f; color: #f4f2ef; }
+/* tabela das pastas: seleção múltipla para deletar */
+.tabela .col-sel { width: 34px; padding-left: 14px !important; }
+.tabela .col-sel input { width: 15px; height: 15px; accent-color: #1d1d1f; cursor: pointer; }
+.tabela tr.is-sel td { background: rgba(226, 240, 92, .22); }
+.tabela-selecao { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-top: 1px solid rgba(23, 24, 27, .08); background: rgba(250, 249, 247, .95); font-size: 13px; }
+.tabela-selecao b { margin-right: auto; }
+.tabela-selecao .mudo { font-size: 12px; }
+.pilula.is-perigo { background: #c83232; color: #fff; }
+.pilula.is-perigo:hover { background: #a82828; }
+/* link solto no texto: abre com um clique */
+.editor .cm-lp-url { cursor: pointer; word-break: break-all; }
+.editor .cm-lp-url:hover { text-decoration-color: currentColor; }
+/* tabela das pastas: mudar status das selecionadas e menu do botão direito */
+.tabela-status { height: 32px; padding: 0 10px; border-radius: 999px; border: 0; background: rgba(23, 24, 27, .06); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tabela-menu { position: fixed; z-index: 90; min-width: 210px; padding: 5px; border-radius: 14px; display: flex; flex-direction: column;
+  background: rgba(250, 249, 247, .97); box-shadow: 0 18px 40px -16px rgba(40, 34, 32, .45), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.tabela-menu button { height: 32px; padding: 0 10px; border-radius: 9px; text-align: left; font-size: 13px; color: var(--ink); }
+.tabela-menu button:hover { background: rgba(23, 24, 27, .06); }
+.tabela-menu button.is-perigo { color: #c83232; }
+.tabela-menu button.is-perigo:hover { background: rgba(200, 50, 50, .1); }
+.tabela-menu-t { margin: 6px 10px 2px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+.tabela-menu hr { border: 0; height: 1px; margin: 4px 6px; background: rgba(23, 24, 27, .08); }
+.tabela-menu input { width: 260px; height: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1.5px #1d1d1f; font: inherit; font-size: 13px; outline: none; }
+.editor .cm-prop-chip.is-link { background: rgba(23, 24, 27, .06); }
+.editor .cm-prop-chip.is-link a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.editor .cm-prop-chip.is-link:hover { background: #1d1d1f; }
+.editor .cm-prop-chip.is-link:hover a, .editor .cm-prop-chip.is-link:hover button { color: #f4f2ef; }
+/* botão de levar o card ao chat do Jarvis: aparece no hover */
+.cartao { position: relative; }
+.cartao-chat { position: absolute; top: -10px; right: -10px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; box-shadow: 0 4px 12px -4px rgba(40, 34, 32, .4), 0 0 0 1px rgba(23, 24, 27, .08); opacity: 0; transform: scale(.85); transition: opacity .15s, transform .15s; cursor: pointer; }
+.cartao:hover .cartao-chat { opacity: 1; transform: none; }
+.cartao-chat:hover { background: #1d1d1f; }
+.cartao-chat .orb { margin: 0; width: 13px; height: 13px; }
+
+/* rodapé mais compacto: pastas menores e a barra encostada na mesma linha de base delas */
+/* o rodapé quebra linha invertido (wrap-reverse): flex-start aqui é a base da linha */
+.canvas-pastas { bottom: 12px; gap: 14px; align-items: flex-start; }
+.canvas-pastas .canvas-barra { align-self: flex-start; padding: 3px 4px 3px 10px; gap: 4px; }
+.canvas-pastas .canvas-barra .pilula { height: 27px; padding: 0 10px; font-size: 11.5px; }
+.canvas-pastas .canvas-barra select { height: 27px; font-size: 11.5px; }
+.canvas-pastas .canvas-barra .canvas-nome { font-size: 13px; gap: 6px; }
+.canvas-pastas .canvas-barra .canvas-nome em { font-size: 10.5px; }
+.canvas-pastas .pasta-corpo { width: 92px; height: 66px; }
+.canvas-pastas .pasta-aba { width: 36px; height: 12px; border-radius: 7px 7px 0 0; }
+.canvas-pastas .pasta-folhas { inset: 6px 6px 19px; }
+.canvas-pastas .pasta-folhas i { width: 29px; height: 34px; border-radius: 5px; }
+.canvas-pastas .pasta-folhas i:nth-child(2) { left: 25px; }
+.canvas-pastas .pasta-frente { height: 38px; padding: 0 8px 6px; border-radius: 5px 10px 10px 10px; }
+.canvas-pastas .pasta-frente b { font-size: 11px; }
+.canvas-pastas .pasta-frente em { font-size: 10px; padding: 0 6px; }
+.canvas-pastas .canvas-tipo { height: 25px; padding: 0 9px; font-size: 11.5px; }
+.canvas-pastas .canvas-filtro { padding: 0 24px 0 10px; background-position: right 9px center; }
+.canvas-pastas .canvas-zoom .btn-icone { width: 27px; height: 27px; }
+.canvas-pastas .canvas-zoom .btn-icone svg { width: 14px; height: 14px; }
+/* Canvas › na seleção: quantos dos cards selecionados já estão naquele canvas */
+.menu-parte { margin-left: auto; font-style: normal; font-size: 11px; color: var(--mute); }
+
+/* breadcrumb do topo: NEO-OBSIDIAN › canvas › vista */
+.migalhas { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.migalhas-sep { color: var(--mute); font-size: 13px; }
+.migalhas-item { font-size: 12.5px; font-weight: 500; color: var(--ink-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+button.migalhas-item { border: 0; background: none; padding: 3px 7px; margin: 0 -7px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink); }
+.migalhas-item.is-atual { color: var(--ink); font-weight: 600; }
+/* tela estreita: o breadcrumb encolhe (nomes com …) em vez de passar por baixo da navbar do centro */
+.migalhas { overflow: hidden; padding-right: 12px; }
+.migalhas .neo-marca { flex: none; }
+.migalhas-item { flex: 0 1 auto; min-width: 0; }

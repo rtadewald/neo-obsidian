@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
 import { ORDEM_FORMATO, STATUS, type Alvo, type Caixa, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
@@ -27,12 +27,30 @@ const relativo = (t: number) => {
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', ideia: 'Produção', grupo: 'Caixa', palavras: 'Palavras', mtime: 'Editada' }
 
-export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCaixa, onArquivarCaixa }: {
+export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCaixa, onArquivarCaixa, onApagar, onStatus, onRenomear }: {
   est: EstadoCanvas; t: EstadoTabela; onMudar: (t: EstadoTabela) => void; onFechar: () => void
   onAbrir: (a: Alvo) => void; onCanvas: (pasta: StatusProd, ano: string) => void
   onCaixa: (id: string) => void; onArquivarCaixa: (c: Caixa) => void
+  onApagar?: (alvos: Alvo[]) => Promise<void>   // seleção múltipla → lixeira do vault
+  onStatus?: (alvos: Alvo[], status: StatusProd) => Promise<void>
+  onRenomear?: (alvo: Alvo, novo: string) => Promise<void>
 }) {
+  // botão direito numa linha: abrir, renomear, mudar status, deletar
+  const [menu, setMenu] = useState<{ x: number; y: number; p: Alvo; renomear?: string; apagar?: boolean } | null>(null)
+  useEffect(() => {
+    if (!menu) return
+    const fora = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.tabela-menu')) setMenu(null) }
+    window.addEventListener('mousedown', fora)
+    return () => window.removeEventListener('mousedown', fora)
+  }, [menu])
   const mudar = (m: Partial<EstadoTabela>) => onMudar({ ...t, ...m })
+  // seleção múltipla para apagar de uma vez (some ao trocar de aba)
+  const [sel, setSel] = useState<Set<string>>(() => new Set())
+  const [confirmar, setConfirmar] = useState(false)
+  const [apagando, setApagando] = useState(false)
+  useEffect(() => { setSel(new Set()); setConfirmar(false) }, [t.pasta])
+  const chaveDe = (p: { raiz: string; nome: string }) => `${p.raiz}/${p.nome}`
+  const alternar = (k: string) => setSel((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onFechar() } }
     window.addEventListener('keydown', esc)
@@ -140,7 +158,10 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
         <div className="tabela-rolo">
           <table className="tabela">
             <thead>
-              <tr>{(Object.keys(ROTULO_COL) as Coluna[]).map((c) => (
+              <tr>{onApagar && <th className="col-sel" onClick={(e) => e.stopPropagation()}>
+                <input type="checkbox" aria-label="Marcar todas as linhas" checked={linhas.length > 0 && linhas.every((p) => sel.has(chaveDe(p)))}
+                  onChange={(e) => setSel(e.target.checked ? new Set(linhas.map(chaveDe)) : new Set())} /></th>}
+                {(Object.keys(ROTULO_COL) as Coluna[]).map((c) => (
                 <th key={c} className={`col-${c}`} onClick={() => ordenar(c)} aria-sort={t.ordem.col === c ? (t.ordem.asc ? 'ascending' : 'descending') : 'none'}>
                   {ROTULO_COL[c]}{t.ordem.col === c && <span className="tabela-seta">{t.ordem.asc ? '↑' : '↓'}</span>}
                 </th>
@@ -148,8 +169,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
             </thead>
             <tbody>
               {linhas.map((p) => (
-                <tr key={`${p.raiz}/${p.nome}`} onClick={() => onAbrir({ raiz: p.raiz, nome: p.nome })} tabIndex={0}
+                <tr key={`${p.raiz}/${p.nome}`} onClick={() => onAbrir({ raiz: p.raiz, nome: p.nome })} tabIndex={0} className={sel.has(chaveDe(p)) ? 'is-sel' : ''}
+                  onContextMenu={(e) => { e.preventDefault(); setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 280), p: { raiz: p.raiz, nome: p.nome } }) }}
                   onKeyDown={(e) => e.key === 'Enter' && onAbrir({ raiz: p.raiz, nome: p.nome })}>
+                  {onApagar && <td className="col-sel" onClick={(e) => { e.stopPropagation(); alternar(chaveDe(p)) }}>
+                    <input type="checkbox" aria-label={`Marcar ${p.nome}`} checked={sel.has(chaveDe(p))} onChange={() => {}} /></td>}
                   <td className="col-formato">{p.formato || '📄'}</td>
                   <td className="col-nome"><b>{semEmoji(p.nome)}</b>{p.previa && <span>{p.previa}</span>}</td>
                   <td className="col-data">{p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : <span className="mudo">{dataBr(dia(p))}</span>}</td>
@@ -163,6 +187,48 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onCa
           </table>
           {!linhas.length && <p className="tabela-vazia">Nenhuma copy com esses filtros.</p>}
         </div>
+        {menu && (
+          <div className="tabela-menu glass glass--light" style={{ left: menu.x, top: menu.y }} role="menu" onContextMenu={(e) => e.preventDefault()}>
+            {menu.renomear !== undefined ? (
+              <form onSubmit={async (e) => { e.preventDefault(); const n = menu.renomear!.trim(); const a = menu.p; setMenu(null); if (n && n !== a.nome && onRenomear) await onRenomear(a, n) }}>
+                <input autoFocus value={menu.renomear} onChange={(e) => setMenu({ ...menu, renomear: e.target.value })} onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setMenu(null) } }} aria-label="Novo nome" />
+              </form>
+            ) : menu.apagar ? (<>
+              <p className="tabela-menu-t">Mandar para a lixeira do vault?</p>
+              <button className="is-perigo" autoFocus onClick={async () => { const a = menu.p; setMenu(null); await onApagar?.([a]) }}>Deletar</button>
+              <button onClick={() => setMenu({ ...menu, apagar: false })}>Cancelar</button>
+            </>) : (<>
+              <button onClick={() => { const a = menu.p; setMenu(null); onAbrir(a) }}>Abrir</button>
+              {onRenomear && <button onClick={() => setMenu({ ...menu, renomear: menu.p.nome })}>Renomear</button>}
+              {onStatus && <><p className="tabela-menu-t">Mover para</p>
+                {STATUS.filter((x) => x.k !== t.pasta).map((x) => (
+                  <button key={x.k} onClick={async () => { const a = menu.p; setMenu(null); await onStatus([a], x.k) }}>{x.marca} {x.nome}</button>
+                ))}</>}
+              {onApagar && <><hr /><button className="is-perigo" onClick={() => setMenu({ ...menu, apagar: true })}>Deletar</button></>}
+            </>)}
+          </div>
+        )}
+        {onApagar && sel.size > 0 && (
+          <div className="tabela-selecao">
+            <b>{sel.size} {sel.size === 1 ? 'nota selecionada' : 'notas selecionadas'}</b>
+            <button className="pilula" onClick={() => { setSel(new Set()); setConfirmar(false) }}>Limpar seleção</button>
+            {onStatus && <select className="tabela-status" value="" disabled={apagando} aria-label="Mudar o status das selecionadas"
+              onChange={async (e) => { const st = e.target.value as StatusProd; if (!st) return; setApagando(true)
+                try { await onStatus(daPasta.filter((p) => sel.has(chaveDe(p))).map((p) => ({ raiz: p.raiz, nome: p.nome })), st); setSel(new Set()) } finally { setApagando(false) } }}>
+              <option value="">Mudar status…</option>
+              {STATUS.filter((x) => x.k !== t.pasta).map((x) => <option key={x.k} value={x.k}>{x.marca} {x.nome}</option>)}
+            </select>}
+            {confirmar
+              ? <><span className="mudo">Vão para a lixeira do vault (.trash), dá para recuperar.</span>
+                <button className="pilula is-perigo" disabled={apagando} autoFocus onClick={async () => {
+                  setApagando(true)
+                  try { await onApagar(daPasta.filter((p) => sel.has(chaveDe(p))).map((p) => ({ raiz: p.raiz, nome: p.nome }))); setSel(new Set()) }
+                  finally { setApagando(false); setConfirmar(false) }
+                }}>{apagando ? 'Apagando…' : `Deletar ${sel.size}`}</button></>
+              : <button className="pilula is-perigo" onClick={() => setConfirmar(true)}>Deletar {sel.size}</button>}
+          </div>
+        )}
         </>}
       </div>
     </div>

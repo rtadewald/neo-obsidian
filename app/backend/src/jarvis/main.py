@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agente, anuncios, auth, canvas, construtor, db, metricool, notas, planejamento, preferencias, radar, skills, videos_x
+from . import agente, anuncios, auth, canvas, construtor, db, metricool, notas, planejamento, preferencias, radar, videos_x
 from .config import FRONT_DIST
 from .coletores import x_curtir
 
@@ -18,14 +18,25 @@ if db.pendentes_x():   # likes que ficaram na fila quando o app parou
 app = FastAPI(title="Neo-Obsidian")
 
 
+@app.middleware("http")
+async def canvas_da_requisicao(request, call_next):
+    """O app diz em qual canvas está (cabeçalho X-Canvas): layout, filtro por tag e tag das notas novas seguem ele."""
+    slug = request.headers.get("x-canvas") or "geral"
+    marca = canvas._atual.set(slug if any(c["slug"] == slug for c in canvas.lista_canvases()) else "geral")
+    try:
+        return await call_next(request)
+    finally:
+        canvas._atual.reset(marca)
+
+
 @app.get("/api/saude")
 def saude():
     return {"ok": True, "auth": MODO_AUTH, "ultima_coleta": db.ultima_coleta()}
 
 
 @app.get("/api/sinais")
-def sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None):
-    return db.listar_sinais(status, fonte, tipo)
+def sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None, ultimo_lote: bool = False):
+    return db.listar_sinais(status, fonte, tipo, ultimo_lote=ultimo_lote)
 
 
 class Status(BaseModel):
@@ -105,12 +116,13 @@ class Mensagem(BaseModel):
     texto: str
     sinal: int | None = None
     modo: str = "vault"   # vault | app (modo construtor: o agente mexe no código do próprio app)
+    onde: str = ""        # onde o Rodrigo está no app (tela, canvas, caixa, nota aberta): vai para o contexto do agente
 
 
 @app.post("/api/chat")
 async def chat(m: Mensagem):
     async def eventos():
-        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.modo):
+        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.modo, m.onde):
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
     return StreamingResponse(eventos(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -119,19 +131,6 @@ async def chat(m: Mensagem):
 @app.get("/api/chat/{conversa}")
 def historico(conversa: str):
     return db.mensagens(conversa)
-
-
-@app.get("/api/skills")
-def lista_skills():
-    return skills.listar()
-
-
-@app.get("/api/skills/{nome}")
-def uma_skill(nome: str):
-    s = skills.ler(nome)
-    if not s:
-        raise HTTPException(404, "skill não encontrada")
-    return s
 
 
 @app.get("/api/metricool/estado")
@@ -284,7 +283,9 @@ class Nova(BaseModel):
 @app.post("/api/notas/priorizar")
 def nota_nova(corpo: Nova):
     try:
-        return notas.criar(corpo.titulo)
+        d = notas.criar(corpo.titulo)
+        canvas.marcar_no_canvas(d["raiz"], d["nome"])
+        return d
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")
 
@@ -307,9 +308,41 @@ class Pos(BaseModel):
     y: float
 
 
+@app.get("/api/canvases")
+def canvases():
+    """Os canvas, com quantos cards de cada tipo cada um tem (para a página de controle)."""
+    return canvas.resumos()
+
+
+class NovoCanvas(BaseModel):
+    slug: str | None = None
+    nome: str | None = None
+    icone: str | None = None
+    tags: list[str] | None = None
+
+
+@app.post("/api/canvases")
+def canvases_salvar(corpo: NovoCanvas):
+    return _erros(lambda: canvas.salvar_canvas(corpo.model_dump()))
+
+
 @app.get("/api/canvas")
 def canvas_estado():
     return canvas.estado()
+
+
+class ImagemColada(BaseModel):
+    dados: str          # base64 (sem o prefixo data:)
+    tipo: str           # image/png, image/jpeg…
+
+
+@app.post("/api/chat/imagem")
+def chat_imagem(corpo: ImagemColada):
+    import base64
+    try:
+        return canvas.salvar_imagem(base64.b64decode(corpo.dados), corpo.tipo)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/anexo/{nome:path}")
@@ -353,8 +386,67 @@ class GrupoNotas(BaseModel):
 
 @app.post("/api/canvas/grupo")
 def canvas_grupo(corpo: GrupoNotas):
-    _erros(lambda: canvas.definir_grupo(corpo.notas, corpo.grupo))
-    return {"ok": True}
+    return {"mudou": _erros(lambda: canvas.definir_grupo(corpo.notas, corpo.grupo))}
+
+
+class MoverCaixa(BaseModel):
+    notas: list[str]           # nomes das notas (uma basta para um card de produção: as saídas vão junto)
+    caixa: str | None = None   # None tira da caixa
+
+
+@app.post("/api/canvas/mover-caixa")
+def canvas_mover_caixa(corpo: MoverCaixa):
+    return _erros(lambda: canvas.colocar_na_caixa(corpo.notas, corpo.caixa))
+
+
+class StatusNotas(BaseModel):
+    notas: list[str]
+    status: str   # ideia | edicao | agendado | publicado
+
+
+@app.post("/api/canvas/status")
+def canvas_status(corpo: StatusNotas):
+    """Muda o status de várias copies (tabela das pastas: seleção múltipla e botão direito)."""
+    return {"notas": _erros(lambda: [canvas.mudar_status(n, corpo.status) for n in corpo.notas])}
+
+
+class Importar(BaseModel):
+    nome: str
+
+
+@app.post("/api/canvas/importar")
+def canvas_importar(corpo: Importar):
+    return _erros(lambda: canvas.importar(corpo.nome))
+
+
+class NoCanvas(BaseModel):
+    notas: list[str]
+    canvas: str
+    sim: bool = True
+
+
+@app.post("/api/canvas/no-canvas")
+def canvas_no_canvas(corpo: NoCanvas):
+    return {"mudou": _erros(lambda: canvas.no_canvas(corpo.notas, corpo.canvas, corpo.sim))}
+
+
+class Winner(BaseModel):
+    notas: list[dict]
+    sim: bool = True
+
+
+@app.post("/api/canvas/winner")
+def canvas_winner(corpo: Winner):
+    return {"mudou": _erros(lambda: canvas.marcar_winner(corpo.notas, corpo.sim))}
+
+
+class VariosGrupos(BaseModel):
+    itens: list[GrupoNotas]
+
+
+@app.post("/api/canvas/grupos")
+def canvas_grupos(corpo: VariosGrupos):
+    return {"mudou": _erros(lambda: canvas.definir_grupos([i.model_dump() for i in corpo.itens]))}
 
 
 @app.put("/api/canvas/posicoes")

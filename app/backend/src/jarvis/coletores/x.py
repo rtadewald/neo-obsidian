@@ -1,4 +1,5 @@
 """Coletor do X (Q27): lê o feed "Para você" no Chrome do Rodrigo, já logado, pela extensão Claude in Chrome.
+Cada coleta traz só posts inéditos (pula os ids já vistos), e a página do X mostra só o último lote.
 
 Só leitura: abre uma aba nova no grupo do Jarvis, rola o feed com um script que extrai os posts do DOM e fecha a aba.
 Não curte, não reposta, não segue, não clica em nada. O resultado vem direto do retorno do javascript_tool,
@@ -38,8 +39,10 @@ window.__jxDone = false; window.__jx = '[]';
   // a extensão bloqueia retornos com query string: imagens viram caminho + extensão, e o texto perde "?a=b"
   const semQuery = (src) => { if (!src) return null; try { const u = new URL(src, location.href); const f = u.searchParams.get('format'); return /^https?:/.test(u.protocol) ? u.origin + u.pathname + (f ? '.' + f : '') : null; } catch { return null; } };
   const lab = (a, id) => { const b = a.querySelector(`[data-testid="${id}"]`); return num(b && (b.getAttribute('aria-label') || b.textContent)); };
+  // já vistos em coletas anteriores (últimos 9 dígitos do id): pula, para trazer só posts inéditos
+  const conhecidos = new Set(__CONHECIDOS__);
   const vistos = new Map();
-  for (let volta = 0; volta < 32 && vistos.size < __ALVO__ + 6; volta++) {
+  for (let volta = 0; volta < 48 && vistos.size < __ALVO__ + 6; volta++) {
     window.__jxN = vistos.size;
     for (const a of document.querySelectorAll('article[data-testid="tweet"]')) {
       const t = a.querySelector('time');
@@ -47,6 +50,8 @@ window.__jxDone = false; window.__jx = '[]';
       if (!link) continue;
       const url = location.origin + new URL(link.href).pathname;
       if (vistos.has(url)) continue;
+      const sid = (url.match(/status\/(\d+)/) || [])[1] || '';
+      if (conhecidos.has(sid.slice(-9))) continue;
       const nome = a.querySelector('[data-testid="User-Name"]');
       const handle = (nome && [...nome.querySelectorAll('span')].map(s => s.textContent).find(s => s.startsWith('@'))) || '';
       const views = a.querySelector('a[href$="/analytics"]');
@@ -95,7 +100,7 @@ PROMPT = """Você coleta o feed do X para o Rodrigo. Só leitura: não clique em
 __EXTRAI__
 ```
 4. Espere 10 s (computer, action wait) e rode com javascript_tool: `__LE__`
-   Enquanto a resposta começar com "PENDENTE", repita o passo 4 (no máximo 8 vezes).
+   Enquanto a resposta começar com "PENDENTE", repita o passo 4 (no máximo 10 vezes).
 5. Feche a aba (tabs_close_mcp) e responda só "OK" se a última leitura começou com "PRONTO"; senão, "FALHOU: <motivo>".
 """
 
@@ -142,7 +147,8 @@ def _para_sinais(posts: list[dict]) -> list[dict]:
     return itens
 
 
-async def coletar() -> list[dict]:
+async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
+    """`conhecidos`: ids de posts já coletados; o script pula esses e rola até juntar ALVO posts inéditos."""
     opts = ClaudeAgentOptions(
         model="sonnet", tools=[], setting_sources=[], max_turns=30, extra_args={"chrome": None},
         # sem busca de ferramentas (as do Chrome ficariam adiadas e invisíveis com tools=[]) e sem os conectores da conta
@@ -153,7 +159,8 @@ async def coletar() -> list[dict]:
         permission_mode="dontAsk",
     )
     arq = f"jarvis-x-{uuid.uuid4().hex[:10]}.json"
-    script = EXTRAI.replace("__ALVO__", str(ALVO)).replace("__ARQ__", arq)
+    ids = sorted({c[-9:] for c in conhecidos or [] if c.isdigit()})
+    script = EXTRAI.replace("__ALVO__", str(ALVO)).replace("__ARQ__", arq).replace("__CONHECIDOS__", json.dumps(ids))
     prompt = PROMPT.replace("__EXTRAI__", script).replace("__LE__", LE)
     final = ""
     async for m in query(prompt=prompt, options=opts):

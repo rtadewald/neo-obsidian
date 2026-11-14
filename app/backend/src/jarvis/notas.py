@@ -33,7 +33,7 @@ EXTRAS = {"ideias": IDEIAS, "entradas": IDEIAS / "Entradas"}
 TODAS = {**PASTAS, **EXTRAS}
 SKILLS = VAULT / "3 Skills"
 LIXEIRA = VAULT / ".trash"
-TEMPLATE_COPY = VAULT / "2 Notas" / "Engine" / "templates" / "T - Copy.md"
+TEMPLATE_COPY = VAULT / "2 Notas" / "Engine" / "templates" / "T-Copy.md"
 RAIZES = {**{k: str(p.relative_to(VAULT)) for k, p in TODAS.items()}, "skills": "3 Skills"}
 NOME_RUIM = re.compile(r"[/\\\x00]|^\.|\.\.")
 PINS = VAULT / ".obsidian" / "plugins" / "file-explorer-plus" / "data.json"
@@ -168,7 +168,10 @@ def _definir_scheduled(texto: str, data: str) -> str:
     if not m:
         return f"---\n{linha}\n---\n\n" + texto
     fm = m.group(1)
-    fm = SCHED.sub(linha, fm) if SCHED.search(fm) else (f"{fm}\n{linha}" if fm.strip() else linha)
+    # troca a linha `scheduled:` que já existir, mesmo vazia (toda copy nasce com `scheduled:`): antes ela ficava
+    # e uma segunda era acrescentada no fim
+    qualquer = re.compile(r"(?m)^scheduled:.*$")
+    fm = qualquer.sub(linha, fm, count=1) if qualquer.search(fm) else (f"{fm}\n{linha}" if fm.strip() else linha)
     return f"---\n{fm}\n---\n" + texto[m.end():]
 
 

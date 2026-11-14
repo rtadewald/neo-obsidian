@@ -35,8 +35,9 @@ const j = async <T,>(r: Response): Promise<T> => {
 }
 
 export const api = {
-  sinais: (status?: string, tipo?: string) =>
-    fetch(`/api/sinais?${new URLSearchParams({ ...(status ? { status } : {}), ...(tipo ? { tipo } : {}) })}`).then(j<Sinal[]>),
+  /** `ultimoLote` (com `fonte`): só os posts da última coleta daquela fonte (a página do X). */
+  sinais: (status?: string, tipo?: string, fonte?: string, ultimoLote = false) =>
+    fetch(`/api/sinais?${new URLSearchParams({ ...(status ? { status } : {}), ...(tipo ? { tipo } : {}), ...(fonte ? { fonte } : {}), ...(ultimoLote ? { ultimo_lote: 'true' } : {}) })}`).then(j<Sinal[]>),
   status: (id: number, status: string) =>
     fetch(`/api/sinais/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).then(j),
   atualizar: () => fetch('/api/radar/atualizar', { method: 'POST' }).then(j<{ status: string }>),
@@ -57,7 +58,7 @@ export type EventoChat =
   | { t: 'erro'; v: string }
 
 /** POST /api/chat e lê o SSE linha a linha. */
-export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; modo?: 'vault' | 'app' }, cb: (e: EventoChat) => void) {
+export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; modo?: 'vault' | 'app'; onde?: string }, cb: (e: EventoChat) => void) {
   const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
   if (!r.ok || !r.body) throw new Error(`${r.status}`)
   const leitor = r.body.getReader()

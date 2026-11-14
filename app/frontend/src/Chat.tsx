@@ -1,3 +1,4 @@
+import { descreverOnde } from './canvasApi'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Markdown } from './Markdown'
 import type { Trecho } from './notas'
@@ -19,6 +20,15 @@ export function Texto({ md, onSinal }: { md: string; onSinal?: (url: string) => 
   const fechar = (k: number) => { if (resto.join('').trim()) partes.push(<Markdown key={`m${k}`} md={resto.join('\n\n')} />); resto = [] }
   md.trim().split(/\n{2,}/).forEach((b, i) => {
     const linhas = b.split('\n')
+    // imagens coladas: `🖼️ ![[Pasted image ….png]]`, uma por linha
+    if (linhas.every((l) => /^🖼️ !\[\[[^\]]+\]\]$/.test(l.trim()))) {
+      fechar(i)
+      partes.push(<div key={`img${i}`} className="msg-imagens">{linhas.map((l) => {
+        const nome = /\[\[([^\]]+)\]\]/.exec(l)![1]
+        return <a key={nome} href={`/api/anexo/${encodeURIComponent(nome)}`} target="_blank" rel="noreferrer"><img src={`/api/anexo/${encodeURIComponent(nome)}`} alt={nome} loading="lazy" /></a>
+      })}</div>)
+      return
+    }
     if (!linhas[0].startsWith('📎 ') && !linhas[0].startsWith('📡 ')) { resto.push(b); return }
     fechar(i)
     const url = linhas[0].startsWith('📡 ') ? linhas[0].match(/ · (https?:\/\/\S+)$/)?.[1] : undefined
@@ -70,6 +80,23 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   const [pontos, setPontos] = useState(0)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [texto, setTexto] = useState('')
+  // imagens coladas (⌘V) ou soltas no campo: já salvas nos anexos do vault, vão na mensagem como ![[...]]
+  const [imagens, setImagens] = useState<string[]>([])
+  const [subindo, setSubindo] = useState(0)
+  async function anexar(arquivos: File[]) {
+    const imgs = arquivos.filter((f) => f.type.startsWith('image/'))
+    if (!imgs.length) return false
+    setSubindo((n) => n + imgs.length)
+    for (const f of imgs) {
+      try {
+        const b64 = await new Promise<string>((ok, erro) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = erro; r.readAsDataURL(f) })
+        const res = await fetch('/api/chat/imagem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dados: b64, tipo: f.type }) })
+        const d = await res.json()
+        if (res.ok) setImagens((l) => [...l, d.nome])
+      } finally { setSubindo((n) => n - 1) }
+    }
+    return true
+  }
   const [ocupado, setOcupado] = useState(false)
   const [fila, setFila] = useState<string[]>([])   // pedidos digitados enquanto o Jarvis ainda respondia o de cima
   const log = useRef<HTMLDivElement>(null)
@@ -97,8 +124,10 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
 
   async function enviar(e?: React.FormEvent, direto?: string) {
     e?.preventDefault()
-    const pergunta = (direto ?? texto).trim()
+    const anexos = direto === undefined ? imagens : []
+    const pergunta = [(direto ?? texto).trim(), anexos.map((n) => `🖼️ ![[${n}]]`).join('\n')].filter(Boolean).join('\n\n')
     if (!pergunta) return
+    if (direto === undefined) setImagens([])
     if (processando.current) {   // o Jarvis já está respondendo outra: entra na fila
       if (direto === undefined) { setFila((f) => [...f, pergunta]); setTexto('') }
       return
@@ -113,7 +142,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     setMsgs((m) => [...m, { papel: 'usuario', texto: t }, { papel: 'jarvis', texto: '', ferramentas: [] }])
     const mexe = (f: (u: Msg) => Msg) => setMsgs((m) => [...m.slice(0, -1), f(m[m.length - 1])])
     try {
-      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, modo }, (ev) => {
+      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, modo, onde: descreverOnde() }, (ev) => {
         if (ev.t === 'texto') mexe((u) => ({ ...u, texto: u.texto + ev.v }))
         else if (ev.t === 'ferramenta') mexe((u) => ({ ...u, ferramentas: [...(u.ferramentas ?? []), `${VERBO[ev.nome] ?? ev.nome} ${ev.alvo}`.trim()] }))
         else if (ev.t === 'erro') mexe((u) => ({ ...u, erro: ev.v }))
@@ -208,8 +237,22 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
           <button className="btn-icone" aria-label="Tirar o trecho" onClick={limparTrecho}><Icone n="fechar" t={14} /></button>
         </div>
       )}
-      <form className="campo" onSubmit={enviar}>
+      {(imagens.length > 0 || subindo > 0) && (
+        <div className="campo-imagens">
+          {imagens.map((n) => (
+            <span key={n} className="campo-imagem">
+              <img src={`/api/anexo/${encodeURIComponent(n)}`} alt={n} />
+              <button type="button" aria-label="Tirar a imagem" onClick={() => setImagens((l) => l.filter((x) => x !== n))}>×</button>
+            </span>
+          ))}
+          {subindo > 0 && <span className="campo-imagem is-subindo" aria-label="Enviando imagem" />}
+        </div>
+      )}
+      <form className="campo" onSubmit={enviar}
+        onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault() }}
+        onDrop={(e) => { const f = [...e.dataTransfer.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}>
         <textarea
+          onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}
           ref={campo} rows={1} value={texto} placeholder={modo === 'app' ? 'O que mudar no app?' : trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
@@ -217,7 +260,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
             else if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() }   // Esc sai do chat (volta aos atalhos da página)
           }}
         />
-        <button className="btn-enviar" type="submit" disabled={!texto.trim()} aria-label={ocupado ? 'Colocar na fila' : 'Enviar'} title={ocupado ? 'O Jarvis está ocupado: entra na fila' : 'Enviar'}><Icone n="enviar" t={16} /></button>
+        <button className="btn-enviar" type="submit" disabled={!texto.trim() && !imagens.length} aria-label={ocupado ? 'Colocar na fila' : 'Enviar'} title={ocupado ? 'O Jarvis está ocupado: entra na fila' : 'Enviar'}><Icone n="enviar" t={16} /></button>
       </form>
     </aside>
   )

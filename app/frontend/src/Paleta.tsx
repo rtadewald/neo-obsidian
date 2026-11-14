@@ -36,7 +36,9 @@ function casar(q: string, nome: string): { p: number; marcas: number[] } | null 
   return { p: 400 - (seq[seq.length - 1] - seq[0]) - a.length * 0.1, marcas: seq }
 }
 
-export function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; onAbrir: (r: Raiz, n: string) => void; onCriar: (t: string) => void }) {
+export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: () => void; onAbrir: (r: Raiz, n: string) => void; onCriar: (t: string) => void
+  onImportar?: (r: Raiz, n: string) => void   // ⌘↵: traz a nota para o canvas aberto
+}) {
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState<Entrada[]>([])
   const [sel, setSel] = useState(0)
@@ -62,7 +64,8 @@ export function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; o
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => (s - 1 + total) % Math.max(total, 1)) }
     else if (e.key === 'Enter') {
       e.preventDefault()
-      if (sel < res.length) onAbrir(res[sel].e.raiz, res[sel].e.nome)
+      if (sel < res.length && (e.metaKey || e.ctrlKey) && onImportar) onImportar(res[sel].e.raiz, res[sel].e.nome)
+      else if (sel < res.length) onAbrir(res[sel].e.raiz, res[sel].e.nome)
       else if (criar) onCriar(q.trim())
     }
   }
@@ -96,7 +99,7 @@ export function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; o
           )}
           {!total && <p className="mudo paleta-vazio">Carregando…</p>}
         </div>
-        <footer className="paleta-pe"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>↵</kbd> abrir</span><span><kbd>esc</kbd> fechar</span></footer>
+        <footer className="paleta-pe"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>↵</kbd> abrir</span>{onImportar && <span><kbd>⌘↵</kbd> trazer pro canvas</span>}<span><kbd>esc</kbd> fechar</span></footer>
       </div>
     </div>
   )

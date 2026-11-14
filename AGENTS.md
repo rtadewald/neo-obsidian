@@ -123,6 +123,7 @@ emoji conhecido aparece como `📄`. O nome sem marcas nem emoji é o "título d
 | `scheduled` | copy | `"AAAA-MM-DD"`, a data de publicação; o calendário editorial lê e grava |
 | `tags` | todas | lista YAML; vazia fica `tags:` (nunca apague a chave) |
 | `ideia` | copy | `"[[💡 Nome]]"`: a copy é uma saída dessa ideia (com aspas, por causa dos colchetes) |
+| `notion` | copy | link do card no Notion (base "Edição e Publicação - 2026"); vários cards da mesma copy (versões, LP/VSL, retestes) viram lista. O painel mostra como "Notion ↗" |
 | `grupo` | ideia ou copy | nome da **caixa** do canvas onde o card está |
 | `origin` | ideia | wikilink do projeto/tema pai (padrão do vault) |
 | `fontes` | ideia | lista de `[[…]]` das entradas ligadas (legado) |
@@ -146,14 +147,42 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 
 ## 5. O modelo do canvas
 
+### Canvas isolados (como os projetos do Neo Stitch)
+
+- `app/dados/canvases.json` lista os canvas: `{slug, nome, icone, tags}`. **Geral** (`canvas.json`) mostra todas as
+  notas; os outros (hoje 💰 PICO, 🤖 FIA, 🖼️ FID) mostram só as copies com uma tag que começa por um dos prefixos deles
+  (`💰bf26`/`arquivo/pico`, `🤖fia`, `🖼️fid`) e as ideias dessas copies. Cada um tem o seu layout em
+  `canvas@<slug>.json`: posições, caixas e **arquivados são do canvas**.
+- O app manda o canvas atual no cabeçalho `X-Canvas` (`canvasApi.ts`); o middleware de `main.py` põe em
+  `canvas._atual` e todas as funções de layout usam esse por padrão. Nota criada dentro de um canvas de produto já nasce
+  com a tag dele (`marcar_no_canvas`). Renomear/mover uma nota leva a posição junto em **todos** os canvas.
+- **Globais**: as pastas Em edição, Agendado e Publicado (e as tabelas delas) contam as notas de todos os canvas.
+- **O Geral está oculto** (`app/dados/canvas-config.json` → `{"geral_oculto": true}`): some da lista e do seletor, mas
+  continua existindo por dentro (é dele que saem as pastas globais e é o padrão das chamadas sem `X-Canvas`). Hoje os
+  canvas visíveis são 💰 PICO, 🤖 FIA, 🖼️ FID e 📊 Dados; toda nota de conteúdo deve ter a tag de um deles para aparecer
+  em algum canvas. `listar_caixas` e `colocar_na_caixa` (agente) procuram a caixa em todos os canvas.
+- **Um card pode estar em vários canvas**: é só a nota ter as tags deles. Botão direito → **Canvas ›** marca/desmarca
+  (`POST /api/canvas/no-canvas`): marcar põe a 1ª tag do canvas; desmarcar tira todas as tags dos prefixos dele,
+  inclusive subtags como `🤖fia/reels`.
+- **Seleção de vários cards** (botão direito na seleção): os mesmos **Mover para ›** (todos para a caixa escolhida) e
+  **Canvas ›** (marca/desmarca em todos; `–` com `n/N` quando só parte da seleção está naquele canvas).
+- Clicar em NEO-OBSIDIAN (início do breadcrumb) abre a página de controle (`Canvases.tsx`), com os canvas e "+ Novo canvas".
+- Limite conhecido: `grupo:` (caixa) é uma propriedade só da nota. Pôr a nota numa caixa de um canvas tira ela da caixa
+  de outro canvas.
+
 | Card | Id | De onde vem |
 |---|---|---|
 | 💡 **ideia** | `i:<nome>` | uma nota em `0 Ideias/` |
 | 🎬 **produção (grupo)** | `g:<nome da ideia>` | as copies com o mesmo `ideia:`; um card só com um chip por formato |
-| **copy solta** | `p:<raiz>/<nome>` | copy sem `ideia:` (ou com uma ideia que só tem ela) |
+| 🎬 **produção de uma nota** | `p:<raiz>/<nome>` | copy sem `ideia:` (ou com uma ideia que só tem ela). Mesmo visual do card 🎬 (`CartaoProducao`), com um chip só |
 | **caixa** | `c:<id>` | retângulo colorido em `app/dados/canvas.json` → `caixas` |
 | entrada (legado) | `e:<nome>` | nota em `0 Ideias/Entradas/` |
 
+- **Três tipos de card: 💡 ideia, 🎬 produção e 📺 VSL.** A produção junta as versões curtas da mesma copy (Reels,
+  carrosséis, ads… com o mesmo `ideia:`). Cada VSL (📺) tem card próprio (`CartaoVSL`, selo VSL, duração estimada),
+  nunca entra numa produção e, com `ideia:`, ganha uma linha da ideia ou da produção até ela. "Entrada" é legado e não há mais nenhuma nota desse tipo.
+- **🔥 winner** = a tag `"🔥"` em `tags:` (`canvas.WINNER`). O card ganha borda vermelha e o foguinho; marca e desmarca
+  pelo botão direito (`POST /api/canvas/winner`). O botão não aparece nos cards que não são winner.
 - **O grupo 🎬 não precisa de nota 💡.** Basta duas ou mais copies com o mesmo `ideia: "[[💡 X]]"`, mesmo que
   `💡 X.md` não exista. Com uma copy só e sem a nota, ela fica solta. Com a nota 💡, a ideia vira card próprio e uma
   seta liga a ideia ao grupo.
@@ -169,6 +198,13 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   "arquivados": ["p:priorizar/…"],
   "caixas": [{ "id": "cx…", "nome": "Skills", "cor": "#f6e3b4", "x": 0, "y": 0, "w": 720, "h": 460, "arquivada": false }] }
 ```
+
+**O layout se protege** (`canvas.py`): uma trava única (`_trava`) envolve toda leitura-alteração-gravação, cada
+gravação usa um temporário próprio, cada versão anterior vai para `app/dados/canvas-historico/` (as últimas 200) e um
+`canvas.json` ilegível **nunca** é tratado como vazio (dá erro `LayoutIlegivel`). Antes disso, duas gravações
+simultâneas corromperam o arquivo e o servidor regravou um layout vazio por cima de tudo. Para restaurar, copie uma
+versão do histórico por cima do `canvas.json` com a API parada. Pedido para uma caixa que não existe dá 404 (antes
+criava uma caixa "Caixa" nova e tirava o grupo dos cards).
 
 A posição no canvas principal e no canvas de uma caixa usa o id puro; nas outras vistas, `<vista>|<id>`. Quando uma
 nota muda de nome ou de pasta pela API de ação, `canvas.renomeou` leva a posição junto. **Se você renomear ou mover
@@ -195,15 +231,21 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 | Soltar uma copy em cima de uma ideia/grupo | `ideia: "[[…]]"` na copy (`/api/canvas/ligar`) |
 | Soltar uma copy em cima de outra copy | pergunta o nome e grava o mesmo `ideia:` nas duas (`/api/canvas/agrupar`; não cria nota 💡) |
 | Ligar pelas alças (arrastar de uma borda a outro card) | o mesmo que soltar em cima |
-| Soltar dentro/fora de uma caixa | `grupo:` na nota |
+| Soltar dentro/fora de uma caixa | `grupo:` na nota, por `POST /api/canvas/grupos` (um pedido por arraste, em fila; o servidor decide o que mudou e devolve o valor de antes) |
+| Redimensionar uma caixa | os cards de dentro se rearrumam em grade na largura nova; se não couberem, a caixa cresce para baixo |
 | `Delete` numa linha | desfaz a ligação (tira `fontes:` ou `ideia:`); cards não se apagam pelo canvas |
 | Menu do card → Arquivar | só layout (`arquivados`) |
 | Menu → Mandar para a lixeira | `.trash/` do vault |
-| `⌘Z` / `⌘⇧Z` | desfaz/refaz movimentos de cards (só layout) |
+| `⌘Z` / `⌘⇧Z` | desfaz/refaz arrastar cards e arrastar/redimensionar caixas, **com o `grupo:` de cada nota** (o valor gravado volta, não é recalculado) |
 
-Navegação (igual ao Neo Stitch): arrastar no vazio navega; scroll/pinça/`⌘+` `⌘−` dão zoom; `⌘` + arrastar faz caixa
-de seleção; `⌘` + clique põe/tira da seleção; duplo clique no vazio mostra tudo; botão do meio num card enquadra.
-A caixa se arrasta inteira e redimensiona pelos cantos (alça grande e invisível, ponto pequeno visível).
+Card que **sai de uma caixa** nesta sessão continua visível (mesmo publicado, que sem caixa ficaria oculto), para
+poder voltar; some ao recarregar a página (`soltos` em `montar`).
+
+Navegação: arrastar no vazio navega; dois dedos no trackpad (ou a roda do mouse) movem o canvas; pinça, `⌘` + roda e
+`⌘+` `⌘−` dão zoom; `⌘A` seleciona todos os cards visíveis; `⌘` + arrastar faz caixa de seleção; `⌘` + clique põe/tira da seleção; duplo clique no vazio mostra tudo; botão do meio num card enquadra o card,
+dentro de uma caixa enquadra a caixa, e dois cliques com ele fora de tudo mostram o canvas todo.
+A caixa se arrasta inteira e redimensiona pelos cantos (alça grande e invisível, ponto pequeno visível). Dois cliques na caixa
+abrem o canvas próprio dela.
 
 ## 6. As telas
 
@@ -238,8 +280,8 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 - **Busca rápida `⌘P`/`⌘O`** (`Paleta.tsx`): casa como o quick switcher do Obsidian em ideias, copies e skills; Enter
   abre no modal; sem resultado igual, oferece criar uma 💡 ideia com o texto digitado.
 - **Chat do Jarvis** (`Chat.tsx`), coluna da direita, redimensionável: seção 9.
-- **Orbe** (canto inferior esquerdo, `Menu.tsx`): o leque com as skills de `3 Skills/` (abrem no modal), "Todas as
-  skills" (abre a busca) e Config.
+- **Breadcrumb** no topo (`App.tsx`, `.migalhas`): NEO-OBSIDIAN (todos os canvas) › canvas › vista aberta (caixa, pasta
+  ou card em canvas próprio). Clicar num nível volta para ele; o canvas conta a vista pela prop `onCaminho`.
 
 ## 7. Processos do dia a dia
 
@@ -263,6 +305,12 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   script e devolve o JSON como download em `~/Downloads` (o `javascript_tool` corta a saída em ~1 mil caracteres e
   bloqueia query strings). Com `tools=[]` é preciso desligar `ENABLE_TOOL_SEARCH` e `ENABLE_CLAUDEAI_MCP_SERVERS`, senão
   as ferramentas do Chrome ficam invisíveis.
+- **Página do X = último lote.** Cada coleta do X passa ao script os ids já vistos (`db.externos_recentes`) e ele
+  rola o feed até juntar posts **inéditos**; esses ganham `lote` = a hora da coleta (`db.gravar_sinais(..., lote=)`).
+  A página pede `?fonte=x&ultimo_lote=true`, então o Atualizar troca a tela inteira pelos próximos posts. Nada é
+  apagado do SQLite: os curtidos de qualquer coleta ficam em **Curtidos** (`?status=curtido`, sem limite), com o link.
+- **Ordem congelada** (`Radar.tsx`, `congelar`): cada card ganha um lugar quando chega e não sai dele; like e deslike
+  não reordenam. A ordem recomeça ao trocar de filtro e quando uma coleta termina.
 - **Cards:** 👍 ensina o ranking e guarda em **Curtidos** (filtro no topo; `status=curtido` na API); 👎 tira do feed e
   ensina o contrário (`preferencias.py`; "Reavaliar" refaz o interesse a partir de 3 votos); 💡 cria uma ideia com
   título, link, imagem e texto do card (`pronto` em `/api/canvas/entrada`); ◉ leva o card ao chat.
@@ -282,7 +330,13 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 - **Modo vault** (padrão): `cwd` = o vault, com o `CLAUDE.md` e as skills dele. Lê tudo, mas **escreve sozinho só em
   `1 Copies/0 Ideias/` e `1 Copies/1 Priorizar/`**: um hook `PreToolUse` nega Write/Edit fora delas (Q30). Sem Bash.
   Ferramentas próprias (MCP `jarvis`): `criar_ideia`, `criar_saida`, `ligar_ao_canvas`, `criar_entrada`,
-  `posicionar`, `transcrever_youtube`. Prefira-as a escrever frontmatter à mão.
+  `posicionar`, `transcrever_youtube`, `mudar_status` (inclusive publicar), `agendar`, `listar_caixas`,
+  `colocar_na_caixa` (grava `grupo:` e põe o card dentro da caixa), `marcar_winner`. Todas acham a nota pelo nome, com
+  ou sem a marca de status, e passam pelas funções do app (links, pins e posição no canvas vão junto). As instruções
+  dele (`INSTRUCOES` em `agente.py`) resumem este guia e apontam para cá; mantenha as duas coisas iguais.
+- **Onde o Rodrigo está**: toda mensagem do chat leva `onde` (tela, canvas, vista/caixa, filtro, tipos visíveis, cards
+  selecionados, nota aberta), montado por `canvasApi.descreverOnde()` e posto no contexto do agente
+  (`## Onde o Rodrigo está no app agora`). Cada card tem, no hover, um botão que leva a nota ao chat.
 - Mensagens que o app monta: `📡 Sinal do radar · fonte · autor · url` + linhas `> …` (o card em foco) e
   `📎 [[nota]] · linhas X–Y · caminho` + linhas `> …` (o trecho do editor, `⌘I`).
 - **Modo construtor** (botão no chat): o mesmo chat mexe no código de `app/` enquanto o Rodrigo usa. Antes de cada
@@ -296,7 +350,7 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 | `GET /api/canvas` | estado do canvas: ideias, entradas, produções, posições, arquivados, caixas, formatos |
 | `POST /api/canvas/ideia` · `entrada` · `saida` | criar 💡 ideia · ideia a partir de link/texto (ou `pronto` do radar) · saída de uma ideia |
 | `POST /api/canvas/ligar` · `agrupar` · `fonte` | `ideia:` numa copy · mesmo `ideia:` em várias · `fontes:` numa ideia |
-| `POST /api/canvas/grupo` · `caixa` · `DELETE /api/canvas/caixa/{id}` | `grupo:` nas notas · criar/editar caixa · apagar caixa |
+| `POST /api/canvas/grupo` · `grupos` · `caixa` · `DELETE /api/canvas/caixa/{id}` | `grupo:` nas notas (um ou vários `{notas, grupo}`; devolvem o que mudou) · criar/editar caixa · apagar caixa |
 | `PUT /api/canvas/posicoes` · `POST /api/canvas/arquivar` | layout |
 | `GET/PUT /api/notas/{raiz}/{nome}` | ler · salvar (com `mtime`; conflito se mudou por fora) |
 | `POST /api/notas/{raiz}/{nome}/acao` | `mover` · `status` · `renomear` · `lixeira` (leva a posição do canvas junto) |
@@ -320,24 +374,26 @@ app/backend/src/jarvis/
   canvas.py                   ideias, produções, grupos, caixas, layout, mídia dos cards
   agente.py · construtor.py   chat (vault e construtor) e pontos de restauração
   radar.py · preferencias.py · db.py · coletores/{fontes,x,x_curtir}.py   radar e like no X
-  metricool.py · anuncios.py · planejamento.py · youtube.py · videos_x.py · skills.py · auth.py
+  metricool.py · anuncios.py · planejamento.py · youtube.py · videos_x.py · auth.py
 app/frontend/src/
-  App.tsx                     navbar, páginas, modal, busca, chat, orbe
+  App.tsx                     navbar, breadcrumb, páginas, modal, busca, chat
   Canvas.tsx                  canvas, cards, caixas, pastas, menus, gestos (função montar = quem aparece)
-  Tabela.tsx · ModalNota.tsx · Paleta.tsx · Chat.tsx · Radar.tsx · CalendarioEditorial.tsx · Calendario.tsx · Menu.tsx
+  Tabela.tsx · ModalNota.tsx · Paleta.tsx · Chat.tsx · Radar.tsx · CalendarioEditorial.tsx · Calendario.tsx
   Editor.tsx · livePreview.ts · propriedades.ts   o editor no jeito do Obsidian
   canvasApi.ts · api.ts · notas.ts                tipos e chamadas; notas.ts = raízes, pastas, link do Obsidian
   index.css                   todo o CSS (tokens no topo)
 ```
 
-`Skills.tsx`, `Desempenho.tsx` e `Ideias` não estão mais na navbar (a página Ideias foi removida; as skills abrem no
-modal). Não traga de volta sem pedido.
+`Desempenho.tsx` não está mais na navbar. Saíram de vez: a página Ideias, a página Skills e o orbe com o leque de
+skills (as skills seguem abrindo no modal pela busca `⌘P`). Não traga de volta sem pedido.
 
 ## 12. Armadilhas conhecidas
 
 - **"Entrada"** ainda existe no código e nas instruções do chat (`0 Ideias/Entradas/`, `fontes:`, card `e:`), mas o
   fluxo atual cria tudo como 💡 ideia. Não crie entradas novas; ao mexer, prefira convergir para ideia.
 - **Nome com sufixo " 2"**: `_livre` evita colisão acrescentando um número. Se aparecer, foi colisão de nome.
+- **Modo dev é lento:** o `neo-obsidian` roda o front pelo Vite em modo de desenvolvimento. Arrastar um card custa ~28 ms
+  por movimento em dev e ~13 ms no build de produção (`npm run build`, servido pelo backend em http://localhost:8740).
 - **Browser pane escondido** (testes pelo painel do app): `requestAnimationFrame` e `ResizeObserver` param, então
   `node.measured` do React Flow fica indefinido e animações de pan não rodam. Use `rf.getInternalNode` e não conclua
   que "não funciona" só por isso.

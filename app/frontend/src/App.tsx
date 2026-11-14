@@ -1,20 +1,21 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Calendario } from './Calendario'
 import { CalendarioEditorial } from './CalendarioEditorial'
-import { Canvas } from './Canvas'
+import { Canvas, type Passo } from './Canvas'
+import { Canvases, preCarregarCanvases } from './Canvases'
+import { cabecalhoCanvas, listarCanvases, onde, usarCanvas } from './canvasApi'
 import { ModalNota } from './ModalNota'
 import type { Alvo, Voltar } from './canvasApi'
 import { Chat } from './Chat'
-import { Icone } from './Icone'
 import { EmBreve } from './EmBreve'
-import { Leque, Orbe, type SkillResumo } from './Menu'
+import { Icone } from './Icone'
 import { Radar } from './Radar'
 import { Paleta } from './Paleta'
 import type { Trecho } from './notas'
 import type { Sinal } from './api'
 
 // navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
-// Orbe no canto de baixo: as skills e as configurações. ⌘P busca notas e abre no modal.
+// ⌘P busca notas e abre no modal.
 const GRUPOS = [['Canvas', 'Calendário'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
@@ -25,13 +26,26 @@ const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
   a.fonte === 'x' || /^https?:\/\/(www\.)?(x|twitter)\.com\//.test(a.url ?? '') ? 'X' : 'Sites'
 
 export default function App() {
+  // canvas isolados: null = página de controle (lista dos canvas); clicar em NEO-OBSIDIAN volta para ela
+  const [canvasSlug, setCanvasSlug] = useState<string | null>(() => { try { return localStorage.getItem('canvas-atual') || 'fia' } catch { return 'geral' } })
+  useEffect(() => { try { if (canvasSlug) localStorage.setItem('canvas-atual', canvasSlug) } catch { /* sem storage */ } }, [canvasSlug])
+  if (canvasSlug) usarCanvas(canvasSlug)   // antes de qualquer chamada do canvas nesta renderização
+  useEffect(() => { preCarregarCanvases() }, [canvasSlug])
+  // o canvas guardado pode ter saído da lista (o Geral ficou oculto): abre o primeiro que existe
+  useEffect(() => {
+    listarCanvases().then((l) => { if (canvasSlug && l.length && !l.some((c) => c.slug === canvasSlug)) setCanvasSlug(l[0].slug) }).catch(() => {})
+  }, [canvasSlug])
   const [pagina, setPagina] = useState<string>(() => { try { const p = localStorage.getItem('pagina'); return p && (NAV as readonly string[]).includes(p) ? p : 'Canvas' } catch { return 'Canvas' } })
+  onde.pagina = pagina   // o chat manda isso ao Jarvis (ver canvasApi.onde)
+  if (!canvasSlug) onde.canvas = null
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
   // modal de nota (ideia + saídas em tabs): canvas, calendário e ⌘P abrem aqui
   const [modal, setModal] = useState<Alvo | null>(null)
+  onde.nota = modal   // o chat manda isso ao Jarvis (ver canvasApi.onde)
   const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
+  const [caminhoCanvas, setCaminhoCanvas] = useState<Passo[]>([])   // o que o canvas aberto conta ao breadcrumb
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
   // sinal em conversa no chat: sobrevive a recarregar a página
   const [foco, setFoco] = useState<Sinal | null>(() => { try { return JSON.parse(localStorage.getItem('foco-sinal') || 'null') } catch { return null } })
@@ -39,9 +53,6 @@ export default function App() {
   // clicar no sinal do chat (o anexado ou um do histórico) volta para o card dele no Radar, no modo foco
   const [irSinal, setIrSinal] = useState<{ id?: number; url?: string | null; n: number }>()
   const abrirSinal = useCallback((a: { id?: number; url?: string | null; fonte?: string }) => { setPagina(abaDoSinal(a)); setIrSinal((x) => ({ ...a, n: (x?.n ?? 0) + 1 })) }, [])
-  const [leque, setLeque] = useState(false)
-  const [skills, setSkills] = useState<SkillResumo[]>([])
-  const fechar = useCallback(() => setLeque(false), [])
   // trecho de nota mandado do editor para o chat (⌘I), pedido pronto das ações rápidas e aviso de que a nota pode ter mudado
   const [trecho, setTrecho] = useState<Trecho | null>(null)
   const [pedido, setPedido] = useState<{ texto: string; n: number }>({ texto: '', n: 0 })
@@ -74,7 +85,6 @@ export default function App() {
   // o chat ocupa a altura toda, do topo ao pé da tela
   const corpo = useRef<HTMLElement>(null)
 
-  useEffect(() => { fetch('/api/skills').then((r) => r.json()).then(setSkills).catch(() => {}) }, [])
   // ⌘P: busca rápida de notas, que abre a nota no modal
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
@@ -97,13 +107,21 @@ export default function App() {
     window.addEventListener('keydown', tecla, true)
     return () => window.removeEventListener('keydown', tecla, true)
   }, [])
-  // as skills abrem no modal de nota (leitura e edição); "Todas as skills" abre a busca
-  const abrirSkill = (nome: string) => abrirModal({ raiz: 'skills', nome })
 
   return (
-    <div className={`app ${leque ? 'com-leque' : ''}`}>
+    <div className="app">
       <div className="lateral-area">
-      <span className="neo-marca"><i />NEO-OBSIDIAN</span>
+      {/* breadcrumb: NEO-OBSIDIAN (todos os canvas) › canvas › vista; nas outras páginas, só o nome dela */}
+      <nav className="migalhas" aria-label="Onde você está">
+        <button type="button" className="neo-marca" title="Todos os canvas" onClick={() => { setCanvasSlug(null); setPagina('Canvas') }}><i />NEO-OBSIDIAN</button>
+        {(pagina !== 'Canvas' ? [{ rotulo: pagina } as Passo] : canvasSlug ? caminhoCanvas : [{ rotulo: 'Todos os canvas' } as Passo]).map((p, i, l) => (
+          <Fragment key={i}>
+            <span className="migalhas-sep" aria-hidden="true">›</span>
+            {p.ir ? <button type="button" className="migalhas-item" onClick={p.ir}>{p.rotulo}</button>
+              : <span className="migalhas-item is-atual" aria-current={i === l.length - 1 ? 'page' : undefined}>{p.rotulo}</span>}
+          </Fragment>
+        ))}
+      </nav>
       <nav className="lateral glass glass--light" aria-label="Páginas">
         {GRUPOS.map((g, k) => (
           <Fragment key={k}>
@@ -123,7 +141,9 @@ export default function App() {
       <main ref={corpo} className={`corpo ${chat ? '' : 'sem-chat'}`}
         style={chat && chatW ? { gridTemplateColumns: `minmax(0, 1fr) ${chatW}px` } : undefined}>
         <section className="pagina">
-          {pagina === 'Canvas' ? <Canvas mostrar={mostrar} onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
+          {pagina === 'Canvas' ? (canvasSlug
+              ? <Canvas key={canvasSlug} canvas={canvasSlug} onCaminho={setCaminhoCanvas} onTrocarCanvas={setCanvasSlug} mostrar={mostrar} onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
+              : <Canvases onAbrir={setCanvasSlug} />)
             : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => abrirModal({ raiz, nome })} />
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} foco={foco} onConversar={setFoco} ir={irSinal} />
@@ -132,7 +152,7 @@ export default function App() {
           {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
         voltar={voltar ? { rotulo: voltar.rotulo, fn: () => { setModal(null); setVoltar(null); voltar.fn() } } : undefined} onTrecho={mandarTrecho} onPedido={mandarPedido}
         onMudou={() => setMudou((n) => n + 1)} versao={versao}
-        onMostrar={(a) => { setModal(null); setVoltar(null); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
+        onMostrar={(a) => { setModal(null); setVoltar(null); setCanvasSlug((c) => c ?? 'geral'); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
         </section>
         <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
           alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}
@@ -142,13 +162,18 @@ export default function App() {
 
       {paleta && <Paleta onFechar={() => setPaleta(false)}
         onAbrir={(raiz, nome) => { setPaleta(false); setModal({ raiz, nome }) }}
-        onCriar={(t) => { setPaleta(false); fetch('/api/canvas/ideia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ titulo: t }) })
+        onImportar={canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card
+          setPaleta(false)
+          fetch('/api/canvas/importar', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify({ nome }) })
+            .then((r) => r.json()).then((d) => {
+              if (!d.card) return
+              setPagina('Canvas'); setMudou((n) => n + 1)
+              setMostrar((m) => ({ alvo: { raiz: d.raiz ?? raiz, nome: d.nome ?? nome }, n: (m?.n ?? 0) + 1 }))
+            }).catch(() => {})
+        } : undefined}
+        onCriar={(t) => { setPaleta(false); fetch('/api/canvas/ideia', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify({ titulo: t }) })
           .then((r) => r.json()).then((d) => { if (d.nome) { setModal({ raiz: 'ideias', nome: d.nome }); setMudou((n) => n + 1) } }).catch(() => {}) }} />}
 
-
-      <Leque aberto={leque} skills={skills} onSkill={abrirSkill} onTodas={() => setPaleta(true)}
-        onConfig={() => setPagina('Config')} onFechar={fechar} />
-      <Orbe aberto={leque} onClick={() => setLeque((v) => !v)} />
     </div>
   )
 }

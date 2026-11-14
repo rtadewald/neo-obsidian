@@ -124,7 +124,12 @@ class Painel extends WidgetType {
         const lista = Array.isArray(valor) ? valor : valor ? [valor] : []
         const caixa = document.createElement('div'); caixa.className = 'cm-prop-campo cm-prop-lista'
         lista.forEach((t, i) => {
-          const c = document.createElement('span'); c.className = 'cm-prop-chip'; c.textContent = t
+          const c = document.createElement('span'); c.className = 'cm-prop-chip'
+          if (/^https?:\/\//.test(t)) {   // lista de links (ex.: notion: com vários cards): cada um abre
+            const a = document.createElement('a'); a.href = t; a.target = '_blank'; a.rel = 'noreferrer'; a.title = t
+            a.textContent = /notion\.(so|com)/.test(t) ? `Notion ${lista.length > 1 ? i + 1 : ''} ↗`.replace('  ', ' ') : `link ${i + 1} ↗`
+            c.classList.add('is-link'); c.append(a)
+          } else c.textContent = t
           const x = document.createElement('button'); x.textContent = '×'; x.title = 'Tirar'
           x.onclick = () => { focoDepois = `lista:${chave}`; trocar(view, chave, lista.filter((_, j) => j !== i)) }
           c.append(x); caixa.append(c)
@@ -167,6 +172,14 @@ class Painel extends WidgetType {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); t.value = v; t.blur() }
       }
       t.onblur = () => { if (t.value.trim() !== v) trocar(view, chave, t.value.trim()) }
+      if (/^https?:\/\//.test(v)) {   // link (ex.: notion:, url:): o campo continua editável e ganha um ↗ que abre
+        const caixa = document.createElement('div'); caixa.className = 'cm-prop-campo-link'
+        const a = document.createElement('a'); a.href = v; a.target = '_blank'; a.rel = 'noreferrer'; a.className = 'cm-prop-abrir'
+        a.textContent = /notion\.(so|com)/.test(v) ? 'Notion ↗' : '↗'; a.title = `Abrir ${v}`
+        caixa.append(t, a)
+        linha(chave, caixa, chave)
+        continue
+      }
       linha(chave, t, chave)
     }
 

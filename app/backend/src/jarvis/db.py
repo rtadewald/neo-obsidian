@@ -76,6 +76,8 @@ def iniciar():
         if "voto" not in cols_s:  # like (1) / deslike (-1) do Rodrigo, que ensina o ranking
             c.execute("alter table sinais add column voto integer default 0")
             c.execute("alter table sinais add column votado_em real")
+        if "lote" not in cols_s:  # X: a coleta em que o post apareceu pela 1ª vez (a página mostra só o último lote)
+            c.execute("alter table sinais add column lote real")
         if "x_quer" not in cols_s:  # like espelhado no X: o que se quer lá (1/0) e o que já está feito
             c.execute("alter table sinais add column x_quer integer")
             c.execute("alter table sinais add column x_feito integer")
@@ -84,8 +86,9 @@ def iniciar():
             c.execute("alter table sinais add column interesse real")
 
 
-def gravar_sinais(itens: list[dict]) -> int:
-    """Insere ou atualiza os números de sinais já vistos. Não mexe em status, tipo nem porque."""
+def gravar_sinais(itens: list[dict], lote: float | None = None) -> int:
+    """Insere ou atualiza os números de sinais já vistos. Não mexe em status, tipo nem porque.
+    `lote` (X): marca só os posts inéditos com a coleta de agora; os já vistos não voltam para a página."""
     novos = 0
     with conexao() as c:
         for s in itens:
@@ -102,17 +105,29 @@ def gravar_sinais(itens: list[dict]) -> int:
             else:
                 novos += 1
                 c.execute("""insert into sinais (fonte, externo, url, titulo, resumo, autor, imagem, metricas, nota,
-                             destaque, publicado_em, coletado_em) values (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                             destaque, publicado_em, coletado_em, lote) values (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (s["fonte"], s["externo"], s.get("url"), s["titulo"], s.get("resumo"), s.get("autor"),
                            s.get("imagem"), json.dumps(s.get("metricas", {})), s.get("nota", 0), s.get("destaque"),
-                           s.get("publicado_em"), time.time()))
+                           s.get("publicado_em"), time.time(), lote))
     return novos
 
 
-def listar_sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None, limite: int = 120):
+def externos_recentes(fonte: str, n: int) -> list[str]:
+    with conexao() as c:
+        return [l[0] for l in c.execute("select externo from sinais where fonte=? order by coletado_em desc limit ?", (fonte, n))]
+
+
+def listar_sinais(status: str | None = None, fonte: str | None = None, tipo: str | None = None, limite: int = 120,
+                  ultimo_lote: bool = False):
     sql, args = "select * from sinais where 1=1", []
-    if status == "curtido":  # os que levaram like, em qualquer status (para retreinar o gosto depois)
+    if ultimo_lote and fonte:  # X: só os posts que chegaram na última coleta
+        with conexao() as c:
+            lote = c.execute("select max(lote) from sinais where fonte=?", (fonte,)).fetchone()[0]
+        if lote is not None:
+            sql += " and lote=?"; args.append(lote)
+    if status == "curtido":  # os que levaram like, de qualquer coleta e sem limite: ficam para sempre
         sql += " and voto > 0"
+        limite = 100000
     elif status:
         sql += " and status=?"; args.append(status)
     else:

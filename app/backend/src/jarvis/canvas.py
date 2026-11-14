@@ -8,8 +8,15 @@
 
 Posição dos cards e cards arquivados (escondidos do canvas) ficam em `app/dados/canvas.json`, fora do vault.
 """
+import contextvars
+import functools
 import json
+import os
 import re
+import shutil
+import tempfile
+import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +34,7 @@ ROTULO_FORMATO = {"📱": "Reels", "📺": "VSL", "📝": "Feed", "💰": "Ad", 
                   "🎙️": "Live", "🗣️": "Stories"}
 # emojis de formato que já existem no vault (para reconhecer o formato de notas antigas)
 MARCAS_FORMATO = FORMATOS + ["📩", "🎣", "📚", "💻", "🧑🏼‍🏫", "✅", "🔥", "📦"]
+WINNER = "🔥"   # tag de copy que performou acima da média (o card ganha borda vermelha)
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"}
 
 
@@ -83,7 +91,8 @@ def _definir(texto: str, chave: str, valor: str | list[str] | None) -> str:
         else:
             novas = [f'{chave}: "{valor}"']
         linhas[i:i] = novas
-    return "---\n" + "\n".join(linhas) + "\n---\n" + (corpo if corpo.startswith("\n") or not corpo else "\n" + corpo)
+    # o FM já consumiu a quebra depois do `---`: o corpo volta exatamente como estava (sem linha em branco a mais)
+    return "---\n" + "\n".join(linhas) + "\n---\n" + corpo
 
 
 def _ler(p: Path, limite: int | None = 4000) -> str:
@@ -111,22 +120,132 @@ def _base(nome: str) -> str:
 
 # ---------- leitura ----------
 
-def _layout() -> dict:
+# O layout é lido, alterado e regravado por várias rotas, que o FastAPI roda em paralelo (arrastar uma caixa manda
+# posição, caixa e grupo quase juntos). Sem trava, duas gravações dividiam o mesmo .tmp e geravam um JSON quebrado,
+# que era lido como layout vazio e regravado por cima de tudo (aconteceu: caixas e posições sumiram).
+_trava = threading.RLock()
+HISTORICO = DADOS / "canvas-historico"   # cópia de cada versão antes de gravar por cima (as últimas 200)
+
+
+class LayoutIlegivel(RuntimeError):
+    pass
+
+
+def _travado(f):
+    @functools.wraps(f)
+    def g(*a, **k):
+        with _trava:
+            return f(*a, **k)
+    return g
+
+
+# ---------- canvas isolados (como os projetos do Neo Stitch) ----------
+# Cada canvas tem o seu layout (posições, caixas, arquivados). "geral" é o de sempre (canvas.json) e mostra tudo; os
+# outros mostram só as notas com uma tag que começa por um dos prefixos dele (ex.: 🤖fia) e as ideias dessas notas.
+# A rota diz qual canvas pelo cabeçalho X-Canvas (main.py põe em `_atual`); as funções daqui usam esse por padrão.
+CANVASES = DADOS / "canvases.json"
+_atual: contextvars.ContextVar[str] = contextvars.ContextVar("canvas", default="geral")
+GERAL = {"slug": "geral", "nome": "Geral", "icone": "🗂️", "tags": []}
+
+
+CONFIG = DADOS / "canvas-config.json"   # {"geral_oculto": true}: o Geral sai da lista (continua servindo as pastas globais)
+
+
+def geral_oculto() -> bool:
     try:
-        d = json.loads(ARQ.read_text(encoding="utf-8"))
+        return bool(json.loads(CONFIG.read_text(encoding="utf-8")).get("geral_oculto"))
     except (OSError, ValueError):
+        return False
+
+
+def lista_canvases() -> list[dict]:
+    try:
+        d = json.loads(CANVASES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = []
+    return [GERAL, *[c for c in d if c.get("slug") != "geral"]]
+
+
+def canvas_info(slug: str | None = None) -> dict:
+    slug = slug or _atual.get()
+    return next((c for c in lista_canvases() if c["slug"] == slug), GERAL)
+
+
+def _arq(slug: str | None = None) -> Path:
+    slug = canvas_info(slug)["slug"]
+    return ARQ if slug == "geral" else DADOS / f"canvas@{slug}.json"
+
+
+def salvar_canvas(c: dict) -> dict:
+    """Cria (sem slug) ou edita um canvas: nome, ícone e os prefixos de tag que ele mostra."""
+    with _trava:
+        outros = [x for x in lista_canvases() if x["slug"] != "geral"]
+        nome = _limpo(c.get("nome") or "").strip()
+        atual = next((x for x in outros if x["slug"] == c.get("slug")), None)
+        if atual is None:
+            if not nome:
+                raise ValueError("dê um nome ao canvas")
+            slug = re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()).strip("-") or "canvas"
+            if any(x["slug"] == slug for x in lista_canvases()):
+                raise FileExistsError(f"canvas {slug}")
+            atual = {"slug": slug, "nome": nome, "icone": "🗂️", "tags": [], "criado": datetime.now().isoformat(timespec="seconds")}
+            outros.append(atual)
+        elif nome:
+            atual["nome"] = nome
+        if c.get("icone"):
+            atual["icone"] = c["icone"].strip()[:4]
+        if c.get("tags") is not None:
+            atual["tags"] = [t.strip().lstrip("#") for t in c["tags"] if t.strip()]
+        DADOS.mkdir(parents=True, exist_ok=True)
+        CANVASES.write_text(json.dumps(outros, ensure_ascii=False, indent=1), encoding="utf-8")
+        return atual
+
+
+def _da_tag(tags: list[str], prefixos: list[str]) -> bool:
+    return any(t.lstrip("#").startswith(p) for t in tags for p in prefixos)
+
+
+def marcar_no_canvas(raiz: str, nome: str):
+    """Nota criada dentro de um canvas de produto já nasce com a tag dele (o primeiro prefixo, ex.: 🤖fia)."""
+    tags = canvas_info()["tags"]
+    p = notas._caminho(raiz, nome)
+    if not tags or not p or not p.is_file():
+        return
+    t = _ler(p, None)
+    atuais = _lista(_fm(t), "tags")
+    if not _da_tag(atuais, tags):
+        notas._escrever(p, _definir(t, "tags", atuais + [tags[0]]))
+
+
+def _layout(slug: str | None = None) -> dict:
+    arq = _arq(slug)
+    try:
+        d = json.loads(arq.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         d = {}
+    except (OSError, ValueError) as e:   # nunca tratar um arquivo quebrado como vazio: a próxima gravação apagaria tudo
+        raise LayoutIlegivel(f"{arq.name} ilegível ({e}); restaure de {HISTORICO.name}/") from e
     d.setdefault("pos", {})
     d.setdefault("arquivados", [])
     d.setdefault("caixas", [])
+    d.setdefault("visiveis", [])   # cards trazidos à mão (⌘↵ na busca): aparecem mesmo publicados e fora de caixa
     return d
 
 
-def _gravar_layout(d: dict):
-    DADOS.mkdir(parents=True, exist_ok=True)
-    tmp = ARQ.with_suffix(".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(ARQ)
+def _gravar_layout(d: dict, slug: str | None = None):
+    with _trava:
+        DADOS.mkdir(parents=True, exist_ok=True)
+        arq = _arq(slug)
+        if arq.is_file():
+            HISTORICO.mkdir(exist_ok=True)
+            pref = arq.stem   # canvas-… (geral) ou canvas@fia-… (cada canvas tem o seu histórico)
+            shutil.copy2(arq, HISTORICO / f"{pref}-{datetime.now():%Y%m%d-%H%M%S-%f}.json")
+            for velho in sorted(HISTORICO.glob(f"{pref}-*.json"))[:-200]:
+                velho.unlink(missing_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=DADOS, prefix=".canvas-", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(d, ensure_ascii=False, indent=1))
+        os.replace(tmp, arq)
 
 
 URL = re.compile(r"https?://[^\s)\]>\"']+")
@@ -157,7 +276,7 @@ def estado() -> dict:
         m = _midia(t)
         if not m["imagem"] and _valor(fm, "thumb"):
             m["imagem"] = _valor(fm, "thumb")
-        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
+        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "tags": _lista(fm, "tags"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
                        "mtime": p.stat().st_mtime})
     for nome, p in notas._arquivos("entradas"):
         t = _ler(p)
@@ -177,12 +296,19 @@ def estado() -> dict:
                               "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
                               "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "grupo": _valor(fm, "grupo"),
                               "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
-                              "palavras": palavras, **_midia(t)})
+                              "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"), **_midia(t)})
+    info = canvas_info()
+    if info["tags"]:   # canvas de produto: só as copies com a tag dele e as ideias delas (ou com a tag)
+        producoes = [p for p in producoes if _da_tag(p["tags"], info["tags"])]
+        ligadas = {p["ideia"] for p in producoes if p["ideia"]}
+        ideias = [i for i in ideias if _da_tag(i["tags"], info["tags"]) or i["nome"] in ligadas]
+        entradas = []
     lay = _layout()
-    return {"ideias": ideias, "entradas": entradas, "producoes": producoes, "pos": lay["pos"],
+    return {"canvas": info, "visiveis": lay["visiveis"], "ideias": ideias, "entradas": entradas, "producoes": producoes, "pos": lay["pos"],
             "arquivados": lay["arquivados"], "caixas": lay["caixas"], "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
+@_travado
 def posicoes(pos: dict[str, dict]):
     d = _layout()
     for k, v in pos.items():
@@ -190,17 +316,28 @@ def posicoes(pos: dict[str, dict]):
     _gravar_layout(d)
 
 
+@_travado
 def arquivar(id_: str, sim: bool):
     d = _layout()
     d["arquivados"] = [a for a in d["arquivados"] if a != id_] + ([id_] if sim else [])
     _gravar_layout(d)
 
 
+@_travado
 def _renomear_pos(antes: str, depois: str):
-    d = _layout()
-    if antes in d["pos"]:
-        d["pos"][depois] = d["pos"].pop(antes)
-        _gravar_layout(d)
+    """A nota mudou de nome/pasta: o card fica no mesmo lugar em todos os canvas (e nas vistas `<vista>|<id>`)."""
+    for c in lista_canvases():
+        d = _layout(c["slug"])
+        mudou = False
+        for k in list(d["pos"]):
+            if k == antes or k.endswith("|" + antes):
+                d["pos"][k[: len(k) - len(antes)] + depois] = d["pos"].pop(k)
+                mudou = True
+        if antes in d["arquivados"]:
+            d["arquivados"] = [depois if a == antes else a for a in d["arquivados"]]
+            mudou = True
+        if mudou:
+            _gravar_layout(d, c["slug"])
 
 
 # ---------- escrita ----------
@@ -227,6 +364,7 @@ def criar_ideia(titulo: str, brief: str = "", fontes: list[str] | None = None, p
     links = [f"[[{f}]]" for f in (fontes or [])]
     texto = _definir("---\norigin:\ntags:\n---\n", "fontes", links or None) + (f"\n{brief.strip()}\n" if brief.strip() else "\n")
     notas._escrever(p, texto)
+    marcar_no_canvas("ideias", p.stem)
     if pos:
         posicoes({f"i:{p.stem}": pos})
     return {"nome": p.stem, "raiz": "ideias"}
@@ -292,6 +430,7 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
     p = _livre(notas.IDEIAS, f"💡 {titulo}")
     cab = "---\n" + "".join(f'{k}: "{v}"\n' for k, v in fm.items() if v or k in ("url", "tipo")) + "tags:\n---\n\n"
     notas._escrever(p, cab + corpo.strip() + "\n")
+    marcar_no_canvas("ideias", p.stem)
     if pos:
         posicoes({f"i:{p.stem}": pos})
     return {"nome": p.stem, "raiz": "ideias"}
@@ -340,11 +479,13 @@ def criar_saida(ideia: str, formato: str, titulo: str = "", texto: str = "") -> 
     if not nome.startswith(formato):
         nome = f"{formato} {nome}"
     p = _livre(notas.PRIORIZAR, nome)
-    cab = f'---\npublicado: false\nscheduled:\nideia: "[[{ideia}]]"\ntags:\n---\n\n'
+    cab = f'---\npublicado: false\nscheduled:\nideia: "[[{ideia}]]"\ngrupo:\nnotion:\ntags:\n---\n\n'   # o mesmo de T-Copy.md
     notas._escrever(p, cab + (texto.strip() + "\n" if texto.strip() else ""))
+    marcar_no_canvas("priorizar", p.stem)
     return {"nome": p.stem, "raiz": "priorizar"}
 
 
+@_travado
 def posicionar_perto(card: str, perto_de: str):
     """Para o agente: põe o card ao lado de outro (ids `i:`, `e:` ou `p:raiz/nome`, ou só o nome da nota)."""
     d = _layout()
@@ -412,14 +553,41 @@ def _notas_do_canvas():
             yield raiz, nome, p
 
 
-def definir_grupo(alvos: list[dict], grupo: str | None):
+@_travado
+def definir_grupo(alvos: list[dict], grupo: str | None) -> list[dict]:
+    """Grava `grupo` nas notas. Devolve só as que mudaram, com o valor de antes (o ⌘Z do app usa isso)."""
+    mudou = []
     for a in alvos:
         p = notas._caminho(a["raiz"], a["nome"])
         if not p or not p.is_file():
             raise FileNotFoundError(a["nome"])
         t = _ler(p, None)
-        if _valor(_fm(t), "grupo") != grupo:
+        antes = _valor(_fm(t), "grupo") or None
+        if antes != (grupo or None):
             notas._escrever(p, _definir(t, "grupo", grupo or None))
+            mudou.append({"nota": {"raiz": a["raiz"], "nome": a["nome"]}, "antes": antes, "depois": grupo or None})
+    return mudou
+
+
+def marcar_winner(alvos: list[dict], sim: bool) -> int:
+    """Põe ou tira a tag 🔥 (winner) nas notas, mantendo as outras tags. Devolve quantas mudaram."""
+    n = 0
+    for a in alvos:
+        p = notas._caminho(a["raiz"], a["nome"])
+        if not p or not p.is_file():
+            raise FileNotFoundError(a["nome"])
+        t = _ler(p, None)
+        tags = _lista(_fm(t), "tags")
+        novas = [x for x in tags if x != WINNER] + ([WINNER] if sim else [])
+        if novas != tags:
+            notas._escrever(p, _definir(t, "tags", novas))   # lista vazia fica `tags:` (a chave não some)
+            n += 1
+    return n
+
+
+def definir_grupos(itens: list[dict]) -> list[dict]:
+    """Vários `{notas, grupo}` de uma vez, na ordem (um arraste de vários cards vira um pedido só)."""
+    return [m for it in itens for m in definir_grupo(it["notas"], it.get("grupo"))]
 
 
 def _trocar_grupo(antigo: str, novo: str | None) -> int:
@@ -432,10 +600,13 @@ def _trocar_grupo(antigo: str, novo: str | None) -> int:
     return n
 
 
+@_travado
 def salvar_caixa(c: dict) -> dict:
     """Cria ou atualiza uma caixa. Renomear leva o novo nome para a propriedade `grupo` das notas de dentro."""
     d = _layout()
     atual = next((x for x in d["caixas"] if x["id"] == c.get("id")), None)
+    if c.get("id") and atual is None:   # pedido para uma caixa que não existe mais: nunca criar uma "Caixa" no lugar
+        raise FileNotFoundError(f"caixa {c['id']} (recarregue a página)")
     nome = _limpo(c.get("nome") or "") or (atual["nome"] if atual else "Caixa")   # sem nome no pedido: mantém o atual
     if any(x["nome"] == nome and x is not atual for x in d["caixas"]):
         raise FileExistsError(f"caixa {nome}")
@@ -456,6 +627,7 @@ def salvar_caixa(c: dict) -> dict:
     return atual
 
 
+@_travado
 def apagar_caixa(id_: str) -> int:
     """Tira a caixa do canvas; as notas de dentro continuam, só perdem a propriedade `grupo`."""
     d = _layout()
@@ -465,3 +637,184 @@ def apagar_caixa(id_: str) -> int:
     d["caixas"] = [x for x in d["caixas"] if x["id"] != id_]
     _gravar_layout(d)
     return _trocar_grupo(c["nome"], None)
+
+
+# ---------- para o agente do chat: as mesmas ações do app, pelo nome da nota ----------
+
+def achar(nome: str) -> tuple[str, str]:
+    """Raiz de uma nota pelo nome (sem .md). Procura em Priorizar, Publicados, Ideias e Entradas, nessa ordem."""
+    nome = nome.strip().removesuffix(".md").strip("[]")
+    for raiz in ("priorizar", "publicados", "ideias", "entradas"):
+        if (notas.TODAS[raiz] / f"{nome}.md").is_file():
+            return raiz, nome
+    # sem a marca de status (o nome muda ao virar 🧑🏼‍🔧/🔹 ou ao publicar): compara sem as marcas dos dois lados
+    base = notas.MARCAS.sub("", nome).strip()
+    for raiz in ("priorizar", "publicados"):
+        for n, _ in notas._arquivos(raiz):
+            if notas.MARCAS.sub("", n).strip() == base:
+                return raiz, n
+    raise FileNotFoundError(nome)
+
+
+def mudar_status(nome: str, status: str) -> dict:
+    """ideia | edicao | agendado | publicado. Publicar move para 2 Publicados; despublicar volta para Priorizar.
+    A posição do card no canvas vai junto (como no app)."""
+    raiz, nome = achar(nome)
+    if raiz not in notas.PASTAS:
+        raise ValueError("só copies (1 Priorizar ou 2 Publicados) têm status")
+    if status not in ("ideia", "edicao", "agendado", "publicado"):
+        raise ValueError("status é ideia, edicao, agendado ou publicado")
+    antes = (raiz, nome)
+    if status == "publicado":
+        d = notas.mover(raiz, nome, "publicados") if raiz != "publicados" else {"raiz": raiz, "nome": nome}
+    else:
+        d = notas.mover(raiz, nome, "priorizar") if raiz == "publicados" else {"raiz": raiz, "nome": nome}
+        if status != notas.status(d["raiz"], d["nome"]):
+            d = notas.mudar_status(d["raiz"], d["nome"], status)
+    if (d["raiz"], d["nome"]) != antes:
+        renomeou(antes[0], antes[1], d["raiz"], d["nome"])
+    return {"raiz": d["raiz"], "nome": d["nome"]}
+
+
+def _id_do_card(raiz: str, nome: str) -> str:
+    """O id do card que mostra a nota no canvas principal (a mesma regra do app: produção 🎬 com 2+ saídas ou com nota 💡)."""
+    if raiz in ("ideias", "entradas"):
+        return _id(raiz, nome)
+    if _formato(nome) == "📺":   # VSL tem card próprio, nunca entra no card de produção
+        return f"p:{raiz}/{nome}"
+    ideia = _alvo(_valor(_fm(_ler(notas._caminho(raiz, nome))), "ideia"))
+    if ideia:
+        irmas = sum(1 for r in notas.PASTAS for n, p in notas._arquivos(r)
+                    if _formato(n) != "📺" and _alvo(_valor(_fm(_ler(p)), "ideia")) == ideia)
+        if irmas >= 2 or (notas.IDEIAS / f"{ideia}.md").is_file():
+            return f"g:{ideia}"
+    return f"p:{raiz}/{nome}"
+
+
+@_travado
+def colocar_na_caixa(nomes: list[str], caixa: str | None) -> dict:
+    """Põe as notas numa caixa: grava `grupo` (em todas as saídas do card) e põe o card dentro do retângulo da caixa,
+    no próximo lugar livre da grade (a caixa cresce para baixo se precisar). `caixa` vazio tira da caixa."""
+    slug = _atual.get()
+    if caixa:   # a caixa pode estar em qualquer canvas (o agente não sabe em qual o Rodrigo está)
+        onde = next((c["slug"] for c in lista_canvases() if any(x["nome"] == caixa for x in _layout(c["slug"])["caixas"])), None)
+        if not onde:
+            raise FileNotFoundError(f"caixa {caixa} (caixas: {', '.join(x['nome'] for x in listar_caixas())})")
+        slug = onde
+    d = _layout(slug)
+    cx = next((c for c in d["caixas"] if c["nome"] == caixa), None) if caixa else None
+    feitos = []
+    for nome in nomes:
+        raiz, nome = achar(nome)
+        card = _id_do_card(raiz, nome)
+        alvos = [{"raiz": raiz, "nome": nome}]
+        if card.startswith("g:"):
+            alvos = [{"raiz": r, "nome": n} for r in notas.PASTAS for n, p in notas._arquivos(r)
+                     if _formato(n) != "📺" and _alvo(_valor(_fm(_ler(p)), "ideia")) == card[2:]]
+        definir_grupo(alvos, caixa)
+        if cx:
+            dentro = [v for k, v in d["pos"].items() if "|" not in k and k != card
+                      and cx["x"] <= v["x"] + 135 <= cx["x"] + cx["w"] and cx["y"] <= v["y"] + 60 <= cx["y"] + cx["h"]]
+            cols = max(1, (cx["w"] - 80 + 34) // 304)
+            i = len(dentro)
+            d["pos"][card] = {"x": cx["x"] + 40 + (i % cols) * 304, "y": cx["y"] + 80 + (i // cols) * 260}
+            cx["h"] = max(cx["h"], 80 + (i // cols + 1) * 260 + 20)
+        feitos.append(card)
+    _gravar_layout(d, slug)
+    return {"cards": feitos, "caixa": caixa}
+
+
+def listar_caixas() -> list[dict]:
+    """As caixas de todos os canvas (nome, canvas, se está arquivada e quantas notas têm o grupo dela)."""
+    conta: dict[str, int] = {}
+    for _, _, p in _notas_do_canvas():
+        g = _valor(_fm(_ler(p)), "grupo")
+        if g:
+            conta[g] = conta.get(g, 0) + 1
+    return [{"nome": x["nome"], "canvas": c["nome"], "arquivada": x["arquivada"], "notas": conta.get(x["nome"], 0)}
+            for c in lista_canvases() for x in _layout(c["slug"])["caixas"]]
+
+
+# ---------- imagens coladas no chat ----------
+
+TIPOS_IMAGEM = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+
+
+def salvar_imagem(dados: bytes, tipo: str) -> dict:
+    """Imagem colada no chat vai para os anexos do vault, com o nome que o Obsidian daria (`Pasted image <data>.png`):
+    o agente lê o arquivo e a imagem fica no vault para usar numa nota com `![[...]]`."""
+    ext = TIPOS_IMAGEM.get(tipo)
+    if not ext:
+        raise ValueError("formato de imagem não suportado (png, jpg, webp ou gif)")
+    if len(dados) > 15 * 1024 * 1024:
+        raise ValueError("imagem maior que 15 MB")
+    ANEXOS.mkdir(parents=True, exist_ok=True)
+    base = f"Pasted image {datetime.now():%Y%m%d%H%M%S}"
+    p, n = ANEXOS / f"{base}.{ext}", 1
+    while p.exists():
+        p, n = ANEXOS / f"{base} {n}.{ext}", n + 1
+    p.write_bytes(dados)
+    return {"nome": p.name, "caminho": str(p.relative_to(notas.VAULT))}
+
+
+def resumos() -> list[dict]:
+    """Contagens de cada canvas lendo as notas uma vez só (o recorte por tag é feito na memória)."""
+    marca = _atual.set("geral")
+    try:
+        e = estado()
+    finally:
+        _atual.reset(marca)
+    out = []
+    for c in lista_canvases():
+        if c["slug"] == "geral" and geral_oculto():
+            continue
+        prods, ideias = e["producoes"], e["ideias"]
+        if c["tags"]:
+            prods = [p for p in prods if _da_tag(p["tags"], c["tags"])]
+            ligadas = {p["ideia"] for p in prods if p["ideia"]}
+            ideias = [i for i in ideias if _da_tag(i["tags"], c["tags"]) or i["nome"] in ligadas]
+        out.append({**c, "ideias": len(ideias), "producoes": sum(1 for p in prods if p["formato"] != "📺"),
+                    "vsls": sum(1 for p in prods if p["formato"] == "📺"), "publicadas": sum(1 for p in prods if p["status"] == "publicado"),
+                    "caixas": len(_layout(c["slug"])["caixas"])})
+    return out
+
+
+def no_canvas(nomes: list[str], slug: str, sim: bool) -> int:
+    """Põe (tag do canvas) ou tira (todas as tags dos prefixos dele, inclusive as subtags) as notas de um canvas.
+    Um card pode estar em vários canvas: é só ter as tags deles."""
+    info = canvas_info(slug)
+    if not info["tags"]:
+        raise ValueError("esse canvas não é por tag")
+    n = 0
+    for nome in nomes:
+        raiz, nome = achar(nome)
+        p = notas._caminho(raiz, nome)
+        t = _ler(p, None)
+        tags = _lista(_fm(t), "tags")
+        novas = (tags + [info["tags"][0]]) if sim and not _da_tag(tags, info["tags"]) else \
+                ([x for x in tags if not _da_tag([x], info["tags"])] if not sim else tags)
+        if novas != tags:
+            notas._escrever(p, _definir(t, "tags", novas))
+            n += 1
+    return n
+
+
+@_travado
+def importar(nome: str) -> dict:
+    """⌘↵ na busca: traz a nota para o canvas atual. Ganha a tag dele (se for de produto), sai dos arquivados e fica
+    na lista `visiveis` (aparece mesmo publicada e fora de caixa). Devolve o id do card para o app enquadrar."""
+    raiz, nome = achar(nome)
+    info = canvas_info()
+    card = _id_do_card(raiz, nome)
+    if info["tags"]:   # todas as notas do card (a produção inteira), senão no canvas ela vira outro card
+        irmas = [nome]
+        if card.startswith("g:"):
+            irmas = [n for r in notas.PASTAS for n, p in notas._arquivos(r)
+                     if _formato(n) != "📺" and _alvo(_valor(_fm(_ler(p)), "ideia")) == card[2:]]
+        no_canvas(irmas, info["slug"], True)
+    d = _layout()
+    d["arquivados"] = [a for a in d["arquivados"] if a != card]
+    if card not in d["visiveis"]:
+        d["visiveis"].append(card)
+    _gravar_layout(d)
+    return {"card": card, "raiz": raiz, "nome": nome, "canvas": info["nome"]}

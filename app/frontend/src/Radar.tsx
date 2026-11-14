@@ -40,13 +40,30 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   const [gosto, setGosto] = useState<Gosto | null>(null)
   const [reavaliando, setReavaliando] = useState(false)
 
+  // A página do X mostra só o lote da última coleta (o Atualizar traz posts inéditos e o anterior sai da tela);
+  // os curtidos de qualquer coleta ficam em Curtidos.
+  const soX = fontes.length === 1 && fontes[0] === 'x'
+  // Ordem congelada: cada sinal ganha um lugar quando chega e não sai dele (o like não troca os cards de lugar).
+  // Recomeça ao trocar de filtro e quando uma coleta termina.
+  const lugar = useRef(new Map<number, number>())
+  const coletando = useRef(false)
+  useEffect(() => { lugar.current = new Map() }, [salvos, tipo])
+  const congelar = (l: Sinal[]) => {
+    const m = lugar.current
+    let n = m.size
+    for (const s of l.filter((x) => !m.has(x.id)).sort((a, b) => pts(b) - pts(a))) m.set(s.id, n++)
+    return l.slice().sort((a, b) => m.get(a.id)! - m.get(b.id)!)
+  }
+
   const carregar = useCallback(async () => {
     try {
-      const [s, e] = await Promise.all([api.sinais(salvos ? 'curtido' : undefined, tipo === 'fora' ? 'fora' : undefined), api.estado()])
-      setSinais(s); setRodando(e.rodando); setReavaliando(e.reavaliando); setUltima(e.ultima); setErro('')
+      const [s, e] = await Promise.all([api.sinais(salvos ? 'curtido' : undefined, tipo === 'fora' ? 'fora' : undefined, soX ? 'x' : undefined, soX && !salvos), api.estado()])
+      if (coletando.current && !e.rodando) lugar.current = new Map()   // chegou coleta nova: ordem nova
+      coletando.current = e.rodando
+      setSinais(congelar(s)); setRodando(e.rodando); setReavaliando(e.reavaliando); setUltima(e.ultima); setErro('')
       api.gosto().then(setGosto).catch(() => {})
     } catch (e) { setErro(String(e)) }
-  }, [salvos, tipo])
+  }, [salvos, tipo, soX])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => {  // enquanto a coleta roda, confere a cada 3 s
@@ -65,14 +82,14 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
     () => sinais.filter((s) => fontes.includes(s.fonte) && (!tipo || s.tipo === tipo) && (!fonte || s.fonte === fonte)),
     [sinais, tipo, fonte, fontes],
   )
-  const destaques = salvos || tipo || fonte ? [] : visiveis.slice().sort((a, b) => pts(b) - pts(a)).slice(0, 3)
+  const destaques = salvos || tipo || fonte ? [] : visiveis.slice(0, 3)   // já vem na ordem congelada
   const resto = visiveis.filter((s) => !destaques.includes(s))
   // no foco a ordem é aleatória; a semente fixa a ordem (descartar um sinal não embaralha o resto de novo).
   // Em "Todos" fica o ranking.
   const [semente, setSemente] = useState(() => Math.random())
   const fila = useMemo(() => {
     const l = visiveis.slice()
-    if (modo !== 'foco') return l.sort((a, b) => pts(b) - pts(a))
+    if (modo !== 'foco') return l   // a ordem congelada
     const h = (id: number) => { const x = Math.sin(id * 12.9898 + semente * 78.233) * 43758.5453; return x - Math.floor(x) }
     return l.sort((a, b) => h(a.id) - h(b.id))
   }, [visiveis, modo, semente])
@@ -137,7 +154,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   async function votar(s: Sinal, v: number) {
     const voto = s.voto === v ? 0 : v
     const x = s.fonte === 'x' ? { x_quer: voto === 1 ? 1 : s.x_feito ? 0 : null, x_erro: null } : {}
-    setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((y) => (y.id === s.id ? { ...y, ...x, voto, pontuacao: voto > 0 ? 100 : y.pontuacao } : y))))
+    setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((y) => (y.id === s.id ? { ...y, ...x, voto } : y))))
     await api.votar(s.id, voto)
     api.gosto().then(setGosto).catch(() => {})
   }

@@ -98,8 +98,9 @@ async def coletar(com_x: bool = True) -> dict:
                     det[nome] = {"erro": f"{type(e).__name__}: {e}"[:200]}
         if com_x:  # abre uma aba no Chrome do Rodrigo e leva ~1,5 min
             try:
-                itens = await coletor_x.coletar()
-                det["x"] = {"itens": len(itens), "novos": db.gravar_sinais(itens)}
+                # só posts inéditos: o script pula os já vistos e o lote novo substitui o anterior na página do X
+                itens = await coletor_x.coletar(db.externos_recentes("x", 250))
+                det["x"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}
             except Exception as e:
                 det["x"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
         try:

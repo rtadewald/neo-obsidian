@@ -127,6 +127,18 @@ function montar(state: EditorState): DecorationSet {
     },
   })
 
+  // links soltos (https://…): ganham cara de link e abrem com um clique, como no Obsidian (na linha do cursor
+  // continuam texto editável)
+  const urlSolta = /https?:\/\/[^\s<>)\]"']+[^\s<>)\]"'.,;:!?]/g
+  let u: RegExpExecArray | null
+  while ((u = urlSolta.exec(texto))) {
+    const a = u.index, b = a + u[0].length
+    if (a < inicio || ativa(a)) continue
+    if (texto[a - 1] === '(' && texto[a - 2] === ']') continue   // já é [texto](url)
+    if (texto.slice(Math.max(0, a - 3), a) === '[[' ) continue
+    d.push(marca('cm-lp-link cm-lp-url', { 'data-url': u[0] }).range(a, b))
+  }
+
   // o que o parser de markdown não conhece: [[wikilinks]], ![[embeds]] e ==destaque==
   const re = /(!?)\[\[([^\]|#]+)(#[^\]|]*)?(?:\|([^\]]+))?\]\]|==([^=\n]+)==/g
   let m: RegExpExecArray | null
@@ -159,6 +171,11 @@ export function livePreview(abrir?: Abrir) {
     extraCampo, campo,
     EditorView.domEventHandlers({
       mousedown(e) {
+        // link solto: um clique abre (fora da linha do cursor ele nem é texto editável)
+        const solto = (e.target as HTMLElement).closest('.cm-lp-url') as HTMLElement | null
+        if (solto?.dataset.url && !e.metaKey && !e.ctrlKey && e.button === 0) {
+          e.preventDefault(); window.open(solto.dataset.url, '_blank', 'noopener,noreferrer'); return true
+        }
         if (!(e.metaKey || e.ctrlKey)) return false
         const alvo = (e.target as HTMLElement).closest('[data-nota], [data-url]') as HTMLElement | null
         if (!alvo) return false
