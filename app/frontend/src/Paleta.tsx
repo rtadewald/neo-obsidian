@@ -90,8 +90,8 @@ export function Paleta({ onFechar, onAbrir, onCriar }: { onFechar: () => void; o
           ))}
           {criar && (
             <button className={sel === res.length ? 'is-sel' : ''} onMouseMove={() => setSel(res.length)} onClick={() => onCriar(q.trim())}>
-              <span className="paleta-nome"><Icone n="mais" t={14} /> Criar copy “{q.trim()}”</span>
-              <span className="paleta-pasta">Priorizar</span>
+              <span className="paleta-nome"><Icone n="mais" t={14} /> Criar ideia “{q.trim()}”</span>
+              <span className="paleta-pasta">Ideias</span>
             </button>
           )}
           {!total && <p className="mudo paleta-vazio">Carregando…</p>}

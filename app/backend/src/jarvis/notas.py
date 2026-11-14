@@ -1,7 +1,6 @@
 """Notas do vault abertas no modal: as copies de `1 Copies` e as skills de `3 Skills`.
 
 Status da copy, do jeito que o Rodrigo já marca no Obsidian:
-- working   → fixada no explorador do Obsidian (plugin File Explorer++); o app lê e grava a mesma lista
 - ideia     → nota solta em 1 Copies/1 Priorizar
 - edicao    → nome começa com 🧑🏼‍🔧
 - agendado  → nome começa com 🔹
