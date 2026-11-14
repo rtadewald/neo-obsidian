@@ -1091,3 +1091,10 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .modal-apagar-botoes .is-perigo { background: #c0392b; color: #fff; }
 .modal-apagar-botoes .is-perigo:hover { background: #a93226; }
 .acoes-jarvis .orb { margin: 0; width: 14px; height: 14px; }
+/* like espelhado no X: pontinho no canto do 👍 (indo, feito, erro) */
+.acoes-like { position: relative; }
+.acoes-x { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; }
+.acoes-x.is-ok { background: #1d9bf0; }
+.acoes-x.is-indo { background: #1d9bf0; animation: acoes-x-pulsa 1s ease-in-out infinite; }
+.acoes-x.is-erro { background: #d64545; }
+@keyframes acoes-x-pulsa { 50% { opacity: .25; } }

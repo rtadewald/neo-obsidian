@@ -54,6 +54,12 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
     const t = setInterval(carregar, 3000)
     return () => clearInterval(t)
   }, [rodando, reavaliando, carregar])
+  const xPendente = sinais.some(noXPendente)
+  useEffect(() => {  // enquanto um like está indo para o X, confere a cada 5 s
+    if (!xPendente) return
+    const t = setInterval(carregar, 5000)
+    return () => clearInterval(t)
+  }, [xPendente, carregar])
 
   const visiveis = useMemo(
     () => sinais.filter((s) => fontes.includes(s.fonte) && (!tipo || s.tipo === tipo) && (!fonte || s.fonte === fonte)),
@@ -130,7 +136,8 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
 
   async function votar(s: Sinal, v: number) {
     const voto = s.voto === v ? 0 : v
-    setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((x) => (x.id === s.id ? { ...x, voto, pontuacao: voto > 0 ? 100 : x.pontuacao } : x))))
+    const x = s.fonte === 'x' ? { x_quer: voto === 1 ? 1 : s.x_feito ? 0 : null, x_erro: null } : {}
+    setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((y) => (y.id === s.id ? { ...y, ...x, voto, pontuacao: voto > 0 ? 100 : y.pontuacao } : y))))
     await api.votar(s.id, voto)
     api.gosto().then(setGosto).catch(() => {})
   }
@@ -332,6 +339,11 @@ const fmt = (n: unknown) => (typeof n === 'number' ? n.toLocaleString('pt-BR') :
 const dataPost = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', '') : ''
 
+/** Like espelhado no X: o que se quer lá ainda não foi feito (e não deu erro). */
+const noXPendente = (s: Sinal) => s.fonte === 'x' && s.x_quer != null && s.x_feito !== s.x_quer && !s.x_erro
+const estadoNoX = (s: Sinal) => s.x_erro ? `Não consegui no X (${s.x_erro}). Clique no like de novo para tentar.`
+  : noXPendente(s) ? (s.x_quer ? 'Curtindo no X…' : 'Tirando o like no X…') : s.x_feito === 1 ? 'Curtido no X também' : 'O like também curte no X'
+
 /** Card do radar → 💡 ideia no canvas, já com o título, o link, a imagem e o texto do card. */
 async function criarIdeia(s: Sinal) {
   const m = s.metricas as { texto?: string }
@@ -354,8 +366,12 @@ function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>)
   }
   return (
     <span className="acoes">
-      <button className={`btn-icone ${s.voto === 1 ? 'is-on' : ''}`} aria-label="Curti" title="Curti: mais disso (ensina o radar e fica em Curtidos)" aria-pressed={s.voto === 1}
-        onClick={() => onVotar(s, 1)}><Icone n="like" t={16} /></button>
+      <button className={`btn-icone acoes-like ${s.voto === 1 ? 'is-on' : ''}`} aria-label="Curti" aria-pressed={s.voto === 1}
+        title={`Curti: mais disso (ensina o radar e fica em Curtidos)${s.fonte === 'x' ? '\n' + estadoNoX(s) : ''}`}
+        onClick={() => onVotar(s, 1)}><Icone n="like" t={16} />
+        {s.fonte === 'x' && (noXPendente(s) || s.x_erro || s.x_feito === 1) &&
+          <i className={`acoes-x ${s.x_erro ? 'is-erro' : noXPendente(s) ? 'is-indo' : 'is-ok'}`} />}
+      </button>
       <button className="btn-icone" aria-label="Não curti" title="Não curti: tira do feed e ensina o radar"
         onClick={() => onVotar(s, -1)}><Icone n="deslike" t={16} /></button>
       <span className="acoes-sep" />

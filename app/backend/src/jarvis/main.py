@@ -9,9 +9,12 @@ from pydantic import BaseModel
 
 from . import agente, anuncios, auth, canvas, construtor, db, metricool, notas, planejamento, preferencias, radar, skills, videos_x
 from .config import FRONT_DIST
+from .coletores import x_curtir
 
 MODO_AUTH = auth.preparar()
 db.iniciar()
+if db.pendentes_x():   # likes que ficaram na fila quando o app parou
+    x_curtir.agendar()
 app = FastAPI(title="Neo-Obsidian")
 
 
@@ -47,6 +50,8 @@ def votar(id_: int, corpo: Voto):
         raise HTTPException(400, "voto é -1, 0 ou 1")
     db.votar(id_, corpo.voto)
     preferencias.invalidar()
+    if db.querer_no_x(id_, corpo.voto == 1):   # post do X: o like vai para o X de verdade também
+        x_curtir.agendar()
     return {"ok": True}
 
 

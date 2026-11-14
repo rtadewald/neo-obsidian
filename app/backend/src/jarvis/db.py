@@ -76,6 +76,10 @@ def iniciar():
         if "voto" not in cols_s:  # like (1) / deslike (-1) do Rodrigo, que ensina o ranking
             c.execute("alter table sinais add column voto integer default 0")
             c.execute("alter table sinais add column votado_em real")
+        if "x_quer" not in cols_s:  # like espelhado no X: o que se quer lá (1/0) e o que já está feito
+            c.execute("alter table sinais add column x_quer integer")
+            c.execute("alter table sinais add column x_feito integer")
+            c.execute("alter table sinais add column x_erro text")
         if "interesse" not in cols_s:  # 0 a 100: o quanto o Haiku acha que combina com o gosto dele
             c.execute("alter table sinais add column interesse real")
 
@@ -138,6 +142,34 @@ def listar_sinais(status: str | None = None, fonte: str | None = None, tipo: str
 def votar(id_: int, voto: int):
     with conexao() as c:
         c.execute("update sinais set voto=?, votado_em=? where id=?", (voto, time.time(), id_))
+
+
+def querer_no_x(id_: int, curtido: bool) -> bool:
+    """Marca o like que o post do X deve ter lá. Devolve True se há algo a fazer."""
+    with conexao() as c:
+        l = c.execute("select fonte, x_feito from sinais where id=?", (id_,)).fetchone()
+        if not l or l["fonte"] != "x":
+            return False
+        if not curtido and not l["x_feito"]:   # nunca foi curtido lá: nada a desfazer
+            c.execute("update sinais set x_quer=null, x_erro=null where id=?", (id_,))
+            return False
+        c.execute("update sinais set x_quer=?, x_erro=null where id=?", (int(curtido), id_))
+        return True
+
+
+def pendentes_x(limite: int = 15) -> list[dict]:
+    with conexao() as c:
+        return [dict(l) for l in c.execute(
+            "select id, url, x_quer from sinais where fonte='x' and x_quer is not null and x_erro is null "
+            "and coalesce(x_feito, -1) != x_quer order by votado_em limit ?", (limite,)).fetchall()]
+
+
+def x_feito(id_: int, feito: int | None, erro: str | None = None):
+    with conexao() as c:
+        if erro:
+            c.execute("update sinais set x_erro=? where id=?", (erro, id_))
+        else:
+            c.execute("update sinais set x_feito=?, x_erro=null where id=?", (feito, id_))
 
 
 def votados() -> list[dict]:

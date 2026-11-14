@@ -7,6 +7,7 @@ export type Sinal = {
   autor: string | null
   imagem: string | null
   metricas: Record<string, unknown>
+  x_quer?: number | null; x_feito?: number | null; x_erro?: string | null   // like espelhado no X
   nota: number
   destaque: string | null
   tipo: string | null
