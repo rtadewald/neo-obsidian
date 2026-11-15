@@ -221,6 +221,10 @@ a { color: inherit; text-decoration: none; }
 .campo { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 16px; border-radius: 22px; background: rgba(255, 255, 255, .62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8), 0 6px 16px -12px rgba(70, 62, 60, .4); }
 .campo textarea { flex: 1; resize: none; min-height: 24px; max-height: 120px; padding: 5px 0; line-height: 1.45; field-sizing: content; }
 .campo textarea::placeholder { color: var(--mute); }
+.btn-ditar { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+.btn-ditar.is-ouvindo { background: #e5484d; color: #fff; animation: ditar-pulso 1.4s ease-in-out infinite; }
+@keyframes ditar-pulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, .45); } 50% { box-shadow: 0 0 0 7px rgba(229, 72, 77, 0); } }
+.chat-voz-erro { margin: 0 4px 6px; font-size: 12px; color: #c4373c; }
 .btn-enviar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #1d1d1f; color: var(--lime); flex: none; }
 
 @media (max-width: 1100px) {

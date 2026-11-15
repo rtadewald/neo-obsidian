@@ -67,6 +67,23 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
 
+  // ⌘1…⌘9 vai para a 1ª…9ª saída da produção (as tabs de cima); ⌘0 volta para a 💡 ideia. Vale também com o cursor no editor.
+  const navRef = useRef(grupo)
+  navRef.current = grupo
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || !/^[0-9]$/.test(e.key)) return
+      const g = navRef.current
+      if (!g) return
+      const n = Number(e.key)
+      const destino = n === 0 ? (g.ideia ? { raiz: 'ideias' as Raiz, nome: g.ideia.nome } : null) : g.saidas[n - 1] ? { raiz: g.saidas[n - 1].raiz as Raiz, nome: g.saidas[n - 1].nome } : null
+      e.preventDefault(); e.stopPropagation()
+      if (destino) setAtiva(destino)
+    }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [])
+
   // deletar a nota aberta: botão da lixeira ou ⌘⌫ (fora do editor, onde ⌘⌫ apaga a linha), sempre com confirmação
   const [apagar, setApagar] = useState(false)
   useEffect(() => {
@@ -152,11 +169,14 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   }
 
   // Jarvis aberto (⌘J) com a nota aberta: o fundo escurecido cobre tudo e a nota se centraliza no espaço à esquerda do chat
-  const [dirChat, setDirChat] = useState(0)
+  // (encostada no chat, com o topo e a base alinhados aos dele)
+  const [chatBox, setChatBox] = useState<{ dir: number; topo: number; base: number } | null>(null)
   useEffect(() => {
     const medir = () => {
       const c = document.querySelector('.corpo > .chat:not(.chat--fechado)')
-      setDirChat(c ? Math.max(0, window.innerWidth - c.getBoundingClientRect().left + 10) : 0)
+      if (!c) { setChatBox(null); return }
+      const r = c.getBoundingClientRect()
+      setChatBox({ dir: Math.max(0, window.innerWidth - r.left + 12), topo: r.top, base: Math.max(0, window.innerHeight - r.bottom) })
     }
     medir()
     const corpo = document.querySelector('.corpo')
@@ -178,9 +198,12 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     : [{ alvo: ativa, rotulo: ativa.nome }]
 
   return (
-    <div className="modal-fundo" style={dirChat ? { paddingRight: dirChat } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
+    <div className="modal-fundo" style={chatBox ? { paddingRight: chatBox.dir, paddingTop: chatBox.topo, paddingBottom: chatBox.base, justifyContent: 'flex-end' } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
       <div ref={caixaNota} className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}
-        style={tam ? { width: Math.min(tam.w, window.innerWidth - 16), height: Math.min(tam.h, window.innerHeight - 16) } : undefined}>
+        style={{
+          ...(tam ? { width: Math.min(tam.w, window.innerWidth - 16), height: Math.min(tam.h, window.innerHeight - 16) } : {}),
+          ...(chatBox ? { height: '100%', alignSelf: 'stretch' } : {}),
+        }}>
         {ALCAS.map(([k, dx, dy]) => <div key={k} className={`modal-alca modal-alca--${k}`} onPointerDown={(e) => redimensionar(e, dx, dy)} onDoubleClick={padrao}
           title="Arraste para mudar o tamanho da nota (duplo clique volta ao padrão)" />)}
         <header className="modal-tabs">

@@ -122,6 +122,32 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     }
     return true
   }
+  // ditado: o reconhecimento de voz do navegador (pt-BR) escreve no campo enquanto você fala; o texto que já estava fica
+  const [ouvindo, setOuvindo] = useState(false)
+  const [erroVoz, setErroVoz] = useState('')
+  const voz = useRef<{ stop: () => void } | null>(null)
+  const temVoz = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)  // eslint-disable-line @typescript-eslint/no-explicit-any
+  function ditar() {
+    if (voz.current) { voz.current.stop(); return }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition  // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!SR) return
+    const r = new SR()
+    r.lang = 'pt-BR'; r.continuous = true; r.interimResults = true
+    const antes = texto.trim() ? texto.trimEnd() + ' ' : ''
+    let final = ''
+    r.onresult = (ev: any) => {  // eslint-disable-line @typescript-eslint/no-explicit-any
+      let parcial = ''
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript
+        if (ev.results[i].isFinal) final += t; else parcial += t
+      }
+      setTexto((antes + final + parcial).replace(/\s+/g, ' ').replace(/^ /, ''))
+    }
+    r.onerror = (ev: any) => setErroVoz(ev.error === 'not-allowed' ? 'Libere o microfone para este site no navegador.' : ev.error === 'no-speech' ? '' : `Ditado: ${ev.error}`)  // eslint-disable-line @typescript-eslint/no-explicit-any
+    r.onend = () => { voz.current = null; setOuvindo(false); campo.current?.focus() }
+    setErroVoz(''); voz.current = r; setOuvindo(true); r.start()
+  }
+  useEffect(() => () => voz.current?.stop(), [])
   const [ocupado, setOcupado] = useState(false)
   const [fila, setFila] = useState<string[]>([])   // pedidos digitados enquanto o Jarvis ainda respondia o de cima
   const log = useRef<HTMLDivElement>(null)
@@ -143,6 +169,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
 
   async function enviar(e?: React.FormEvent, direto?: string) {
     e?.preventDefault()
+    if (direto === undefined) voz.current?.stop()   // enviar encerra o ditado
     const anexos = direto === undefined ? imagens : []
     const pergunta = [(direto ?? texto).trim(), anexos.map((n) => `🖼️ ![[${n}]]`).join('\n')].filter(Boolean).join('\n\n')
     if (!pergunta) return
@@ -280,6 +307,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
           {subindo > 0 && <span className="campo-imagem is-subindo" aria-label="Enviando imagem" />}
         </div>
       )}
+      {erroVoz && <p className="chat-voz-erro">{erroVoz}</p>}
       <form className="campo" onSubmit={enviar}
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault() }}
         onDrop={(e) => { const f = [...e.dataTransfer.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}>
@@ -289,9 +317,16 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
+            else if (e.key === 'd' && e.metaKey && e.shiftKey && temVoz) { e.preventDefault(); ditar() }   // ⌘⇧D liga/desliga o ditado
             else if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() }   // Esc sai do chat (volta aos atalhos da página)
           }}
         />
+        {temVoz && (
+          <button type="button" className={`btn-icone btn-ditar ${ouvindo ? 'is-ouvindo' : ''}`} onClick={ditar} aria-pressed={ouvindo}
+            aria-label={ouvindo ? 'Parar o ditado' : 'Ditar'} title={ouvindo ? 'Ouvindo… clique para parar (⌘⇧D)' : 'Ditar a mensagem (⌘⇧D)'}>
+            <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3" /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" /></svg>
+          </button>
+        )}
         <button className="btn-enviar" type="submit" disabled={!texto.trim() && !imagens.length} aria-label={ocupado ? 'Colocar na fila' : 'Enviar'} title={ocupado ? 'O Jarvis está ocupado: entra na fila' : 'Enviar'}><Icone n="enviar" t={16} /></button>
       </form>
     </aside>
