@@ -391,6 +391,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     setVisao(`foco:${id}`)
     setVistas((v) => v.pinados.includes(id) ? v : { ...v, historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) })
   }, [])
+  // arrastar um pinado (na lista da esquerda) muda a ordem deles
+  const [arrastaPin, setArrastaPin] = useState<string | null>(null)
+  const [alvoPin, setAlvoPin] = useState<string | null>(null)
   // pinado/último aberto da lista da esquerda: volta ao canvas, enquadra e seleciona o card e abre a nota dele
   const irAoCard = (id: string) => {
     const antes = visaoRef.current
@@ -1094,7 +1097,11 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             const pins = vistas.pinados.filter(existe), hist = vistas.historico.filter(existe)
             if (!pins.length && !hist.length) return null
             const item = (id: string, pinado: boolean) => (
-              <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''}`}>
+              <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''} ${pinado && arrastaPin && alvoPin === id && arrastaPin !== id ? 'is-alvo' : ''} ${arrastaPin === id ? 'is-arrastando' : ''}`}
+                draggable={pinado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); setArrastaPin(id) }}
+                onDragOver={(e) => { if (!pinado || !arrastaPin) return; e.preventDefault(); setAlvoPin(id) }}
+                onDragEnd={() => { setArrastaPin(null); setAlvoPin(null) }}
+                onDrop={(e) => { e.preventDefault(); if (pinado && arrastaPin) setVistas((v) => ({ ...v, pinados: moverNaLista(v.pinados, arrastaPin, id) })); setArrastaPin(null); setAlvoPin(null) }}>
                 <button className="trilho-abrir" onClick={() => irAoCard(id)} title={`${nomeDoId(id)}: abre a nota e mostra o card no canvas`}>
                   {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
                 </button>

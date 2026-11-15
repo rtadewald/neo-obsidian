@@ -1605,3 +1605,8 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .modo-trabalho .canvas-status .canvas-barra { transform: none; opacity: 1; }
 /* a barra de baixo (pastas de status + controles) fica centralizada na área livre do canvas */
 .canvas-pastas { left: 16px; right: calc(var(--livre-dir, 0px) + 16px); justify-content: center; }
+
+/* pinados reordenáveis: arrastar um sobre o outro */
+.canvas-lista .trilho-item[draggable="true"] { cursor: grab; }
+.canvas-lista .trilho-item.is-arrastando { opacity: .35; }
+.canvas-lista .trilho-item.is-alvo .trilho-abrir { box-shadow: inset 0 0 0 1.5px #8fd61f; }
