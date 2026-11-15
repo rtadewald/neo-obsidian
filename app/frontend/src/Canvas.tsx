@@ -354,15 +354,12 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   visaoRef.current = visao
   const [filtro, setFiltro] = useState<Filtro>('todos')   // o seletor de status saiu da barra (as pastas abrem cada status)
   // chips liga/desliga, independentes: todos começam ligados e cada clique esconde ou mostra aquele tipo
-  const [tiposVer, setTiposVer] = useState<TipoVer[]>(() => {
-    try { const v = JSON.parse(localStorage.getItem('canvas-tipos') || 'null'); return Array.isArray(v) ? v : TIPOS_VER.map((t) => t.k) } catch { return TIPOS_VER.map((t) => t.k) }
-  })
+  // sem seletor de tipo na barra: todos os tipos aparecem (o filtro guardado de antes não vale mais)
+  const [tiposVer] = useState<TipoVer[]>(() => TIPOS_VER.map((t) => t.k))
   useEffect(() => { try { localStorage.setItem('canvas-tipos', JSON.stringify(tiposVer)) } catch { /* sem storage */ } }, [tiposVer])
-  const alternarTipo = (k: TipoVer) => setTiposVer((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]))
   // filtro de produto: os escondidos (vazio = todos aparecem). SEM = cards sem produto nenhum
-  const [prodFora, setProdFora] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem('canvas-produtos-fora') || '[]'); return Array.isArray(v) ? v : [] } catch { return [] } })
+  const [prodFora] = useState<string[]>([])   // sem seletor de produto na barra: todos aparecem
   useEffect(() => { try { localStorage.setItem('canvas-produtos-fora', JSON.stringify(prodFora)) } catch { /* sem storage */ } }, [prodFora])
-  const alternarProduto = (k: string) => setProdFora((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]))
   // canvas próprio de um card: pinados ficam na barra da esquerda; abaixo, as últimas aberturas
   // pinados são globais (o card pinado continua pinado em qualquer canvas onde ele esteja); o histórico é de cada canvas
   const [vistas, setVistas] = useState<Vistas>(() => {
@@ -394,6 +391,23 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     setVisao(`foco:${id}`)
     setVistas((v) => v.pinados.includes(id) ? v : { ...v, historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) })
   }, [])
+  // pinado/último aberto da lista da esquerda: volta ao canvas, enquadra e seleciona o card e abre a nota dele
+  const irAoCard = (id: string) => {
+    const antes = visaoRef.current
+    if (antes !== 'principal') setVisao('principal')
+    setVistas((v) => v.pinados.includes(id) ? v : { ...v, historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) })
+    const ir = (k = 0) => {
+      const n = rf.getInternalNode(id)
+      if (!n && k < 40) { window.setTimeout(() => ir(k + 1), 60); return }
+      if (!n) return
+      if (!n.measured?.width && k < 8) { window.setTimeout(() => ir(k + 1), 60); return }
+      setNos((ns) => ns.map((x) => (x.selected !== (x.id === id) ? { ...x, selected: x.id === id } : x)))
+      enquadrarTudo(450, [id])
+      const no = rf.getNodes().find((x) => x.id === id) as No | undefined
+      if (no) onAbrir(alvoDe(no))
+    }
+    window.setTimeout(() => ir(), antes !== 'principal' ? 250 : 0)
+  }
   const pinar = useCallback((id: string, sim: boolean) => setVistas((v) => sim
     ? { pinados: [...v.pinados.filter((x) => x !== id), id], historico: v.historico.filter((x) => x !== id) }
     : { pinados: v.pinados.filter((x) => x !== id), historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) }), [])
@@ -1081,7 +1095,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             if (!pins.length && !hist.length) return null
             const item = (id: string, pinado: boolean) => (
               <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''}`}>
-                <button className="trilho-abrir" onClick={() => abrirVista(id)} title={nomeDoId(id)}>
+                <button className="trilho-abrir" onClick={() => irAoCard(id)} title={`${nomeDoId(id)}: abre a nota e mostra o card no canvas`}>
                   {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
                 </button>
                 <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
@@ -1113,13 +1127,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           {visao !== 'principal' && <span className="canvas-nome">{NOME_VISAO(visao)}<em>{nos.length} cards</em></span>}
           {visao.startsWith('foco:') && (() => { const id = visao.slice(5), sim = vistas.pinados.includes(id)
             return <button className={`btn-icone canvas-pin ${sim ? 'is-on' : ''}`} onClick={() => pinar(id, !sim)} data-dica={sim ? 'Despinar (volta ao histórico)' : 'Pinar na barra da esquerda'}><Icone n="pin" t={14} /></button> })()}
-          {/* tipos de card: o mesmo menu recolhível dos produtos */}
-          <FiltroProdutos opcoes={TIPOS_VER.map((t) => ({ k: t.k, nome: t.nome.slice(t.nome.indexOf(' ') + 1), cor: '', emoji: t.nome.split(' ')[0] }))}
-            fora={TIPOS_VER.map((t) => t.k).filter((k) => !tiposVer.includes(k))} onAlternar={(k) => alternarTipo(k as TipoVer)}
-            onTodos={() => setTiposVer(TIPOS_VER.map((t) => t.k))} textos={{ todos: 'Todos os tipos', nenhum: 'Nenhum tipo', varios: 'tipos', dica: 'Filtrar por tipo de card' }} />
-          {/* produtos: um menu recolhível (marcar/desmarcar cada um); todos marcados = sem filtro */}
-          {(est?.produtos?.length ?? 0) > 0 && <FiltroProdutos opcoes={[...est!.produtos!.map((x) => ({ k: x.slug, nome: x.nome, cor: x.cor })), { k: SEM, nome: 'Sem produto', cor: '' }]}
-            fora={prodFora} onAlternar={alternarProduto} onTodos={() => setProdFora([])} />}
+          {/* os seletores de tipo e de produto saíram da barra: o canvas mostra todos os cards */}
           {/* zoom e linhas (mostrar tudo = duplo clique no vazio): ficam na barra de cima (antes eram os controles flutuantes do canto) */}
           <span className="canvas-sep" />
           <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
@@ -1291,40 +1299,6 @@ function ModalArquivados({ est, onFechar, onAbrir, onDesarquivar }: { est: Estad
   return alvo ? createPortal(corpo, alvo) : corpo
 }
 
-/** Filtro de produto da barra: um botão com as cores dos produtos ligados; abre um menu de marcar (como o Obsidian). */
-function FiltroProdutos({ opcoes, fora, onAlternar, onTodos, textos = { todos: 'Todos os produtos', nenhum: 'Nenhum produto', varios: 'produtos', dica: 'Filtrar por produto' } }: {
-  opcoes: { k: string; nome: string; cor: string; emoji?: string }[]; fora: string[]; onAlternar: (k: string) => void; onTodos: () => void
-  textos?: { todos: string; nenhum: string; varios: string; dica: string }
-}) {
-  const [aberto, setAberto] = useState(false)
-  const caixa = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!aberto) return
-    const f = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as HTMLElement)) setAberto(false) }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setAberto(false) } }
-    window.addEventListener('pointerdown', f, true); window.addEventListener('keydown', esc, true)
-    return () => { window.removeEventListener('pointerdown', f, true); window.removeEventListener('keydown', esc, true) }
-  }, [aberto])
-  const ligados = opcoes.filter((o) => !fora.includes(o.k))
-  const rotulo = ligados.length === opcoes.length ? textos.todos : ligados.length === 0 ? textos.nenhum : ligados.length === 1 ? ligados[0].nome : `${ligados.length} ${textos.varios}`
-  return (
-    <div ref={caixa} className="filtro-produtos">
-      <button className={`canvas-filtro filtro-produtos-botao ${aberto ? 'is-aberto' : ''}`} onClick={() => setAberto((v) => !v)} aria-expanded={aberto} data-dica={textos.dica}>
-        <span className="filtro-produtos-cores">{ligados.filter((o) => o.cor).slice(0, 4).map((o) => <i key={o.k} style={{ background: o.cor }} />)}</span>
-        {ligados.some((o) => o.emoji) && <span className="filtro-produtos-emojis">{ligados.map((o) => o.emoji).join('')}</span>}
-        {rotulo}
-      </button>
-      {aberto && (
-        <div className="filtro-produtos-menu glass glass--light" role="menu">
-          <button role="menuitemcheckbox" aria-checked={fora.length === 0} onClick={onTodos}><span className="filtro-check">{fora.length === 0 ? '✓' : ''}</span>Todos</button>
-          {opcoes.map((o) => { const on = !fora.includes(o.k)
-            return <button key={o.k} role="menuitemcheckbox" aria-checked={on} onClick={() => onAlternar(o.k)}>
-              <span className="filtro-check">{on ? '✓' : ''}</span>{o.emoji ? <span className="menu-emoji">{o.emoji}</span> : o.cor ? <i style={{ background: o.cor }} /> : <i className="is-vazio" />}{o.nome}</button> })}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** Pinados globais (todos os canvas). Na primeira vez, junta os pinados que antes eram guardados por canvas. */
 function pinadosGlobais(): string[] {
