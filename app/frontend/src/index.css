@@ -1582,3 +1582,16 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .canvas:has(.desenho.is-ativo .App-menu__left) .canvas-lista { transform: translateX(-130%); opacity: 0; pointer-events: none; }
 /* modo W: as pastas de status (Em edição, Agendado, Publicado) também saem */
 .modo-trabalho .canvas-pastas .pasta { transform: translateY(160%); opacity: 0; pointer-events: none; transition: transform .38s var(--ease), opacity .3s ease; }
+
+/* pastas de status (barra de baixo): um grupo de vidro discreto, como a barra do canvas */
+.canvas-status { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; pointer-events: auto;
+  background: rgba(250, 249, 247, .82); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 10px 24px -14px rgba(40, 34, 32, .4), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.status-botao { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border-radius: 999px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; transition: background .15s, color .15s; }
+.status-botao:hover { background: rgba(23, 24, 27, .05); color: var(--ink); }
+.status-botao.is-ativa { background: #1d1d1f; color: #fff; }
+.status-botao em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--mute); }
+.status-botao.is-ativa em { color: rgba(255, 255, 255, .7); }
+.status-botao .ponto { width: 7px; height: 7px; }
+.status-fogo { font-size: 12px; line-height: 1; filter: saturate(.9); }
+.modo-trabalho .canvas-status { transform: translateY(160%); opacity: 0; pointer-events: none; transition: transform .38s var(--ease), opacity .3s ease; }
+.tabela-fogo { font-size: 12px; margin-right: -2px; }

@@ -51,25 +51,30 @@ export default function App() {
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
-  // abrir uma nota pela ⌘P/⌘O: vai para o canvas dela (o aberto, se ela também vive nele; senão o primeiro ativo),
-  // abre a nota e, por trás, enquadra e seleciona o card no canvas. Nota sem canvas ativo: só abre, onde você está.
-  const abrirNoCanvasDela = async (raiz: Raiz, nome: string) => {
-    let destino: string | null = null
+  // ir até o card de uma nota: o canvas dela (o aberto, se ela também vive nele; senão o primeiro ativo), enquadrado e
+  // selecionado. Devolve false quando a nota não vive em nenhum canvas ativo (aí fica onde está e avisa).
+  const avisarApp = (msg: string) => { setAvisoApp(msg); window.setTimeout(() => setAvisoApp((a) => (a === msg ? null : a)), 3200) }
+  const irParaCard = async (alvo: Alvo): Promise<boolean> => {
     try {
       const [tudo, lista] = await Promise.all([carregarTudo(), listarCanvases()])
-      const nota = [...tudo.ideias, ...tudo.producoes, ...tudo.entradas].find((x) => x.nome === nome) as { canvases?: string[]; canvas?: string | null } | undefined
+      const nota = [...tudo.ideias, ...tudo.producoes, ...tudo.entradas].find((x) => x.nome === alvo.nome) as { canvases?: string[]; canvas?: string | null; grupo?: string | null } | undefined
       const ativos = lista.filter((k) => !k.arquivado && k.slug !== INBOX)
       const nomes = nota?.canvases ?? (nota?.canvas ? [nota.canvas] : [])
-      const aqui = ativos.find((k) => k.slug === canvasSlug && nomes.includes(k.nome))
-      const c = aqui ?? ativos.find((k) => nomes.includes(k.nome))
-      if (c) {
-        destino = c.slug
-        if (c.slug !== canvasSlug) { usarCanvas(c.slug); setCanvasSlug(c.slug) }
-        setPagina('Canvas')
+      const c = ativos.find((k) => k.slug === canvasSlug && nomes.includes(k.nome)) ?? ativos.find((k) => nomes.includes(k.nome))
+      if (!c) {
+        avisarApp(nota?.grupo ? `Fora dos canvas: o canvas "${nota.grupo}" não existe mais. Use Canvas › no card para pôr num canvas.` : 'Esta nota não está em nenhum canvas. Use Canvas › no card para pôr num.')
+        return false
       }
-    } catch { /* sem a lista, abre no canvas atual */ }
+      if (c.slug !== canvasSlug) { usarCanvas(c.slug); setCanvasSlug(c.slug) }
+      setPagina('Canvas')
+      setMostrar((m) => ({ alvo, n: (m?.n ?? 0) + 1, quieto: true }))
+      return true
+    } catch { return false }
+  }
+  // ⌘P/⌘O: abre a nota e, por trás, leva até o card dela
+  const abrirNoCanvasDela = async (raiz: Raiz, nome: string) => {
     setModal({ raiz, nome })
-    if (destino) setMostrar((m) => ({ alvo: { raiz, nome }, n: (m?.n ?? 0) + 1, quieto: true }))
+    irParaCard({ raiz, nome })
   }
   const [caminhoCanvas, setCaminhoCanvas] = useState<Passo[]>([])   // o que o canvas aberto conta ao breadcrumb
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
@@ -216,7 +221,7 @@ export default function App() {
           {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
         voltar={voltar ? { rotulo: voltar.rotulo, fn: () => { setModal(null); setVoltar(null); voltar.fn() } } : undefined} onTrecho={mandarTrecho} onPedido={mandarPedido}
         onMudou={() => setMudou((n) => n + 1)} versao={versao}
-        onMostrar={(a) => { setModal(null); setVoltar(null); setCanvasSlug((c) => c ?? INBOX); setPagina('Canvas'); setMostrar((m) => ({ alvo: a, n: (m?.n ?? 0) + 1 })) }} />}
+        onMostrar={(a) => { irParaCard(a).then((ok) => { if (ok) { setModal(null); setVoltar(null) } }) }} />}
         </section>
         <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
           alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}

@@ -7,14 +7,15 @@ import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, typ
  *  filtros e ordenação. Clicar numa linha abre a copy no modal de nota, que tem "voltar" para cá. */
 
 export type Coluna = 'formato' | 'nome' | 'data' | 'ideia' | 'grupo' | 'palavras' | 'mtime'
-export type Pasta = StatusProd
+/** 'winner': as copies com 🔥 (de qualquer status), com todas as datas em que foram postadas. */
+export type Pasta = StatusProd | 'winner'
 export type EstadoTabela = {
   pasta: Pasta; busca: string; formatos: string[]; ano: string; mes: string; grupo: string
   ordem: { col: Coluna; asc: boolean }
 }
 export const tabelaNova = (pasta: Pasta): EstadoTabela => ({
   pasta, busca: '', formatos: [], ano: '', mes: '', grupo: '',
-  ordem: { col: pasta === 'edicao' ? 'mtime' : 'data', asc: pasta === 'agendado' },
+  ordem: { col: pasta === 'edicao' ? 'mtime' : 'data', asc: pasta === 'agendado' },   // winners: mais recentes primeiro
 })
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
@@ -57,7 +58,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
 
-  const daPasta = useMemo(() => est.producoes.filter((p) => p.status === t.pasta), [est, t.pasta])
+  const daPasta = useMemo(() => est.producoes.filter((p) => (t.pasta === 'winner' ? !!p.winner : p.status === t.pasta)), [est, t.pasta])
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   const grupos = useMemo(() => [...new Set(daPasta.map((p) => p.canvas || INBOX_NOME))].sort(), [daPasta])
   // filtros que valem antes dos chips de formato e das barras de mês (para os números deles não sumirem ao clicar)
@@ -69,10 +70,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const linhas = useMemo(() => {
     const l = base.filter((p) => (!t.formatos.length || t.formatos.includes(p.formato)) && (!t.mes || dia(p).startsWith(t.mes)))
     const { col, asc } = t.ordem
-    const v = (p: Producao): string | number => col === 'data' ? dia(p) : col === 'palavras' ? p.palavras ?? 0 : col === 'mtime' ? p.mtime
+    // winners: pela última data em que foi postada; sem data vai para o fim
+    const v = (p: Producao): string | number => col === 'data' ? (t.pasta === 'winner' ? (p.datas?.[p.datas.length - 1] ?? p.scheduled?.slice(0, 10) ?? '') : dia(p)) : col === 'palavras' ? p.palavras ?? 0 : col === 'mtime' ? p.mtime
       : col === 'formato' ? ORDEM_FORMATO.indexOf(p.formato) : col === 'nome' ? semEmoji(p.nome).toLowerCase() : (col === 'ideia' ? p.ideia : p.canvas || INBOX_NOME)?.toLowerCase() ?? '~'
     return l.sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1) })
-  }, [base, t.formatos, t.mes, t.ordem])
+  }, [base, t.formatos, t.mes, t.ordem, t.pasta])
 
   const porFormato = useMemo(() => {
     const c: Record<string, number> = {}
@@ -93,7 +95,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const em7 = new Date(Date.now() + 7 * 86400e3).toISOString().slice(0, 10)
   const destaque = t.pasta === 'agendado'
     ? { n: linhas.filter((p) => p.scheduled && p.scheduled.slice(0, 10) >= hoje && p.scheduled.slice(0, 10) <= em7).length, r: 'nos próximos 7 dias' }
-    : t.pasta === 'publicado' ? { n: linhas.filter((p) => dia(p) >= new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10)).length, r: 'nos últimos 30 dias' }
+    : t.pasta === 'publicado' || t.pasta === 'winner' ? { n: linhas.filter((p) => dia(p) >= new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10)).length, r: 'nos últimos 30 dias' }
     : { n: linhas.filter((p) => Date.now() / 1000 - p.mtime > 14 * 86400).length, r: 'paradas há +14 dias' }
 
   const ordenar = (col: Coluna) => mudar({ ordem: { col, asc: t.ordem.col === col ? !t.ordem.asc : col === 'nome' || col === 'ideia' || col === 'grupo' } })
@@ -112,8 +114,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
                 <i className={`ponto is-${s.k}`} /><span>{s.nome}</span><em className="tabela-n">{contagem(s.k)}</em>
               </button>
             ))}
+            <button role="tab" aria-selected={t.pasta === 'winner'} className={`modal-tab ${t.pasta === 'winner' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('winner'))}>
+              <span className="tabela-fogo">🔥</span><span>Winners</span><em className="tabela-n">{est.producoes.filter((p) => p.winner).length}</em>
+            </button>
           </nav>
-          {t.pasta !== 'ideia' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
+          {t.pasta !== 'ideia' && t.pasta !== 'winner' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
 
@@ -172,7 +177,8 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
                     <input type="checkbox" aria-label={`Marcar ${p.nome}`} checked={sel.has(chaveDe(p))} onChange={() => {}} /></td>}
                   <td className="col-formato">{p.formato || '📄'}</td>
                   <td className="col-nome"><b>{semEmoji(p.nome)}</b>{p.previa && <span>{p.previa}</span>}</td>
-                  <td className="col-data">{p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : <span className="mudo">{dataBr(dia(p))}</span>}</td>
+                  <td className="col-data">{(p.datas?.length ?? 0) > 1 ? <span title={`Postada ${p.datas!.length} vezes`}>{p.datas!.map(dataBr).join(' · ')}</span>
+                    : p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : t.pasta === 'winner' ? <span className="mudo" title="Sem data de postagem (scheduled vazio)">sem data</span> : <span className="mudo">{dataBr(dia(p))}</span>}</td>
                   <td className="col-ideia">{p.ideia ? semEmoji(p.ideia) : <span className="mudo">—</span>}</td>
                   <td className="col-grupo">{p.canvas ? <span className="tabela-caixa">{p.canvas}</span> : <span className="mudo">{INBOX_NOME}</span>}</td>
                   <td className="col-palavras">{p.palavras || <span className="mudo">0</span>}</td>

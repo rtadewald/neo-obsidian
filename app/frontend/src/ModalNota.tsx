@@ -7,7 +7,6 @@ import { Sumario } from './Sumario'
 import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
-import { cardNoCanvas } from './Canvas'
 import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
 import { STATUS, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao } from './canvasApi'
 
@@ -248,13 +247,9 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
               </span>
             )}
           </nav>
-          {onMostrar && est && (() => {
-            const card = cardNoCanvas(est, ativa)
-            return <button className="modal-mostrar" disabled={!card} onClick={() => onMostrar(ativa)}
-              title={card ? 'Fechar e apontar o card no canvas' : 'Oculta neste canvas: arquivada, de outro canvas ou publicada no Inbox'}>
-              <Icone n="grafo" t={13} /> {card ? 'Mostrar no canvas' : 'Oculta no canvas'}
-            </button>
-          })()}
+          {/* mostrar no canvas: fecha a nota e leva até o card (muda para o canvas dela, se for outro) */}
+          {onMostrar && <button className="btn-icone modal-alvo" onClick={() => onMostrar(ativa)} aria-label="Mostrar no canvas" title="Mostrar no canvas (vai até o card)">
+            <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3.6" /><circle cx="10" cy="10" r=".9" fill="currentColor" /></svg></button>}
           <button className="btn-icone modal-lixeira" onClick={() => setApagar(true)} aria-label="Deletar nota" title="Deletar esta nota (⌘⌫)"><Icone n="lixeira" t={15} /></button>
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>

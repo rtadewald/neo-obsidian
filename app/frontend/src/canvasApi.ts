@@ -6,7 +6,7 @@ export type Entrada = { nome: string; url: string; tipo: string; thumb: string; 
 export type StatusProd = 'ideia' | 'edicao' | 'agendado' | 'publicado'
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
-  formato: string; ideia: string | null; previa: string; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]
+  formato: string; ideia: string | null; previa: string; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; datas?: string[]
   palavras?: number; criado?: number
   winner?: boolean   // tag 🔥 na nota: performou acima da média
   tags?: string[]

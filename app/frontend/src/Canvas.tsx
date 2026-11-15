@@ -1094,9 +1094,13 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
 
 
       <aside className="canvas-pastas" aria-label="Pastas">
-        <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
-        <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaNova('agendado'))} />
-        <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-')} cor="publicado" onClick={() => setTabela(tabelaNova('publicado'))} />
+        {/* status: botões discretos (abrem a tabela) e os winners 🔥 com as datas de postagem */}
+        <div className="canvas-status" role="group" aria-label="Pastas de status">
+          <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao' || tabela?.pasta === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
+          <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado' || tabela?.pasta === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaNova('agendado'))} />
+          <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-') || tabela?.pasta === 'publicado'} cor="publicado" onClick={() => setTabela(tabelaNova('publicado'))} />
+          <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
+        </div>
         {/* a barra do canvas (nome, tipos, produtos, filtro, zoom) fica no rodapé, ao lado das pastas */}
         <div className="canvas-barra">
           {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
@@ -1350,16 +1354,13 @@ export function aquecerCanvases() {
   return aquecendo
 }
 
-function Pasta({ nome, n, ativa, cor, onClick, children }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void; children?: ReactNode }) {
+/** Botão de status da barra de baixo: ponto da cor do status (🔥 nos winners), nome e quantas. Abre a tabela. */
+function Pasta({ nome, n, ativa, cor, onClick }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void }) {
   return (
-    <div className={`pasta is-${cor} ${ativa ? 'is-ativa' : ''}`}>
-      <button className="pasta-corpo" onClick={onClick} title={`Abrir o canvas só com ${nome.toLowerCase()}`}>
-        <span className="pasta-aba" />
-        <span className="pasta-folhas"><i /><i /><i /></span>
-        <span className="pasta-frente"><b>{nome}</b><em>{n}</em></span>
-      </button>
-      {children}
-    </div>
+    <button className={`status-botao is-${cor} ${ativa ? 'is-ativa' : ''}`} onClick={onClick} title={cor === 'winner' ? 'Os winners 🔥, com as datas de postagem' : `Tabela: ${nome.toLowerCase()}`}>
+      {cor === 'winner' ? <span className="status-fogo">🔥</span> : <i className={`ponto is-${cor}`} />}
+      <span>{nome}</span><em>{n}</em>
+    </button>
   )
 }
 
