@@ -1551,3 +1551,8 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .skills-cat-nome.is-aberta .skills-cat-seta { transform: rotate(90deg); }
 .skills-cat-itens { display: flex; flex-direction: column; gap: 1px; padding-left: 12px; }   /* recuo: as skills ficam dentro da categoria */
 .skills-nome { padding: 6px 8px 6px 0; }
+
+/* desenho: no modo W a barra de ferramentas sobe até 10px do topo; a Biblioteca e a dica de mover a tela saem */
+.modo-trabalho .desenho .excalidraw .layer-ui__wrapper { top: -6px !important; }
+.desenho .excalidraw .sidebar-trigger, .desenho .excalidraw .default-sidebar-trigger, .desenho .excalidraw .HintViewer,
+.desenho .excalidraw .main-menu-trigger, .desenho .excalidraw .dropdown-menu-button { display: none !important; }   /* menu ☰ do Excalidraw também sai */
