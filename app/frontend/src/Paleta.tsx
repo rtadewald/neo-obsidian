@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Icone } from './Icone'
 import { ROTULO, type Raiz } from './notas'
 
-const chave = (r: Raiz, n: string) => `${r}/${n}`
+const chave = (r: string, n: string) => `${r}/${n}`
 
 /* ---------- busca rápida (⌘P) ---------- */
 
-type Entrada = { nome: string; raiz: Raiz; mtime: number }
+/** raiz 'grupo': 💡 ideia que existe só como grupo de copies; abre na versão principal (`abrir`). */
+type Entrada = { nome: string; raiz: Raiz | 'grupo'; mtime: number; abrir?: { raiz: Raiz; nome: string }; versoes?: number }
 
 /** Últimas notas abertas (a mais recente primeiro), guardadas no navegador: com a busca vazia, a ⌘P/⌘O começa por elas. */
 const RECENTES = 'notas-recentes'
@@ -54,7 +55,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
   useEffect(() => { fetch('/api/notas-indice').then((r) => r.json()).then((d) => setIdx(d.itens)).catch(() => {}) }, [])
 
   const res = useMemo(() => {
-    const peso: Record<Raiz, number> = { ideias: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
+    const peso: Record<Raiz | 'grupo', number> = { ideias: 25, grupo: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
     if (!q.trim()) {   // busca vazia: as últimas abertas primeiro, depois as editadas mais recentemente
       const porChave = new Map(idx.map((e) => [chave(e.raiz, e.nome), e]))
       const recentes = lerRecentes().map((k) => porChave.get(k)).filter((e): e is Entrada => !!e)
@@ -66,6 +67,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
       .sort((a, b) => (b.m!.p + peso[b.e.raiz]) - (a.m!.p + peso[a.e.raiz])).slice(0, 40).map((x) => ({ e: x.e, marcas: x.m!.marcas }))
   }, [q, idx])
 
+  const abrirEntrada = (e: Entrada) => (e.abrir ? onAbrir(e.abrir.raiz, e.abrir.nome) : onAbrir(e.raiz as Raiz, e.nome))
   const criar = q.trim() && !res.some((r) => r.e.nome.toLowerCase() === q.trim().toLowerCase())
   const total = res.length + (criar ? 1 : 0)
   useEffect(() => setSel(0), [q])
@@ -77,8 +79,9 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => (s - 1 + total) % Math.max(total, 1)) }
     else if (e.key === 'Enter') {
       e.preventDefault()
-      if (sel < res.length && (e.metaKey || e.ctrlKey) && onImportar) onImportar(res[sel].e.raiz, res[sel].e.nome)
-      else if (sel < res.length) onAbrir(res[sel].e.raiz, res[sel].e.nome)
+      const it = res[sel]?.e
+      if (sel < res.length && (e.metaKey || e.ctrlKey) && onImportar) onImportar(it.abrir?.raiz ?? (it.raiz as Raiz), it.abrir?.nome ?? it.nome)
+      else if (sel < res.length) abrirEntrada(it)
       else if (criar) onCriar(q.trim())
     }
   }
@@ -99,9 +102,9 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
         <div className="paleta-lista" ref={lista} role="listbox">
           {res.map(({ e, marcas }, i) => (
             <button key={chave(e.raiz, e.nome)} role="option" aria-selected={i === sel} className={i === sel ? 'is-sel' : ''}
-              onMouseMove={() => setSel(i)} onClick={() => onAbrir(e.raiz, e.nome)}>
+              onMouseMove={() => setSel(i)} onClick={() => abrirEntrada(e)}>
               <span className="paleta-nome">{realce(e.nome, marcas)}</span>
-              <span className="paleta-pasta">{ROTULO[e.raiz]}</span>
+              <span className="paleta-pasta">{e.raiz === 'grupo' ? `Ideia · ${e.versoes} versões` : ROTULO[e.raiz]}</span>
             </button>
           ))}
           {criar && (

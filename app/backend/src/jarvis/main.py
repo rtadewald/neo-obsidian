@@ -201,7 +201,24 @@ async def sincronizar():
 
 @app.get("/api/notas-indice")
 def notas_indice():
-    return {"itens": notas.indice()}
+    """Busca rápida (⌘P/⌘O): as notas e também as 💡 ideias que existem só como grupo de copies (`ideia:` sem nota 💡).
+    Essas abrem na versão principal do grupo (o 📱 Reels quando houver)."""
+    itens = notas.indice()
+    try:
+        tudo = canvas._todas()
+        com_nota = {i["nome"] for i in tudo["ideias"]}
+        grupos: dict[str, list[dict]] = {}
+        for p in tudo["producoes"]:
+            if p["ideia"] and p["ideia"] not in com_nota:
+                grupos.setdefault(p["ideia"], []).append(p)
+        for nome, ps in grupos.items():
+            ps.sort(key=lambda p: (p["formato"] != "📱", p["status"] == "publicado", -p["mtime"]))
+            principal = ps[0]
+            itens.append({"nome": nome if nome.startswith("💡") else f"💡 {nome}", "raiz": "grupo", "mtime": max(p["mtime"] for p in ps),
+                          "status": "", "abrir": {"raiz": principal["raiz"], "nome": principal["nome"]}, "versoes": len(ps)})
+    except Exception:   # a busca nunca quebra por causa dos grupos
+        pass
+    return {"itens": itens}
 
 
 @app.get("/api/notas/agenda")
