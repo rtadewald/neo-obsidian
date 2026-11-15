@@ -1562,3 +1562,8 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .canvas-lista .trilho-ic { font-size: 18px; }
 .canvas-lista .trilho-nome { font-size: 9.5px; }
 .canvas-lista .trilho-secao { height: 16px; }
+
+/* foguinho da barra desligado: os winners 🔥 ficam como os outros cards (o 🔥 no título continua) */
+.canvas.sem-winner .cartao.is-winner { box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 10px 26px -16px rgba(40, 34, 32, .45), 0 0 0 1px rgba(23, 24, 27, .06); }
+.canvas.sem-winner .cartao.is-winner:hover { box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 16px 30px -16px rgba(40, 34, 32, .5), 0 0 0 1px rgba(23, 24, 27, .12); }
+.canvas.sem-winner .cartao.is-winner.is-sel { box-shadow: 0 0 0 2px #1d1d1f, 0 16px 30px -16px rgba(40, 34, 32, .5); }

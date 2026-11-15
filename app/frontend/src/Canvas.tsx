@@ -389,6 +389,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [arestas, setArestas, mudarArestas] = useEdgesState<Edge>([])
   // linhas: dá para esconder todas; as do card selecionado aparecem sempre, em destaque
   const [linhas, setLinhas] = useState(() => { try { return localStorage.getItem('canvas-linhas') !== 'nao' } catch { return true } })
+  // destaque vermelho dos winners 🔥: liga e desliga pelo foguinho da barra de baixo (fica guardado)
+  const [destaqueWinner, setDestaqueWinner] = useState(() => { try { return localStorage.getItem('canvas-winner') !== 'nao' } catch { return true } })
+  useEffect(() => { try { localStorage.setItem('canvas-winner', destaqueWinner ? 'sim' : 'nao') } catch { /* sem storage */ } }, [destaqueWinner])
   useEffect(() => { try { localStorage.setItem('canvas-linhas', linhas ? 'sim' : 'nao') } catch { /* sem storage */ } }, [linhas])
   // a seleção só muda quando muda quem está selecionado: arrastar (que troca `nos` a cada quadro) não recalcula as linhas
   const chaveSel = nos.filter((n) => n.selected).map((n) => n.id).join('|')
@@ -972,7 +975,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
 
   return (
     <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}><VistoUI.Provider value={marcarVisto}>
-    <div className={`canvas ${desenhando ? 'is-desenhando' : ''} ${mapa ? 'com-mapa' : ''}`} ref={caixa}>
+    <div className={`canvas ${desenhando ? 'is-desenhando' : ''} ${mapa ? 'com-mapa' : ''} ${destaqueWinner ? '' : 'sem-winner'}`} ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
         onDoubleClick={(e) => { if (!desenhando && !(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
         // fase de captura: o pan/zoom do React Flow trata o mousedown no canvas e não deixa ele subir até aqui
@@ -1100,6 +1103,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.6" y="4" width="14.8" height="12" rx="2.2" /><rect x="9.6" y="9.4" width="5.4" height="4.2" rx="1" /></svg></button>
             <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} data-dica={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
               onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
+            <button className={`btn-icone ${destaqueWinner ? 'is-on' : 'is-desligado'}`} onClick={() => setDestaqueWinner((v) => !v)} aria-label="Destaque dos winners"
+              data-dica={destaqueWinner ? 'Esconder o destaque vermelho dos winners 🔥' : 'Mostrar o destaque vermelho dos winners 🔥'}>
+              <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.6c-3.1 0-5.4-2.2-5.4-5.2 0-2.6 1.6-4.3 3-5.8.9-1 1.8-2.1 2-3.6 1.9 1.3 3 3.1 3.1 5 .6-.4 1-1.1 1.2-1.9 1.3 1.4 2 3.3 2 5 0 3.3-2.5 6.5-5.9 6.5z" /><path d="M10 17.6c-1.4 0-2.4-1-2.4-2.4 0-1.5 1.2-2.4 2.3-3.6.9 1 2.5 2.2 2.5 3.7 0 1.3-1 2.3-2.4 2.3z" /></svg></button>
           </div>
         </div>
       </aside>
