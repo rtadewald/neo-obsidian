@@ -1575,8 +1575,10 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .cm-prop-data-item button, .cm-prop-data-mais { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; color: var(--mute); font-size: 13px; }
 .cm-prop-data-item button:hover, .cm-prop-data-mais:hover { background: rgba(23, 24, 27, .07); color: var(--ink); }
 
-/* desenho com a lista de pastas à vista: o painel de propriedades do Excalidraw abre à direita dela (no F a lista sai) */
-.desenho .excalidraw .App-menu__left { margin-left: var(--desenho-recuo, 72px); }
-.modo-foco .desenho .excalidraw .App-menu__left { margin-left: 0; }
+/* painel de propriedades do Excalidraw (cor, fonte, camadas…): no canto inferior esquerdo, à direita da lista de pastas.
+   Fora do W/F as pastas de status ocupam o pé da tela, então ele fica logo acima delas; no F a lista sai e ele encosta na borda */
+.desenho .excalidraw .App-menu__left { position: fixed; left: 94px; bottom: 112px; top: auto; margin: 0; max-height: calc(100vh - 120px); z-index: 6; }
+.modo-trabalho .desenho .excalidraw .App-menu__left { bottom: 10px; }
+.modo-foco .desenho .excalidraw .App-menu__left { left: 10px; bottom: 10px; }
 /* modo W: as pastas de status (Em edição, Agendado, Publicado) também saem */
 .modo-trabalho .canvas-pastas .pasta { transform: translateY(160%); opacity: 0; pointer-events: none; transition: transform .38s var(--ease), opacity .3s ease; }
