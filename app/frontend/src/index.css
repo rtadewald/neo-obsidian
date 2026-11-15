@@ -1531,7 +1531,7 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .skills-nota { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 22px; background: rgba(250, 249, 247, .96) !important; }
 
 /* criação rápida (⌘⇧I ideia, ⌘⇧N produção) */
-.novo-rapido { padding-top: 6px; }
+.novo-rapido { padding-top: 0; }
 .novo-rapido-titulo { margin: 8px 18px 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--mute); text-transform: uppercase; }
 .novo-rapido-emoji { font-size: 17px; line-height: 1; }
 .novo-rapido-opcoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px 0; }
@@ -1539,7 +1539,7 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .novo-rapido-opcoes button.is-on { background: #1d1d1f; color: #fff; box-shadow: none; }
 .novo-rapido-rotulo { font-size: 12px; color: var(--mute); margin-right: 2px; }
 .novo-rapido-erro { margin: 8px 18px 0; font-size: 12.5px; color: #c4373c; }
-.novo-rapido .paleta-pe { margin-top: 12px; }
+.novo-rapido .paleta-pe { margin-top: 12px; border-top: 0; }   /* uma linha só: a do campo */
 
 .skills.is-sem-lado { grid-template-columns: minmax(0, 1fr); }
 .skills-cabeca .skills-esconder { margin-left: auto; }

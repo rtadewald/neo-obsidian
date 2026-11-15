@@ -45,18 +45,17 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : d.detail || 'Não consegui criar.')
       const nomeCanvas = canvases.find((c) => c.slug === canvas)?.nome
-      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${formato} Produção criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`)
+      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${formato} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`)
     } catch (x) { setErro((x as Error).message); setIndo(false) }
   }
 
   return (
     <div className="paleta-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
-      <form className="paleta novo-rapido glass glass--light" role="dialog" aria-label={tipo === 'ideia' ? 'Nova ideia' : 'Nova produção'} onSubmit={criar}
+      <form className="paleta novo-rapido glass glass--light" role="dialog" aria-label={tipo === 'ideia' ? 'Nova ideia' : 'Nova criação'} onSubmit={criar}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onFechar() } }}>
-        <p className="novo-rapido-titulo">{tipo === 'ideia' ? '💡 Nova ideia' : '🎬 Nova produção'}</p>
         <label className="paleta-campo">
           <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : formato}</span>
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nome da ideia…' : 'Nome da produção…'} />
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nova ideia…' : 'Nova criação…'} />
         </label>
         {tipo === 'producao' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
