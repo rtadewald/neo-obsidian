@@ -7,6 +7,9 @@ import { INBOX, listarCanvases, type ResumoCanvas } from './canvasApi'
 export type TipoNovo = 'ideia' | 'producao'
 
 const FORMATOS: [string, string][] = [['📱', 'Reels'], ['💰', 'Ad'], ['🏞️', 'Carrossel'], ['📺', 'VSL'], ['🎥', 'YouTube'], ['🗣️', 'Stories']]
+/** Ícone mostrado na janela quando difere do emoji do nome do arquivo (o carrossel aparece com 📝; o arquivo segue com 🏞️, a convenção do vault). */
+const ICONE: Record<string, string> = { '🏞️': '📝' }
+const icone = (f: string) => ICONE[f] ?? f
 
 export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }: {
   tipo: TipoNovo
@@ -45,7 +48,7 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : d.detail || 'Não consegui criar.')
       const nomeCanvas = canvases.find((c) => c.slug === canvas)?.nome
-      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${formato} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`)
+      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`)
     } catch (x) { setErro((x as Error).message); setIndo(false) }
   }
 
@@ -54,13 +57,13 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
       <form className="paleta novo-rapido glass glass--light" role="dialog" aria-label={tipo === 'ideia' ? 'Nova ideia' : 'Nova criação'} onSubmit={criar}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onFechar() } }}>
         <label className="paleta-campo">
-          <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : formato}</span>
+          <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : icone(formato)}</span>
           <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nova ideia…' : 'Nova criação…'} />
         </label>
         {tipo === 'producao' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
             {FORMATOS.map(([f, nome]) => (
-              <button key={f} type="button" role="radio" aria-checked={f === formato} className={f === formato ? 'is-on' : ''} onClick={() => setFormato(f)}>{f} {nome}</button>
+              <button key={f} type="button" role="radio" aria-checked={f === formato} className={f === formato ? 'is-on' : ''} onClick={() => setFormato(f)}>{icone(f)} {nome}</button>
             ))}
           </div>
         )}
