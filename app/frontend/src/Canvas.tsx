@@ -1144,7 +1144,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <button className="btn-icone" data-dica="Afastar (⌘−)" onClick={() => rf.zoomOut({ duration: 160 })}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg></button>
               <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
                 data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
-              <button className="btn-icone" data-dica="Modo foco: esconde as barras (F; Esc volta)" onClick={() => window.dispatchEvent(new Event('modo-foco'))}>
+              <button className="btn-icone" data-dica="Ajustar o canvas à tela (ou 2× clique no vazio)" aria-label="Ajustar o canvas à tela" onClick={() => enquadrarTudo()}>
                 <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></svg></button>
               <button className="btn-icone canvas-roda" onClick={() => setRoda((r) => (r === 'mouse' ? 'trackpad' : 'mouse'))}
                 data-dica={roda === 'mouse' ? 'Modo mouse: rolar dá zoom (M ou T troca para trackpad)' : 'Modo trackpad: dois dedos movem, pinça dá zoom (M ou T troca para mouse)'}
