@@ -3,7 +3,7 @@ import type { Raiz } from './notas'
 export type Midia = { links: string[]; imagem: string | null; copia: boolean }
 export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; tags?: string[] } & Partial<Midia>
 export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number; grupo?: string | null; tags?: string[] }
-export type StatusProd = 'ideia' | 'edicao' | 'agendado' | 'publicado'
+export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado'
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
   formato: string; ideia: string | null; previa: string; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; datas?: string[]
@@ -27,6 +27,7 @@ export type Voltar = { rotulo: string; fn: () => void }
 export const ORDEM_FORMATO = ['📱', '💰', '🏞️', '📝', '📺', '🎥', '🗣️', '🎙️']
 export const STATUS: { k: StatusProd; nome: string; marca: string }[] = [
   { k: 'ideia', nome: 'Priorizar', marca: '💡' },
+  { k: 'gravar', nome: 'Gravar', marca: '🔴' },   // copy pronta, falta gravar
   { k: 'edicao', nome: 'Em edição', marca: '🧑🏼‍🔧' },
   { k: 'agendado', nome: 'Agendado', marca: '🔹' },
   { k: 'publicado', nome: 'Publicado', marca: '✅' },

@@ -8,7 +8,7 @@ import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, typ
 
 export type Coluna = 'formato' | 'nome' | 'data' | 'ideia' | 'grupo' | 'palavras' | 'mtime'
 /** 'winner': as copies com 🔥 (de qualquer status), com todas as datas em que foram postadas. */
-export type Pasta = StatusProd | 'winner'
+export type Pasta = StatusProd | 'winner' | 'ideias'   // ideias: as 💡 do canvas aberto
 export type EstadoTabela = {
   pasta: Pasta; busca: string; formatos: string[]; ano: string; mes: string; grupo: string
   ordem: { col: Coluna; asc: boolean }
@@ -29,7 +29,8 @@ const INBOX_NOME = '📥 Inbox'
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', ideia: 'Produção', grupo: 'Canvas', palavras: 'Palavras', mtime: 'Editada' }
 
-export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear }: {
+export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear, canvasNome }: {
+  canvasNome?: string   // o canvas aberto: a aba Ideias mostra só as dele
   est: EstadoCanvas; t: EstadoTabela; onMudar: (t: EstadoTabela) => void; onFechar: () => void
   onAbrir: (a: Alvo) => void; onCanvas: (pasta: StatusProd, ano: string) => void
   onApagar?: (alvos: Alvo[]) => Promise<void>   // seleção múltipla → lixeira do vault
@@ -58,7 +59,15 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
 
-  const daPasta = useMemo(() => est.producoes.filter((p) => (t.pasta === 'winner' ? !!p.winner : p.status === t.pasta)), [est, t.pasta])
+  // as 💡 ideias do canvas aberto viram linhas como as das copies (formato 💡, "produção" = quantas versões têm)
+  const ideiasDoCanvas = useMemo(() => est.ideias
+    .filter((i) => !canvasNome || (i.canvases ?? (i.canvas ? [i.canvas] : [])).includes(canvasNome))
+    .map((i): Producao => {
+      const n = est.producoes.filter((p) => p.ideia === i.nome).length
+      return { nome: i.nome, raiz: 'ideias' as Producao['raiz'], status: 'ideia', scheduled: null, ano: '', formato: '💡', ideia: n ? `${n} ${n === 1 ? 'versão' : 'versões'}` : null,
+        previa: i.previa, mtime: i.mtime, criado: i.mtime, canvas: i.canvas, canvases: i.canvases, tags: i.tags, links: i.links ?? [], imagem: i.imagem ?? null, copia: i.copia ?? null } as Producao
+    }), [est, canvasNome])
+  const daPasta = useMemo(() => (t.pasta === 'ideias' ? ideiasDoCanvas : est.producoes.filter((p) => (t.pasta === 'winner' ? !!p.winner : p.status === t.pasta))), [est, t.pasta, ideiasDoCanvas])
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   const grupos = useMemo(() => [...new Set(daPasta.map((p) => p.canvas || INBOX_NOME))].sort(), [daPasta])
   // filtros que valem antes dos chips de formato e das barras de mês (para os números deles não sumirem ao clicar)
@@ -109,6 +118,10 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
       <div className="modal-nota modal-tabela glass glass--light" role="dialog" aria-label="Tabela de copies">
         <header className="modal-tabs">
           <nav role="tablist">
+            {canvasNome && <button role="tab" aria-selected={t.pasta === 'ideias'} className={`modal-tab ${t.pasta === 'ideias' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('ideias'))}
+              title={`As 💡 ideias de ${canvasNome}`}>
+              <span className="tabela-fogo">💡</span><span>Ideias</span><em className="tabela-n">{ideiasDoCanvas.length}</em>
+            </button>}
             {STATUS.map((s) => (
               <button key={s.k} role="tab" aria-selected={s.k === t.pasta} className={`modal-tab ${s.k === t.pasta ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova(s.k))}>
                 <i className={`ponto is-${s.k}`} /><span>{s.nome}</span><em className="tabela-n">{contagem(s.k)}</em>
@@ -118,7 +131,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
               <span className="tabela-fogo">🔥</span><span>Winners</span><em className="tabela-n">{est.producoes.filter((p) => p.winner).length}</em>
             </button>
           </nav>
-          {t.pasta !== 'ideia' && t.pasta !== 'winner' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
+          {t.pasta !== 'ideia' && t.pasta !== 'winner' && t.pasta !== 'ideias' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
 
@@ -203,7 +216,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
             </>) : (<>
               <button onClick={() => { const a = menu.p; setMenu(null); onAbrir(a) }}>Abrir</button>
               {onRenomear && <button onClick={() => setMenu({ ...menu, renomear: menu.p.nome })}>Renomear</button>}
-              {onStatus && <><p className="tabela-menu-t">Mover para</p>
+              {onStatus && t.pasta !== 'ideias' && <><p className="tabela-menu-t">Mover para</p>
                 {STATUS.filter((x) => x.k !== t.pasta).map((x) => (
                   <button key={x.k} onClick={async () => { const a = menu.p; setMenu(null); await onStatus([a], x.k) }}>{x.marca} {x.nome}</button>
                 ))}</>}
@@ -215,7 +228,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
           <div className="tabela-selecao">
             <b>{sel.size} {sel.size === 1 ? 'nota selecionada' : 'notas selecionadas'}</b>
             <button className="pilula" onClick={() => { setSel(new Set()); setConfirmar(false) }}>Limpar seleção</button>
-            {onStatus && <select className="tabela-status" value="" disabled={apagando} aria-label="Mudar o status das selecionadas"
+            {onStatus && t.pasta !== 'ideias' && <select className="tabela-status" value="" disabled={apagando} aria-label="Mudar o status das selecionadas"
               onChange={async (e) => { const st = e.target.value as StatusProd; if (!st) return; setApagando(true)
                 try { await onStatus(daPasta.filter((p) => sel.has(chaveDe(p))).map((p) => ({ raiz: p.raiz, nome: p.nome })), st); setSel(new Set()) } finally { setApagando(false) } }}>
               <option value="">Mudar status…</option>

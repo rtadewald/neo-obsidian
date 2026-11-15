@@ -38,9 +38,9 @@ TEMPLATE_COPY = VAULT / "2 Notas" / "Engine" / "templates" / "T-Copy.md"
 RAIZES = {**{k: str(p.relative_to(VAULT)) for k, p in TODAS.items()}, "skills": "3 Skills"}
 NOME_RUIM = re.compile(r"[/\\\x00]|^\.|\.\.")
 PINS = VAULT / ".obsidian" / "plugins" / "file-explorer-plus" / "data.json"
-PREFIXO = {"edicao": "🧑🏼‍🔧", "agendado": "🔹"}
+PREFIXO = {"gravar": "🔴", "edicao": "🧑🏼‍🔧", "agendado": "🔹"}   # 🔴 gravar: copy pronta, falta gravar
 # um ou mais marcadores de status no começo do nome (🔹, 🧑‍🔧 com ou sem tom de pele)
-MARCAS = re.compile("^(?:\U0001F539|\U0001F9D1[\U0001F3FB-\U0001F3FF]?\u200d\U0001F527)+")
+MARCAS = re.compile("^(?:\U0001F539|\U0001F534|\U0001F9D1[\U0001F3FB-\U0001F3FF]?\u200d\U0001F527)+")
 
 
 class Conflito(Exception):
@@ -91,7 +91,7 @@ def status(raiz: str, nome: str) -> str:
     m = MARCAS.match(nome)
     if not m:
         return "ideia"
-    return "agendado" if "\U0001F539" in m.group(0) else "edicao"
+    return "agendado" if "\U0001F539" in m.group(0) else "gravar" if "\U0001F534" in m.group(0) else "edicao"
 
 
 def indice() -> list[dict]:
@@ -306,8 +306,8 @@ def mover(raiz: str, nome: str, destino: str) -> dict:
 
 
 def mudar_status(raiz: str, nome: str, novo_status: str) -> dict:
-    """ideia / edicao / agendado: troca só o marcador no começo do nome (a nota fica em Priorizar)."""
-    if raiz != "priorizar" or novo_status not in ("ideia", "edicao", "agendado"):
+    """ideia / gravar / edicao / agendado: troca só o marcador no começo do nome (a nota fica em Priorizar)."""
+    if raiz != "priorizar" or novo_status not in ("ideia", "gravar", "edicao", "agendado"):
         raise ValueError("status inválido")
     base = MARCAS.sub("", nome)
     return renomear(raiz, nome, PREFIXO.get(novo_status, "") + base)

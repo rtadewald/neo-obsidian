@@ -22,7 +22,7 @@ import {
  *  Navegação do Neo-Stitch: arrastar no vazio = navegar · scroll, pinça ou ⌘+/⌘− = zoom · ⌘ + arrastar = caixa de
  *  seleção · ⌘ + clique = põe/tira da seleção · duplo clique no vazio = mostra tudo · clique do meio num card = enquadra. */
 /** `foco:<id>` é o canvas próprio de um card: ele e tudo o que está ligado a ele. */
-type Visao = 'principal' | 'edicao' | 'agendado' | `pub-${string}` | `foco:${string}`
+type Visao = 'principal' | 'gravar' | 'edicao' | 'agendado' | `pub-${string}` | `foco:${string}`
 type DadosIdeia = { ideia: Ideia; saidas: Producao[]; novo?: boolean }
 type DadosEntrada = { entrada: Entrada }
 type DadosProd = { prod: Producao; novo?: boolean }
@@ -30,7 +30,7 @@ type DadosProd = { prod: Producao; novo?: boolean }
 type DadosGrupo = { ideia: Ideia; saidas: Producao[]; destaque: StatusProd | null }
 type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'>
 /** O que o canvas principal mostra: tudo o que não saiu, ou só um status. */
-type Filtro = 'todos' | 'ideia' | 'edicao' | 'agendado'
+type Filtro = 'todos' | 'ideia' | 'gravar' | 'edicao' | 'agendado'
 type Vistas = { pinados: string[]; historico: string[] }
 const MAX_HIST = 5
 type MenuCtx = { x: number; y: number; flow: { x: number; y: number }; no?: No; selecao?: No[] }
@@ -55,7 +55,7 @@ const nomeDoId = (id: string) => {
   if (id.startsWith('p:')) return r.slice(r.indexOf('/') + 1)
   return r
 }
-const NOME_VISAO = (v: Visao) => v === 'principal' ? 'Canvas' : v === 'edicao' ? 'Em edição' : v === 'agendado' ? 'Agendado'
+const NOME_VISAO = (v: Visao) => v === 'principal' ? 'Canvas' : v === 'gravar' ? 'Gravar' : v === 'edicao' ? 'Em edição' : v === 'agendado' ? 'Agendado'
   : v.startsWith('foco:') ? nomeDoId(v.slice(5)) : `Publicado · ${v.slice(4)}`
 // cada vista guarda as suas posições (`<vista>|<id>`); o principal usa o id puro
 const chavePos = (v: Visao, id: string) => (v === 'principal' ? id : `${v}|${id}`)
@@ -555,7 +555,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   useEffect(() => { carregarTudo().then(setEstTudo).catch(() => {}) }, [canvas, est])
   const global = estTudo ?? est
   const contagem = useMemo(() => {
-    const c: Record<'ideia' | 'edicao' | 'agendado' | 'publicado', number> = { ideia: 0, edicao: 0, agendado: 0, publicado: 0 }
+    const c: Record<StatusProd, number> = { ideia: 0, gravar: 0, edicao: 0, agendado: 0, publicado: 0 }
     const porAno: Record<string, number> = {}
     for (const p of global?.producoes ?? []) {
       c[p.status]++
@@ -1115,49 +1115,52 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       <aside className="canvas-pastas" aria-label="Pastas">
         {/* status: botões discretos (abrem a tabela) e os winners 🔥 com as datas de postagem */}
         <div className="canvas-status" role="group" aria-label="Pastas de status">
+          {canvas !== INBOX && <Pasta nome="Ideias" n={est?.ideias.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaNova('ideias'))} />}
+          <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
+          <span className="status-sep" aria-hidden="true" />
+          <Pasta nome="Gravar" n={contagem.gravar} ativa={visao === 'gravar' || tabela?.pasta === 'gravar'} cor="gravar" onClick={() => setTabela(tabelaNova('gravar'))} />
           <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao' || tabela?.pasta === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
           <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado' || tabela?.pasta === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaNova('agendado'))} />
           <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-') || tabela?.pasta === 'publicado'} cor="publicado" onClick={() => setTabela(tabelaNova('publicado'))} />
-          <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
-        </div>
-        {/* a barra do canvas (nome, tipos, produtos, filtro, zoom) fica no rodapé, ao lado das pastas */}
-        <div className="canvas-barra">
-          {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
-          {/* o nome do canvas e o seletor saíram: as pastas da esquerda trocam de canvas; aqui só o nome das outras vistas */}
-          {visao !== 'principal' && <span className="canvas-nome">{NOME_VISAO(visao)}<em>{nos.length} cards</em></span>}
-          {visao.startsWith('foco:') && (() => { const id = visao.slice(5), sim = vistas.pinados.includes(id)
-            return <button className={`btn-icone canvas-pin ${sim ? 'is-on' : ''}`} onClick={() => pinar(id, !sim)} data-dica={sim ? 'Despinar (volta ao histórico)' : 'Pinar na barra da esquerda'}><Icone n="pin" t={14} /></button> })()}
-          {/* os seletores de tipo e de produto saíram da barra: o canvas mostra todos os cards */}
-          {/* zoom e linhas (mostrar tudo = duplo clique no vazio): ficam na barra de cima (antes eram os controles flutuantes do canto) */}
-          <span className="canvas-sep" />
-          <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
-            <button className="btn-icone" data-dica="Aproximar (⌘+)" onClick={() => rf.zoomIn({ duration: 160 })}><Icone n="mais" t={14} /></button>
-            <button className="btn-icone" data-dica="Afastar (⌘−)" onClick={() => rf.zoomOut({ duration: 160 })}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg></button>
-            <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
-              data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
-            <button className="btn-icone" data-dica="Modo foco: esconde as barras (F; Esc volta)" onClick={() => window.dispatchEvent(new Event('modo-foco'))}>
-              <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></svg></button>
-            <button className="btn-icone canvas-roda" onClick={() => setRoda((r) => (r === 'mouse' ? 'trackpad' : 'mouse'))}
-              data-dica={roda === 'mouse' ? 'Modo mouse: rolar dá zoom (M ou T troca para trackpad)' : 'Modo trackpad: dois dedos movem, pinça dá zoom (M ou T troca para mouse)'}
-              aria-label={roda === 'mouse' ? 'Modo mouse' : 'Modo trackpad'}>
-              {roda === 'mouse'
-                ? <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="2.5" width="9" height="15" rx="4.5" /><path d="M10 5.5v3" /></svg>
-                : <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.5" /><path d="M7 16v-3.5M13 16v-3.5" /></svg>}
-            </button>
-            <button className={`btn-icone ${mapa ? 'is-on' : 'is-desligado'}`} onClick={() => setMapa((v) => !v)} aria-label="Minimapa"
-              data-dica={mapa ? 'Esconder o minimapa' : 'Mostrar o minimapa'}>
-              <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.6" y="4" width="14.8" height="12" rx="2.2" /><rect x="9.6" y="9.4" width="5.4" height="4.2" rx="1" /></svg></button>
-            <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} data-dica={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
-              onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
-            <button className={`btn-icone ${destaqueWinner ? 'is-on' : 'is-desligado'}`} onClick={() => setDestaqueWinner((v) => !v)} aria-label="Destaque dos winners"
-              data-dica={destaqueWinner ? 'Esconder o destaque vermelho dos winners 🔥' : 'Mostrar o destaque vermelho dos winners 🔥'}>
-              <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.6c-3.1 0-5.4-2.2-5.4-5.2 0-2.6 1.6-4.3 3-5.8.9-1 1.8-2.1 2-3.6 1.9 1.3 3 3.1 3.1 5 .6-.4 1-1.1 1.2-1.9 1.3 1.4 2 3.3 2 5 0 3.3-2.5 6.5-5.9 6.5z" /><path d="M10 17.6c-1.4 0-2.4-1-2.4-2.4 0-1.5 1.2-2.4 2.3-3.6.9 1 2.5 2.2 2.5 3.7 0 1.3-1 2.3-2.4 2.3z" /></svg></button>
+          <span className="status-sep" aria-hidden="true" />
+          <div className="canvas-barra">
+            {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
+            {/* o nome do canvas e o seletor saíram: as pastas da esquerda trocam de canvas; aqui só o nome das outras vistas */}
+            {visao !== 'principal' && <span className="canvas-nome">{NOME_VISAO(visao)}<em>{nos.length} cards</em></span>}
+            {visao.startsWith('foco:') && (() => { const id = visao.slice(5), sim = vistas.pinados.includes(id)
+              return <button className={`btn-icone canvas-pin ${sim ? 'is-on' : ''}`} onClick={() => pinar(id, !sim)} data-dica={sim ? 'Despinar (volta ao histórico)' : 'Pinar na barra da esquerda'}><Icone n="pin" t={14} /></button> })()}
+            {/* os seletores de tipo e de produto saíram da barra: o canvas mostra todos os cards */}
+            {/* zoom e linhas (mostrar tudo = duplo clique no vazio): ficam na barra de cima (antes eram os controles flutuantes do canto) */}
+            <span className="canvas-sep" />
+            <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
+              <button className="btn-icone" data-dica="Aproximar (⌘+)" onClick={() => rf.zoomIn({ duration: 160 })}><Icone n="mais" t={14} /></button>
+              <button className="btn-icone" data-dica="Afastar (⌘−)" onClick={() => rf.zoomOut({ duration: 160 })}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg></button>
+              <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
+                data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
+              <button className="btn-icone" data-dica="Modo foco: esconde as barras (F; Esc volta)" onClick={() => window.dispatchEvent(new Event('modo-foco'))}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></svg></button>
+              <button className="btn-icone canvas-roda" onClick={() => setRoda((r) => (r === 'mouse' ? 'trackpad' : 'mouse'))}
+                data-dica={roda === 'mouse' ? 'Modo mouse: rolar dá zoom (M ou T troca para trackpad)' : 'Modo trackpad: dois dedos movem, pinça dá zoom (M ou T troca para mouse)'}
+                aria-label={roda === 'mouse' ? 'Modo mouse' : 'Modo trackpad'}>
+                {roda === 'mouse'
+                  ? <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="2.5" width="9" height="15" rx="4.5" /><path d="M10 5.5v3" /></svg>
+                  : <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.5" /><path d="M7 16v-3.5M13 16v-3.5" /></svg>}
+              </button>
+              <button className={`btn-icone ${mapa ? 'is-on' : 'is-desligado'}`} onClick={() => setMapa((v) => !v)} aria-label="Minimapa"
+                data-dica={mapa ? 'Esconder o minimapa' : 'Mostrar o minimapa'}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.6" y="4" width="14.8" height="12" rx="2.2" /><rect x="9.6" y="9.4" width="5.4" height="4.2" rx="1" /></svg></button>
+              <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} data-dica={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
+                onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
+              <button className={`btn-icone ${destaqueWinner ? 'is-on' : 'is-desligado'}`} onClick={() => setDestaqueWinner((v) => !v)} aria-label="Destaque dos winners"
+                data-dica={destaqueWinner ? 'Esconder o destaque vermelho dos winners 🔥' : 'Mostrar o destaque vermelho dos winners 🔥'}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.6c-3.1 0-5.4-2.2-5.4-5.2 0-2.6 1.6-4.3 3-5.8.9-1 1.8-2.1 2-3.6 1.9 1.3 3 3.1 3.1 5 .6-.4 1-1.1 1.2-1.9 1.3 1.4 2 3.3 2 5 0 3.3-2.5 6.5-5.9 6.5z" /><path d="M10 17.6c-1.4 0-2.4-1-2.4-2.4 0-1.5 1.2-2.4 2.3-3.6.9 1 2.5 2.2 2.5 3.7 0 1.3-1 2.3-2.4 2.3z" /></svg></button>
+            </div>
           </div>
         </div>
       </aside>
       {tabela && est && (
-        <ModalTabela est={global!} t={tabela} onMudar={setTabela} onFechar={() => setTabela(null)}
-          onAbrir={(a) => { const t = tabela; setTabela(null); onAbrir(a, { rotulo: STATUS.find((s) => s.k === t.pasta)?.nome ?? 'Tabela', fn: () => setTabela(t) }) }}
+        <ModalTabela est={global!} t={tabela} onMudar={setTabela} onFechar={() => setTabela(null)} canvasNome={canvas !== INBOX ? est?.canvas?.nome : undefined}
+          onAbrir={(a) => { const t = tabela; setTabela(null); onAbrir(a, { rotulo: t.pasta === 'ideias' ? 'Ideias' : t.pasta === 'winner' ? 'Winners' : STATUS.find((s) => s.k === t.pasta)?.nome ?? 'Tabela', fn: () => setTabela(t) }) }}
           onStatus={async (alvos, st) => {
             await tentarRef.current(() => post('status', { notas: alvos.map((a) => a.nome), status: st }), alvos.length === 1 ? 'Status mudou' : `${alvos.length} notas mudaram de status`)
             await recarregar()
@@ -1337,7 +1340,7 @@ export function aquecerCanvases() {
 function Pasta({ nome, n, ativa, cor, onClick }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void }) {
   return (
     <button className={`status-botao is-${cor} ${ativa ? 'is-ativa' : ''}`} onClick={onClick} title={cor === 'winner' ? 'Os winners 🔥, com as datas de postagem' : `Tabela: ${nome.toLowerCase()}`}>
-      {cor === 'winner' ? <span className="status-fogo">🔥</span> : <i className={`ponto is-${cor}`} />}
+      {cor === 'winner' ? <span className="status-fogo">🔥</span> : cor === 'ideias' ? <span className="status-fogo">💡</span> : <i className={`ponto is-${cor}`} />}
       <span>{nome}</span><em>{n}</em>
     </button>
   )

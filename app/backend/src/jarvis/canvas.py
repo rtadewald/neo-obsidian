@@ -795,13 +795,13 @@ def achar(nome: str) -> tuple[str, str]:
 
 
 def mudar_status(nome: str, status: str) -> dict:
-    """ideia | edicao | agendado | publicado. Publicar move para 2 Publicados; despublicar volta para Priorizar.
+    """ideia | gravar | edicao | agendado | publicado. Publicar move para 2 Publicados; despublicar volta para Priorizar.
     A posição do card no canvas vai junto (como no app)."""
     raiz, nome = achar(nome)
     if raiz not in notas.PASTAS:
         raise ValueError("só copies (1 Priorizar ou 2 Publicados) têm status")
-    if status not in ("ideia", "edicao", "agendado", "publicado"):
-        raise ValueError("status é ideia, edicao, agendado ou publicado")
+    if status not in ("ideia", "gravar", "edicao", "agendado", "publicado"):
+        raise ValueError("status é ideia, gravar, edicao, agendado ou publicado")
     antes = (raiz, nome)
     if status == "publicado":
         d = notas.mover(raiz, nome, "publicados") if raiz != "publicados" else {"raiz": raiz, "nome": nome}
