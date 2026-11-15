@@ -1251,7 +1251,7 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 /* modo foco: cada barra desliza para a sua borda e some; o canvas fica com a tela toda */
 .lateral-area, .canvas-lista, .canvas-trilho, .canvas-pastas, .canvas-mapa {
   transition: transform .38s var(--ease), opacity .3s ease, translate .38s var(--ease); }
-.modo-foco .lateral-area { transform: translateY(-110%); opacity: 0; pointer-events: none; }
+.modo-foco .lateral-area { margin-top: -44px; transform: translateY(-110%); opacity: 0; pointer-events: none; }   /* como no W: a barra sai do fluxo e o chat sobe até 10px do topo */
 .modo-foco .canvas-lista { transform: translateX(-130%); opacity: 0; pointer-events: none; }
 .modo-foco .canvas-trilho { translate: -92px 0; }   /* os pinados ficam: só encostam na borda, no lugar das pastas */
 .modo-foco .canvas-pastas { transform: translateY(140%); opacity: 0; pointer-events: none !important; }
@@ -1553,6 +1553,6 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .skills-nome { padding: 6px 8px 6px 0; }
 
 /* desenho: no modo W a barra de ferramentas sobe até 10px do topo; a Biblioteca e a dica de mover a tela saem */
-.modo-trabalho .desenho .excalidraw .layer-ui__wrapper { top: -6px !important; }
+.modo-trabalho .desenho .excalidraw .layer-ui__wrapper, .modo-foco .desenho .excalidraw .layer-ui__wrapper { top: -6px !important; }
 .desenho .excalidraw .sidebar-trigger, .desenho .excalidraw .default-sidebar-trigger, .desenho .excalidraw .HintViewer,
 .desenho .excalidraw .main-menu-trigger, .desenho .excalidraw .dropdown-menu-button { display: none !important; }   /* menu ☰ do Excalidraw também sai */

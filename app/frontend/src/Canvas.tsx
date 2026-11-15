@@ -982,6 +982,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         {visao === 'principal' && <Desenho canvas={canvas} ativo={desenhando} controle={controleDesenho} vistaInicial={() => rf.getViewport()}
           onVista={(v) => rf.setViewport(v)} onSair={sairDoDesenho} />}
         <ReactFlow<No, Edge>
+          proOptions={{ hideAttribution: true }}   // sem o selo "React Flow" no canto
           nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO}
           onNodeDragStart={(_, __, ns) => comecouArraste(ns)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
           onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
