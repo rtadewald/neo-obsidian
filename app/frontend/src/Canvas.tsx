@@ -587,21 +587,33 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     const r = e.currentTarget.getBoundingClientRect(); setMoverLado(r.right + 250 > window.innerWidth ? 'esq' : 'dir'); abrir(true)
   }
   /** Mover para ›: leva os cards (com a ideia e as copies deles) para outro canvas. Um nome de nota por card basta. */
+  /** Canvas ›: em quais canvas os cards vivem. Uma nota pode viver em vários: cada clique marca ou desmarca um
+   *  (leva a ideia e as copies juntas). Desmarcar o canvas aberto tira o card daqui. */
   const subMover = (cards: ReturnType<typeof notasDoCard>[]) => {
     if (!cards.length || !todosCanvas.length) return null
     const n = cards.length
-    const mover = (c: ResumoCanvas) => { setMenu(null); setMoverAberto(false)
-      tentar(async () => { await post('mover', { notas: cards.map((ns) => ns[0].nome), canvas: c.slug === INBOX ? null : c.nome }) },
-        `${n > 1 ? `${n} cards movidos` : 'Movido'} para ${c.icone} ${c.nome}`) }
+    const nomeAqui = est?.canvas?.nome
+    const deCard = (ns: ReturnType<typeof notasDoCard>) => new Set(ns.flatMap((x) => (x as { canvases?: string[] }).canvases ?? []).concat(nomeAqui && canvas !== INBOX ? [nomeAqui] : []))
+    const conjuntos = cards.map(deCard)
+    const marcar = (c: ResumoCanvas, sim: boolean) => {
+      if (!sim && c.slug === canvas) { setMenu(null); setMoverAberto(false) }
+      tentar(async () => { await post('canvas', { notas: cards.map((ns) => ns[0].nome), canvas: c.nome, sim }) },
+        `${n > 1 ? `${n} cards: ` : ''}${sim ? `agora também em ${c.icone} ${c.nome}` : `saíram de ${c.icone} ${c.nome}`}`)
+    }
     return (
       <div className="menu-sub-caixa" onMouseEnter={(e) => abreAoLado(e, setMoverAberto)} onMouseLeave={() => setMoverAberto(false)}>
         <button role="menuitem" className={`menu-sub ${moverAberto ? 'is-aberto' : ''}`} onClick={() => setMoverAberto((v) => !v)}>
-          <Icone n="pasta" t={15} />Mover para<span className="menu-seta">›</span></button>
+          <Icone n="pasta" t={15} />Canvas<span className="menu-seta">›</span></button>
         {moverAberto && <div className={`menu-caixas menu-lateral is-${moverLado} glass glass--light`} role="menu">
-          {todosCanvas.filter((c) => (!c.arquivado && c.slug !== INBOX) || c.slug === canvas).map((c) => (
-            <button key={c.slug} role="menuitem" disabled={c.slug === canvas} onClick={() => mover(c)}>
-              <span className="menu-emoji"><IconeCanvas c={c} /></span>{c.nome}{c.slug === canvas ? ' · aqui' : ''}</button>
-          ))}
+          {todosCanvas.filter((c) => !c.arquivado && c.slug !== INBOX).map((c) => {
+            const dentro = conjuntos.filter((x) => x.has(c.nome)).length
+            const on = dentro === n, parte = dentro > 0 && !on
+            return <button key={c.slug} role="menuitemcheckbox" aria-checked={on ? true : parte ? 'mixed' : false} className="menu-check" onClick={() => marcar(c, !on)}
+              title={on ? `Tirar de ${c.nome}` : `Também em ${c.nome}`}>
+              <i className={`menu-caixinha ${on || parte ? 'is-on' : ''}`}>{on ? '✓' : parte ? '–' : ''}</i>
+              <span className="menu-emoji"><IconeCanvas c={c} /></span>{c.nome}{c.slug === canvas ? ' · aqui' : ''}
+              {parte && <em className="menu-parte">{dentro}/{n}</em>}</button>
+          })}
         </div>}
       </div>
     )

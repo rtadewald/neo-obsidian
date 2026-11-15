@@ -296,8 +296,10 @@ def marcar_no_canvas(raiz: str, nome: str):
     if c["slug"] in ("inbox", "todos") or not p or not p.is_file():
         return
     t = _ler(p, None)
-    if _valor(_fm(t), "grupo") != c["nome"]:
-        notas._escrever(p, _definir(t, "grupo", c["nome"]))
+    gs = _lista(_fm(t), "grupo")
+    if c["nome"] not in gs:
+        gs = [*gs, c["nome"]]
+        notas._escrever(p, _definir(t, "grupo", gs if len(gs) > 1 else gs[0]))
 
 
 def _layout(slug: str | None = None) -> dict:
@@ -396,13 +398,13 @@ def _todas() -> dict:
         m = _midia(t)
         if not m["imagem"] and _valor(fm, "thumb"):
             m["imagem"] = _valor(fm, "thumb")
-        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "tags": _lista(fm, "tags"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
+        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
                        "mtime": p.stat().st_mtime})
     for nome, p in notas._arquivos("entradas"):
         t = _ler(p)
         fm = _fm(t)
         entradas.append({"nome": nome, "url": _valor(fm, "url") or "", "tipo": _valor(fm, "tipo") or "link",
-                         "thumb": _valor(fm, "thumb") or "", "grupo": _valor(fm, "grupo"), "tags": _lista(fm, "tags"),
+                         "thumb": _valor(fm, "thumb") or "", "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"),
                          "previa": notas._previa(t), "mtime": p.stat().st_mtime})
     for raiz in notas.PASTAS:
         for nome, p in notas._arquivos(raiz):
@@ -413,25 +415,27 @@ def _todas() -> dict:
             st = p.stat()
             corpo = FM.sub("", inteiro, count=1)
             palavras = len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo))))
-            producoes.append({"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome), "scheduled": sched,
+            producoes.append({"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome), "scheduled": sched, "datas": notas._datas(t),
                               "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
-                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "grupo": _valor(fm, "grupo"),
+                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"),
                               "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
                               "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"), **_midia(t)})
+    # `grupo:` pode ter vários canvas (a nota vive em todos). `canvases` = os válidos; `canvas` = o primeiro (ou None)
     nomes = {c["nome"] for c in lista_canvases() if c["slug"] != "inbox"}
-    valido = lambda g: g if g in nomes else None
+    validos = lambda gs: [g for g in dict.fromkeys(gs) if g in nomes]
     por_ideia: dict[str, list[str]] = {}
     for pr in producoes:
-        if pr["ideia"] and valido(pr["grupo"]):
-            por_ideia.setdefault(pr["ideia"], []).append(pr["grupo"])
-    for i in ideias:
-        votos = por_ideia.get(i["nome"], [])
-        i["canvas"] = valido(i["grupo"]) or (max(set(votos), key=votos.count) if votos else None)
-    da_ideia = {i["nome"]: i["canvas"] for i in ideias}
-    for pr in producoes:
-        pr["canvas"] = valido(pr["grupo"]) or da_ideia.get(pr["ideia"] or "") or None
+        if pr["ideia"]:
+            por_ideia.setdefault(pr["ideia"], []).extend(validos(pr["grupos"]))
+    for i in ideias:   # ideia sem grupo vive onde as copies dela vivem
+        i["canvases"] = validos(i["grupos"]) or list(dict.fromkeys(por_ideia.get(i["nome"], [])))
+    da_ideia = {i["nome"]: i["canvases"] for i in ideias}
+    for pr in producoes:   # copy sem grupo vive onde a ideia dela vive
+        pr["canvases"] = validos(pr["grupos"]) or da_ideia.get(pr["ideia"] or "", [])
     for e in entradas:
-        e["canvas"] = valido(e["grupo"])
+        e["canvases"] = validos(e["grupos"])
+    for x in (*ideias, *producoes, *entradas):
+        x["canvas"] = x["canvases"][0] if x["canvases"] else None
     return {"ideias": ideias, "entradas": entradas, "producoes": producoes}
 
 
@@ -468,7 +472,7 @@ def estado(slug: str | None = None) -> dict:
     novas = _novas(tudo)
     if info["slug"] != "todos":   # o canvas mostra as notas que vivem nele (Inbox: as que não vivem em nenhum)
         alvo = None if info["slug"] == "inbox" else info["nome"]
-        tudo = {k: [x for x in v if x["canvas"] == alvo] for k, v in tudo.items()}
+        tudo = {k: [x for x in v if (alvo in x["canvases"] if alvo else not x["canvases"])] for k, v in tudo.items()}
     lay = _layout(info["slug"])
     return {"canvas": info, "produtos": lista_produtos(), "visiveis": lay["visiveis"], **tudo, "pos": lay["pos"],
             "arquivados": lay["arquivados"], "novas": novas,
@@ -761,11 +765,14 @@ def marcar_winner(alvos: list[dict], sim: bool) -> int:
 
 
 def _trocar_grupo(antigo: str, novo: str | None) -> int:
+    """Renomear (novo) ou apagar (None) um canvas: troca ou tira o nome dele no `grupo:` das notas (que pode ter vários)."""
     n = 0
     for _, _, p in _notas_do_canvas():
         t = _ler(p, None)
-        if _valor(_fm(t), "grupo") == antigo:
-            notas._escrever(p, _definir(t, "grupo", novo))
+        gs = _lista(_fm(t), "grupo")
+        if antigo in gs:
+            gs = list(dict.fromkeys([novo if g == antigo else g for g in gs if novo or g != antigo]))
+            notas._escrever(p, _definir(t, "grupo", (gs if len(gs) > 1 else gs[0]) if gs else None))
             n += 1
     return n
 
@@ -865,6 +872,42 @@ def mover_para_canvas(nomes: list[str], destino: str | None) -> dict:
     return {"cards": cards, "canvas": c["nome"], "notas": mudou}
 
 
+@_travado
+def canvas_da_nota(nomes: list[str], destino: str, sim: bool) -> dict:
+    """Canvas › (menu do card): marca (sim) ou desmarca um canvas nas notas, com a ideia e as copies delas. Uma nota
+    vive em quantos canvas quiser (`grupo:` vira lista). Desmarcar o último leva a nota para o Inbox."""
+    c = _canvas_por_nome(destino)
+    d = _layout(c["slug"])
+    base_y = max([v["y"] for v in d["pos"].values()] + [-300]) + 300
+    tudo = {x["nome"]: x for k in ("ideias", "producoes", "entradas") for x in _todas()[k]}
+    cards, mudou, novos = [], 0, 0
+    for nome in nomes:
+        raiz, nome = achar(nome)
+        _, alvos = _familia(raiz, nome)
+        for a in alvos:
+            p = notas._caminho(a["raiz"], a["nome"])
+            if not p or not p.is_file():
+                continue
+            t = _ler(p, None)
+            atuais = tudo.get(a["nome"], {}).get("canvases") or _lista(_fm(t), "grupo")   # herdado da ideia conta
+            gs = list(dict.fromkeys([*atuais, c["nome"]])) if sim else [g for g in atuais if g != c["nome"]]
+            if gs != _lista(_fm(t), "grupo"):
+                notas._escrever(p, _definir(t, "grupo", (gs if len(gs) > 1 else gs[0]) if gs else None))
+                mudou += 1
+            if sim:   # o card ganha lugar no canvas marcado e sai dos arquivados dele
+                k = _id_do_card(a["raiz"], a["nome"])
+                if k in cards:
+                    continue
+                cards.append(k)
+                if k not in d["pos"]:
+                    d["pos"][k] = {"x": (novos % 6) * 304, "y": base_y + (novos // 6) * 260}
+                    novos += 1
+                d["arquivados"] = [x for x in d["arquivados"] if x != k]
+    if sim:
+        _gravar_layout(d, c["slug"])
+    return {"cards": cards, "canvas": c["nome"], "notas": mudou}
+
+
 def listar_canvas() -> list[dict]:
     """Os canvas (nome, quantas notas vivem em cada um) e os produtos (nome e tags), para o agente."""
     return [{"canvas": c["nome"], "slug": c["slug"], **{k: v for k, v in r.items() if k in ("ideias", "producoes", "vsls")}}
@@ -900,8 +943,9 @@ def resumos() -> list[dict]:
     out = []
     for c in lista_canvases():
         alvo = None if c["slug"] == "inbox" else c["nome"]
-        pr = [p for p in tudo["producoes"] if p["canvas"] == alvo]
-        ideias = [i for i in tudo["ideias"] if i["canvas"] == alvo]
+        dentro = lambda x: alvo in x["canvases"] if alvo else not x["canvases"]
+        pr = [p for p in tudo["producoes"] if dentro(p)]
+        ideias = [i for i in tudo["ideias"] if dentro(i)]
         out.append({**c, "ideias": len(ideias), "producoes": sum(1 for p in pr if p["formato"] != "📺"),
                     "vsls": sum(1 for p in pr if p["formato"] == "📺"), "publicadas": sum(1 for p in pr if p["status"] == "publicado"),
                     "produtos": {x["slug"]: sum(1 for p in pr if _da_tag(p["tags"], x["tags"])) for x in prods}})

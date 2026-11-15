@@ -397,6 +397,10 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
     const r = await fetch(`${urlNota(alvo)}/agenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) })
     if (!r.ok) throw new Error('Não consegui mudar a data.')
   }, 'Data mudou')
+  const mudarDatas = (datas: string[]) => datas.length && executar(async () => {
+    const r = await fetch(`${urlNota(alvo)}/agenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datas }) })
+    if (!r.ok) throw new Error('Não consegui mudar as datas.')
+  }, datas.length > 1 ? `${datas.length} datas` : 'Data mudou')
 
   async function confirmarTitulo() {
     const v = titulo?.trim()
@@ -409,6 +413,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
   const extra: Extra = prod ? {
     status: { valor: prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
     onData: mudarData,
+    onDatas: mudarDatas,
     onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
     onLink,
   } : { onLink }

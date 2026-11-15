@@ -211,13 +211,15 @@ def notas_agenda():
 
 
 class Agendar(BaseModel):
-    data: str   # AAAA-MM-DD
+    data: str | None = None          # AAAA-MM-DD
+    de: str | None = None            # arrastar no calendário: qual das datas da nota mudou
+    datas: list[str] | None = None   # a lista inteira (nota postada mais de uma vez)
 
 
 @app.post("/api/notas/{raiz}/{nome:path}/agenda")
 def nota_agendar(raiz: str, nome: str, corpo: Agendar):
     try:
-        return notas.mudar_agenda(raiz, nome, corpo.data)
+        return notas.mudar_agenda(raiz, nome, corpo.data, corpo.de, corpo.datas)
     except FileNotFoundError:
         raise HTTPException(404, "nota não encontrada")
     except ValueError as e:
@@ -459,6 +461,18 @@ def canvas_x(url: str):
 class MoverCanvas(BaseModel):
     notas: list[str]             # nomes das notas (uma por card basta: a ideia e as copies dela vão junto)
     canvas: str | None = None    # nome do canvas; vazio ou "Inbox" tira o grupo
+
+
+class CanvasDaNota(BaseModel):
+    notas: list[str]
+    canvas: str
+    sim: bool = True
+
+
+@app.post("/api/canvas/canvas")
+def canvas_canvas(corpo: CanvasDaNota):
+    """Canvas › do menu: a nota (com a família) passa a viver também neste canvas (sim) ou sai dele."""
+    return _erros(lambda: canvas.canvas_da_nota(corpo.notas, corpo.canvas, corpo.sim))
 
 
 @app.post("/api/canvas/mover")

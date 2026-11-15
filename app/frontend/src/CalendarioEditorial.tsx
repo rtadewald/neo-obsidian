@@ -50,10 +50,10 @@ export function CalendarioEditorial({ onAbrir }: { onAbrir: (raiz: Raiz, nome: s
 
   const hoje = iso(new Date())
 
-  async function soltarChave(raiz: Raiz, nome: string, data: string) {
+  async function soltarChave(raiz: Raiz, nome: string, data: string, de?: string) {
     setSobreDia(null)
     await fetch(`/api/notas/${raiz}/${encodeURIComponent(nome)}/agenda`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, de }),   // de: qual das datas da nota foi arrastada (as outras ficam)
     })
     carregar()
   }
@@ -109,7 +109,7 @@ export function CalendarioEditorial({ onAbrir }: { onAbrir: (raiz: Raiz, nome: s
 function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onSobreDia, onSoltar, onAbrir, onCriarBloco, onClickBloco }: {
   semana: Date[]; porDia: Record<string, ItemAgenda[]>; blocos: Bloco[]; hoje: string; mesAtual: number
   sobreDia: string | null; onSobreDia: (k: string | null) => void
-  onSoltar: (raiz: Raiz, nome: string, data: string) => void; onAbrir: (raiz: Raiz, nome: string) => void
+  onSoltar: (raiz: Raiz, nome: string, data: string, de?: string) => void; onAbrir: (raiz: Raiz, nome: string) => void
   onCriarBloco: (inicio: string, fim: string) => void; onClickBloco: (b: Bloco) => void
 }) {
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
@@ -156,14 +156,14 @@ function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onS
               onDragOver={(e) => { e.preventDefault(); onSobreDia(k) }} onDragLeave={() => onSobreDia(null)}
               onDrop={(e) => {
                 e.preventDefault()
-                const [raiz, nome] = e.dataTransfer.getData('text/plain').split('\u0000')
-                if (raiz && nome) onSoltar(raiz as Raiz, nome, k)
+                const [raiz, nome, de] = e.dataTransfer.getData('text/plain').split('\u0000')
+                if (raiz && nome) onSoltar(raiz as Raiz, nome, k, de || undefined)
               }}>
               <span className="cal-ed-num">{d.getDate() === 1 ? `1 ${MESES[d.getMonth()].slice(0, 3)}` : d.getDate()}</span>
               <div className="cal-ed-chips">
                 {(porDia[k] ?? []).map((it) => (
                   <button key={`${it.raiz}/${it.nome}`} className={`cal-ed-chip is-${it.status}`} draggable title={it.nome}
-                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `${it.raiz}\u0000${it.nome}`)}
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `${it.raiz}\u0000${it.nome}\u0000${it.scheduled}`)}
                     onClick={() => onAbrir(it.raiz, it.nome)}>{it.nome}</button>
                 ))}
               </div>

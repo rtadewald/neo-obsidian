@@ -1567,3 +1567,10 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .canvas.sem-winner .cartao.is-winner { box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 10px 26px -16px rgba(40, 34, 32, .45), 0 0 0 1px rgba(23, 24, 27, .06); }
 .canvas.sem-winner .cartao.is-winner:hover { box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 16px 30px -16px rgba(40, 34, 32, .5), 0 0 0 1px rgba(23, 24, 27, .12); }
 .canvas.sem-winner .cartao.is-winner.is-sel { box-shadow: 0 0 0 2px #1d1d1f, 0 16px 30px -16px rgba(40, 34, 32, .5); }
+
+/* scheduled com várias datas (copy postada de novo) */
+.cm-prop-datas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cm-prop-data-item { display: inline-flex; align-items: center; gap: 2px; }
+.cm-prop-data { border: 0; background: transparent; font: inherit; color: inherit; padding: 0; }
+.cm-prop-data-item button, .cm-prop-data-mais { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; color: var(--mute); font-size: 13px; }
+.cm-prop-data-item button:hover, .cm-prop-data-mais:hover { background: rgba(23, 24, 27, .07); color: var(--ink); }

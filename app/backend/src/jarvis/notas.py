@@ -194,16 +194,40 @@ def criar(titulo: str) -> dict:
 SCHED = re.compile(r'(?m)^scheduled:\s*"?(\d{4}-\d{2}-\d{2})"?\s*$')
 
 
-def _scheduled(texto: str) -> str | None:
+DATA = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _datas(texto: str) -> list[str]:
+    """Todas as datas de `scheduled` (uma, ou uma lista quando a copy foi postada mais de uma vez), em ordem."""
     m = re.match(r"^---\n(.*?)\n---\n", texto, flags=re.S)
     if not m:
+        return []
+    linhas = m.group(1).split("\n")
+    for i, l in enumerate(linhas):
+        if not re.match(r"^scheduled:", l):
+            continue
+        resto = l.split(":", 1)[1]
+        achadas = DATA.findall(resto)   # `scheduled: 2026-09-10` ou `scheduled: [2026-09-10, 2026-10-02]`
+        for x in linhas[i + 1:]:          # lista em blocos: `  - "2026-09-10"`
+            if not re.match(r"^\s+-\s", x):
+                break
+            achadas += DATA.findall(x)
+        return sorted(dict.fromkeys(achadas))
+    return []
+
+
+def _scheduled(texto: str) -> str | None:
+    """A data que vale para a nota: a próxima a partir de hoje; se todas já passaram, a mais recente."""
+    ds = _datas(texto)
+    if not ds:
         return None
-    sm = SCHED.search(m.group(1))
-    return sm.group(1) if sm else None
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    return next((d for d in ds if d >= hoje), ds[-1])
 
 
 def agenda() -> list[dict]:
-    """Notas de `1 Copies` com `scheduled` preenchido: o calendário editorial."""
+    """Notas de `1 Copies` com `scheduled` preenchido: o calendário editorial. Uma entrada por data (repostagens
+    aparecem em cada dia em que foram postadas)."""
     out = []
     for raiz in PASTAS:
         for nome, p in _arquivos(raiz):
@@ -211,36 +235,43 @@ def agenda() -> list[dict]:
                 texto = p.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            data = _scheduled(texto)
-            if data:
-                out.append({"nome": nome, "raiz": raiz, "scheduled": data, "status": status(raiz, nome)})
+            ds = _datas(texto)
+            for data in ds:
+                out.append({"nome": nome, "raiz": raiz, "scheduled": data, "datas": ds, "status": status(raiz, nome)})
     return out
 
 
-def _definir_scheduled(texto: str, data: str) -> str:
-    linha = f'scheduled: "{data}"'
+def _definir_scheduled(texto: str, datas: str | list[str]) -> str:
+    """Grava `scheduled`: uma data numa linha só; várias, como lista YAML (uma por linha)."""
+    ds = [datas] if isinstance(datas, str) else sorted(dict.fromkeys(datas))
+    linha = f'scheduled: "{ds[0]}"' if len(ds) == 1 else "scheduled:\n" + "\n".join(f'  - "{d}"' for d in ds)
     m = re.match(r"^---\n(.*?)\n---\n", texto, flags=re.S)
     if not m:
         return f"---\n{linha}\n---\n\n" + texto
     fm = m.group(1)
-    # troca a linha `scheduled:` que já existir, mesmo vazia (toda copy nasce com `scheduled:`): antes ela ficava
-    # e uma segunda era acrescentada no fim
-    qualquer = re.compile(r"(?m)^scheduled:.*$")
-    fm = qualquer.sub(linha, fm, count=1) if qualquer.search(fm) else (f"{fm}\n{linha}" if fm.strip() else linha)
+    # troca o `scheduled:` que já existir (com a lista dele, se for lista), mesmo vazio (toda copy nasce com `scheduled:`)
+    qualquer = re.compile(r"(?m)^scheduled:.*(?:\n[ \t]+-[^\n]*)*")
+    fm = qualquer.sub(lambda _: linha, fm, count=1) if qualquer.search(fm) else (f"{fm}\n{linha}" if fm.strip() else linha)
     return f"---\n{fm}\n---\n" + texto[m.end():]
 
 
-def mudar_agenda(raiz: str, nome: str, data: str) -> dict:
-    """Arrastar no calendário editorial: muda só a propriedade `scheduled` da nota."""
+def mudar_agenda(raiz: str, nome: str, data: str | None = None, de: str | None = None, datas: list[str] | None = None) -> dict:
+    """Muda `scheduled` pelo app. `datas`: troca a lista inteira (propriedade da nota). `data` + `de`: arrastar uma
+    das datas no calendário (as outras ficam). Só `data`: a nota passa a ter essa data."""
     if raiz not in PASTAS:
         raise ValueError("raiz inválida")
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
+    novas = datas if datas is not None else [data] if data else []
+    if not novas or any(not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) for d in novas):
         raise ValueError("data inválida (use AAAA-MM-DD)")
     p = _caminho(raiz, nome)
     if not p or not p.is_file():
         raise FileNotFoundError(nome)
     texto = p.read_text(encoding="utf-8", errors="replace")
-    _escrever(p, _definir_scheduled(texto, data))
+    if datas is None and de:
+        atuais = _datas(texto)
+        if de in atuais:
+            novas = [data if d == de else d for d in atuais]
+    _escrever(p, _definir_scheduled(texto, novas))
     return {"mtime": p.stat().st_mtime}
 
 

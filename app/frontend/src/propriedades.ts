@@ -8,6 +8,7 @@ import { EditorView, WidgetType } from '@codemirror/view'
 export type Extra = {
   status?: { valor: string; opcoes: { k: string; rotulo: string }[]; mudar: (s: string) => void }
   onData?: (data: string) => void          // scheduled muda pelo app (que também agenda)
+  onDatas?: (datas: string[]) => void     // scheduled com várias datas (copy postada de novo): a lista inteira
   onPublicado?: (sim: boolean) => void     // publicado muda o status (pasta)
   onLink?: (nome: string) => void          // clicar num [[link]] das propriedades abre a nota
 }
@@ -121,6 +122,42 @@ class Painel extends WidgetType {
 
     for (const it of this.itens) {
       const { chave, valor } = it
+      // scheduled aceita várias datas (a mesma copy postada de novo): um campo de data por data, × tira, + acrescenta
+      if (/^scheduled$/i.test(chave)) {
+        const datas = (Array.isArray(valor) ? valor : valor ? [valor] : []).map((x) => /^\d{4}-\d{2}-\d{2}/.exec(x)?.[0] ?? '').filter(Boolean)
+        const gravar = (novas: string[]) => {
+          const l = [...new Set(novas.filter(Boolean))].sort()
+          if (this.extra.onDatas && l.length) this.extra.onDatas(l)
+          else if (this.extra.onData && l.length === 1) this.extra.onData(l[0])
+          else trocar(view, chave, l.length > 1 ? l : l[0] ?? '')
+        }
+        const caixa = document.createElement('div'); caixa.className = 'cm-prop-campo cm-prop-datas'
+        const campo = (dt: string, i: number | null) => {
+          const d = document.createElement('input'); d.type = 'date'; d.className = 'cm-prop-data'; d.value = dt
+          d.onchange = () => {
+            if (i === null) { if (d.value) gravar([...datas, d.value]) }
+            else gravar(d.value ? datas.map((x, j) => (j === i ? d.value : x)) : datas.filter((_, j) => j !== i))
+          }
+          const item = document.createElement('span'); item.className = 'cm-prop-data-item'; item.append(d)
+          if (i !== null && datas.length > 1) {
+            const x = document.createElement('button'); x.textContent = '×'; x.title = 'Tirar esta data'
+            x.onclick = () => gravar(datas.filter((_, j) => j !== i))
+            item.append(x)
+          }
+          caixa.append(item)
+          return d
+        }
+        datas.forEach((dt, i) => campo(dt, i))
+        if (!datas.length) campo('', null)
+        else {
+          const mais = document.createElement('button'); mais.className = 'cm-prop-data-mais'; mais.textContent = '+'
+          mais.title = 'Mais uma data (a copy foi postada de novo)'
+          mais.onclick = () => { mais.remove(); const d = campo('', null); caixa.append(d.parentElement!); d.focus(); try { d.showPicker() } catch { /* sem seletor */ } }
+          caixa.append(mais)
+        }
+        linha(chave, caixa, chave)
+        continue
+      }
       if (ehLista(chave, valor)) {
         const lista = Array.isArray(valor) ? valor : valor ? [valor] : []
         const caixa = document.createElement('div'); caixa.className = 'cm-prop-campo cm-prop-lista'
