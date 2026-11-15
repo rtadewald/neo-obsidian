@@ -1,8 +1,8 @@
-import { descreverOnde } from './canvasApi'
+import { canvasAberto, descreverOnde } from './canvasApi'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Markdown } from './Markdown'
 import type { Trecho } from './notas'
-import { api, conversar, type Msg, type Sinal } from './api'
+import { api, conversar, type EventoChat, type Msg, type Sinal } from './api'
 import { Fonte, Icone } from './Icone'
 
 const VERBO: Record<string, string> = {
@@ -63,6 +63,16 @@ function comSinal(s: Sinal | null, texto: string) {
   return `📡 Sinal do radar · ${FONTE[s.fonte] ?? s.fonte}${s.autor ? ` · ${s.autor}` : ''}${s.url ? ` · ${s.url}` : ''}\n${corpo}\n\n${texto}`
 }
 
+/** "agora", "há 5 min", "ontem", "12/11": quando a conversa mexeu por último. */
+function quando(ts: number) {
+  const d = Date.now() / 1000 - ts
+  if (d < 60) return 'agora'
+  if (d < 3600) return `há ${Math.round(d / 60)} min`
+  if (d < 86400) return `há ${Math.round(d / 3600)} h`
+  if (d < 172800) return 'ontem'
+  return new Date(ts * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+}
+
 type Props = {
   foco: Sinal | null; limparFoco: () => void; aberto?: boolean; onAlternar?: () => void
   trecho?: Trecho | null; limparTrecho?: () => void
@@ -70,14 +80,29 @@ type Props = {
   onFim?: () => void                       // terminou de responder (a nota pode ter mudado)
   alca?: React.ReactNode                   // borda de arrastar para mudar a largura
   onAbrirSinal?: (a: { id?: number; url?: string | null; fonte?: string }) => void   // volta para o card do sinal no Radar
+  onTela?: (ev: Extract<EventoChat, { t: 'tela' }>) => void   // o Jarvis mexe na tela (abrir canvas, mostrar card…)
 }
 
-export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = null, limparTrecho, pedido, onFim, alca, onAbrirSinal }: Props) {
-  // modo construtor: o mesmo chat, mas o agente mexe no código do app (outra conversa, com desfazer)
-  const [modo, setModo] = useState<'vault' | 'app'>(() => { try { return localStorage.getItem('chat-modo') === 'app' ? 'app' : 'vault' } catch { return 'vault' } })
-  useEffect(() => { try { localStorage.setItem('chat-modo', modo) } catch { /* sem storage */ } }, [modo])
-  const conversa = modo === 'app' ? 'construtor' : 'radar'
-  const [pontos, setPontos] = useState(0)
+export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = null, limparTrecho, pedido, onFim, alca, onAbrirSinal, onTela }: Props) {
+  // várias conversas: cada uma com o seu histórico e a sua sessão do Claude (a primeira, de sempre, é "radar")
+  const [conversa, setConversa] = useState(() => { try { return localStorage.getItem('chat-conversa') || 'radar' } catch { return 'radar' } })
+  useEffect(() => { try { localStorage.setItem('chat-conversa', conversa) } catch { /* sem storage */ } }, [conversa])
+  const [lista, setLista] = useState<{ id: string; titulo: string; n: number; atualizado_em: number }[] | null>(null)   // aberta = não nula
+  const listaRef = useRef<HTMLDivElement>(null)
+  const abrirLista = () => fetch('/api/chats', { cache: 'no-store' }).then((r) => r.json()).then(setLista).catch(() => setLista([]))
+  useEffect(() => {
+    if (!lista) return
+    const fora = (e: PointerEvent) => { if (!listaRef.current?.contains(e.target as HTMLElement)) setLista(null) }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setLista(null)
+    window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc)
+    return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc) }
+  }, [lista])
+  const novaConversa = () => { setLista(null); setConversa(`c-${Date.now().toString(36)}`) }
+  const apagarConversa = async (id: string) => {
+    await fetch(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {})
+    if (id === conversa) setConversa(`c-${Date.now().toString(36)}`)
+    abrirLista()
+  }
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [texto, setTexto] = useState('')
   // imagens coladas (⌘V) ou soltas no campo: já salvas nos anexos do vault, vão na mensagem como ![[...]]
@@ -101,23 +126,17 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   const [fila, setFila] = useState<string[]>([])   // pedidos digitados enquanto o Jarvis ainda respondia o de cima
   const log = useRef<HTMLDivElement>(null)
   const campo = useRef<HTMLTextAreaElement>(null)
-  const cb = useRef({ trecho, limparTrecho, onFim, foco })
-  cb.current = { trecho, limparTrecho, onFim, foco }
+  const cb = useRef({ trecho, limparTrecho, onFim, foco, onTela })
+  cb.current = { trecho, limparTrecho, onFim, foco, onTela }
   const filaRef = useRef<string[]>(fila)
   filaRef.current = fila
   const processando = useRef(false)   // trava de verdade (ocupado é só pra UI; estado React é tarde demais pro encadeamento)
   const sinalEnviado = useRef<number | null>(null)   // o mesmo sinal não é repetido a cada mensagem
 
-  useEffect(() => { api.historico(conversa).then((h) => setMsgs(h)).catch(() => {}) }, [conversa])
-  const lerPontos = () => fetch('/api/construtor').then((r) => r.json()).then((d) => setPontos(d.pontos)).catch(() => {})
-  useEffect(() => { if (modo === 'app') lerPontos() }, [modo])
-  async function desfazer() {
-    const r = await fetch('/api/construtor/desfazer', { method: 'POST' })
-    const d = await r.json().catch(() => ({}))
-    setMsgs((m) => [...m, { papel: 'jarvis', texto: r.ok ? `↩︎ Desfeito: “${d.desfeito}”. O app voltou ao ponto de antes desse pedido.` : '', erro: r.ok ? undefined : d.detail || 'Não consegui desfazer.' }])
-    lerPontos()
-  }
+  useEffect(() => { sinalEnviado.current = null; setMsgs([]); api.historico(conversa).then((h) => setMsgs(h)).catch(() => {}) }, [conversa])
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' }) }, [msgs])
+  // ao reabrir o chat (o log é montado de novo) ou ao carregar o histórico: já no fim da conversa, sem animação
+  useEffect(() => { if (aberto) requestAnimationFrame(() => log.current?.scrollTo({ top: log.current.scrollHeight })) }, [aberto, conversa])
 
   useEffect(() => { if (trecho || foco) campo.current?.focus() }, [trecho, foco])
   useEffect(() => { if (pedido?.n) enviar(undefined, pedido.texto) }, [pedido?.n])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -142,10 +161,12 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     setMsgs((m) => [...m, { papel: 'usuario', texto: t }, { papel: 'jarvis', texto: '', ferramentas: [] }])
     const mexe = (f: (u: Msg) => Msg) => setMsgs((m) => [...m.slice(0, -1), f(m[m.length - 1])])
     try {
-      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, modo, onde: descreverOnde() }, (ev) => {
+      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, onde: descreverOnde(), canvas: canvasAberto() }, (ev) => {
         if (ev.t === 'texto') mexe((u) => ({ ...u, texto: u.texto + ev.v }))
         else if (ev.t === 'ferramenta') mexe((u) => ({ ...u, ferramentas: [...(u.ferramentas ?? []), `${VERBO[ev.nome] ?? ev.nome} ${ev.alvo}`.trim()] }))
         else if (ev.t === 'erro') mexe((u) => ({ ...u, erro: ev.v }))
+        else if (ev.t === 'mudou') cb.current.onFim?.()   // o canvas recarrega a cada mudança, sem esperar a resposta
+        else if (ev.t === 'tela') cb.current.onTela?.(ev)
       })
     } catch (err) {
       mexe((u) => ({ ...u, erro: String(err) }))
@@ -153,7 +174,6 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
       processando.current = false
       setOcupado(false)
       cb.current.onFim?.()
-      if (modo === 'app') lerPontos()
       const prox = filaRef.current[0]
       if (prox !== undefined) { setFila((f) => f.slice(1)); enviar(undefined, prox) }
     }
@@ -170,14 +190,32 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   )
 
   return (
-    <aside className={`chat glass glass--light ${modo === 'app' ? 'is-construtor' : ''}`} aria-label="Chat do Jarvis">
+    <aside className="chat glass glass--light" aria-label="Chat do Jarvis">
       {alca}
       <header className="chat-cabeca">
         <span className="orb orb--p" />
         <span className="chat-nome">JARVIS</span>
-        <span className="chat-status">{ocupado ? 'pensando…' : modo === 'app' ? 'mexendo no app' : 'vault conectado'}{fila.length > 0 ? ` · ${fila.length} na fila` : ''}</span>
-        <button className={`btn-icone ${modo === 'app' ? 'is-on' : ''}`} disabled={ocupado} onClick={() => setModo((m) => (m === 'app' ? 'vault' : 'app'))}
-          title={modo === 'app' ? 'Sair do modo construtor (voltar ao vault)' : 'Modo construtor: pedir mudanças no próprio app'} aria-pressed={modo === 'app'}><Icone n="ferramenta" t={16} /></button>
+        <span className="chat-status">{ocupado ? 'pensando…' : 'conectado'}{fila.length > 0 ? ` · ${fila.length} na fila` : ''}</span>
+        <div className="chat-conversas" ref={listaRef}>
+          <button className="btn-icone" disabled={ocupado} onClick={() => (lista ? setLista(null) : abrirLista())} title="Conversas anteriores" aria-label="Conversas anteriores" aria-expanded={!!lista}>
+            <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.4 10a6.6 6.6 0 1 0 2-4.7M3.4 3.6v3.2h3.2M10 6.4V10l2.4 1.6" /></svg></button>
+          <button className="btn-icone" disabled={ocupado || msgs.length === 0} onClick={novaConversa} title="Nova conversa" aria-label="Nova conversa"><Icone n="mais" t={16} /></button>
+          {lista && (
+            <div className="chat-conversas-lista glass glass--light" role="menu">
+              <p className="menu-titulo">Conversas</p>
+              {lista.length === 0 && <p className="chat-conversas-vazio">Nenhuma conversa ainda.</p>}
+              {lista.map((c) => (
+                <div key={c.id} className={`chat-conversa ${c.id === conversa ? 'is-on' : ''}`}>
+                  <button role="menuitem" onClick={() => { setLista(null); setConversa(c.id) }}>
+                    <span className="chat-conversa-titulo">{c.titulo}</span>
+                    <em>{quando(c.atualizado_em)} · {c.n} msgs</em>
+                  </button>
+                  <button className="chat-conversa-apagar" onClick={() => apagarConversa(c.id)} title="Apagar esta conversa" aria-label="Apagar conversa"><Icone n="lixeira" t={13} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         {onAlternar && <button className="btn-icone chat-recolher" onClick={onAlternar} title="Recolher o chat" aria-label="Recolher o chat"><Icone n="painel" t={16} /></button>}
       </header>
 
@@ -202,12 +240,6 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
         ))}
       </div>
 
-      {modo === 'app' && (
-        <div className="chat-construtor">
-          <span>🛠 Modo construtor: os pedidos mudam o código do app.</span>
-          {pontos > 0 && !ocupado && <button onClick={desfazer} title="Volta o app para antes do último pedido">↩︎ Desfazer última mudança</button>}
-        </div>
-      )}
       {fila.length > 0 && (
         <ul className="chat-fila">
           {fila.map((f, i) => (
@@ -253,7 +285,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
         onDrop={(e) => { const f = [...e.dataTransfer.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}>
         <textarea
           onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}
-          ref={campo} rows={1} value={texto} placeholder={modo === 'app' ? 'O que mudar no app?' : trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
+          ref={campo} rows={1} value={texto} placeholder={trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }

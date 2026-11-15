@@ -59,7 +59,7 @@ O Neo-Obsidian não substitui o vault: **ele lê e escreve os mesmos arquivos `.
 - **Radar:** X, GitHub Trending, Hugging Face e Hacker News em cards. 👍 ensina o ranking e guarda em **Curtidos**, 👎 tira do feed e ensina o contrário. 💡 transforma o card em ideia no canvas, e "Perguntar ao Jarvis" leva para o chat. Vídeos do X tocam no próprio card.
 - **Calendário editorial** pelo `scheduled` (arraste para reagendar) e **Agendamento** com os posts do Instagram via Metricool.
 - **Busca rápida** `⌘P` em ideias, copies e skills, no estilo do quick switcher do Obsidian.
-- **Modo construtor:** o mesmo chat pode mexer no código do app enquanto você usa, com um ponto de restauração antes de cada pedido para desfazer.
+- **Jarvis usa o app:** o chat cria e liga notas, move cards, arquiva, abre canvas e mostra cards na sua tela, pelas mesmas rotas que a interface usa.
 
 ## Instalação
 
@@ -112,7 +112,6 @@ app/
     canvas.py           ideias, produções, canvas, produtos e posições
     notas.py            ler, salvar, mover, renomear e mandar para a lixeira (com os links)
     agente.py           o chat: uma sessão do Claude Code dentro do vault
-    construtor.py       modo construtor, com ponto de restauração por pedido
     radar.py · preferencias.py · coletores/   o radar e o ranking pelos seus votos
     metricool.py · anuncios.py               posts, agendados e Meta Ads (leitura)
     youtube.py          transcrição pela legenda

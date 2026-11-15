@@ -60,3 +60,16 @@ export function Fonte({ f, so }: { f: string; so?: boolean }) {
     </span>
   )
 }
+
+/** Ícone de um canvas nas listas (menus): a pastinha na cor do canvas, como as pastas da esquerda. Canvas com ícone
+ *  próprio (o 📥 do Inbox, um emoji escolhido) mostra o emoji. */
+export function IconeCanvas({ c }: { c: { icone: string; cor: string } }) {
+  if (c.icone && c.icone !== '🗂️') return <span className="icone-canvas-emoji">{c.icone}</span>
+  return (
+    <svg className="icone-canvas" width="18" height="15" viewBox="0 0 18 15" aria-hidden="true" style={{ '--cor': c.cor } as React.CSSProperties}>
+      <path className="icone-canvas-fundo" d="M1 3.2C1 2 1.9 1 3 1h3.6l1.6 1.8H15c1.1 0 2 .9 2 2V12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2Z" />
+      <rect className="icone-canvas-folha" x="3.4" y="3.6" width="11.2" height="5" rx="1" />
+      <path className="icone-canvas-frente" d="M1 6.4c0-.8.6-1.4 1.4-1.4h13.2c.8 0 1.4.6 1.4 1.4V12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2Z" />
+    </svg>
+  )
+}

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { listarCanvases, type ResumoCanvas } from './canvasApi'
 import { api, type Coleta, type Gosto, type Sinal, type VideoX } from './api'
-import { Fonte, Icone } from './Icone'
+import { Fonte, Icone, IconeCanvas } from './Icone'
 
 const TIPOS: [string, string][] = [
   ['', 'Tudo'], ['modelo', 'Modelos'], ['tecnica', 'Técnicas'], ['projeto', 'Projetos'],
   ['ferramenta', 'Ferramentas'], ['hype', 'Em alta'], ['skill', 'Skills'], ['outro', 'Outros'], ['fora', 'Fora do tema'],
 ]
 const NOME_TIPO = Object.fromEntries(TIPOS.filter(([k]) => k)) as Record<string, string>
-const FONTES = ['x', 'github', 'huggingface', 'hackernews']
-const NOME_FONTE: Record<string, string> = { x: 'X', github: 'GitHub', huggingface: 'Hugging Face', hackernews: 'Hacker News' }
+const FONTES = ['x', 'github', 'huggingface', 'hackernews', 'instagram']
+const NOME_FONTE: Record<string, string> = { x: 'X', github: 'GitHub', huggingface: 'Hugging Face', hackernews: 'Hacker News', instagram: 'Instagram' }
 
 function quando(ts?: number) {
   if (!ts) return 'nunca'
@@ -27,6 +29,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   ir?: { id?: number; url?: string | null; n: number }   // pedido do chat: mostrar este sinal no foco
 }) {
   const [sinais, setSinais] = useState<Sinal[]>([])
+  const [menu, setMenu] = useState<{ x: number; y: number; s: Sinal } | null>(null)   // botão direito num card: adicionar ao canvas
   const tipo = ''   // o filtro de tipo saiu da tela; a classificação continua nos cards
   const [modo, setModo] = useState<'foco' | 'todos'>('todos')   // todos (padrão) ou foco: um sinal por vez
   const [pos, setPos] = useState(0)
@@ -36,13 +39,15 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   const [salvos, setSalvos] = useState(false)
   const [rodando, setRodando] = useState(false)
   const [ultima, setUltima] = useState<Coleta>(null)
+  const [proxima, setProxima] = useState<number | undefined>()   // coleta automática a cada 2 h
   const [erro, setErro] = useState('')
   const [gosto, setGosto] = useState<Gosto | null>(null)
   const [reavaliando, setReavaliando] = useState(false)
 
   // A página do X mostra só o lote da última coleta (o Atualizar traz posts inéditos e o anterior sai da tela);
   // os curtidos de qualquer coleta ficam em Curtidos.
-  const soX = fontes.length === 1 && fontes[0] === 'x'
+  // X e Instagram: a página mostra só o último lote (cada coleta troca a tela inteira)
+  const soX = fontes.length === 1 && (fontes[0] === 'x' || fontes[0] === 'instagram')
   // Ordem congelada: cada sinal ganha um lugar quando chega e não sai dele (o like não troca os cards de lugar).
   // Recomeça ao trocar de filtro e quando uma coleta termina.
   const lugar = useRef(new Map<number, number>())
@@ -57,13 +62,13 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
 
   const carregar = useCallback(async () => {
     try {
-      const [s, e] = await Promise.all([api.sinais(salvos ? 'curtido' : undefined, tipo === 'fora' ? 'fora' : undefined, soX ? 'x' : undefined, soX && !salvos), api.estado()])
+      const [s, e] = await Promise.all([api.sinais(salvos ? 'curtido' : undefined, tipo === 'fora' ? 'fora' : undefined, soX ? fontes[0] : undefined, soX && !salvos), api.estado()])
       if (coletando.current && !e.rodando) lugar.current = new Map()   // chegou coleta nova: ordem nova
       coletando.current = e.rodando
-      setSinais(congelar(s)); setRodando(e.rodando); setReavaliando(e.reavaliando); setUltima(e.ultima); setErro('')
+      setSinais(congelar(s)); setRodando(e.rodando); setReavaliando(e.reavaliando); setUltima(e.ultima); setProxima(e.proxima); setErro('')
       api.gosto().then(setGosto).catch(() => {})
     } catch (e) { setErro(String(e)) }
-  }, [salvos, tipo, soX])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [salvos, tipo, soX, fontes])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { carregar() }, [carregar])
   useEffect(() => {  // enquanto a coleta roda, confere a cada 3 s
@@ -153,7 +158,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
 
   async function votar(s: Sinal, v: number) {
     const voto = s.voto === v ? 0 : v
-    const x = s.fonte === 'x' ? { x_quer: voto === 1 ? 1 : s.x_feito ? 0 : null, x_erro: null } : {}
+    const x = REDES[s.fonte] ? { x_quer: voto === 1 ? 1 : s.x_feito ? 0 : null, x_erro: null } : {}
     setSinais((l) => (voto === -1 || (salvos && voto !== 1) ? l.filter((x) => x.id !== s.id) : l.map((y) => (y.id === s.id ? { ...y, ...x, voto } : y))))
     await api.votar(s.id, voto)
     api.gosto().then(setGosto).catch(() => {})
@@ -192,11 +197,18 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   )
 
   return (
-    <div className="radar">
+    <div className="radar" onContextMenu={(e) => {
+      // botão direito num card: menu "Adicionar ao canvas" (com texto selecionado fica o menu do navegador, para copiar)
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-sinal]')
+      const s = el && sinais.find((x) => String(x.id) === el.dataset.sinal)
+      if (!s || window.getSelection()?.toString()) return
+      e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, s })
+    }}>
       <div className="radar-cabeca">
         <div className="radar-nome">
           <h1 className="titulo" title={[
             `${visiveis.length} sinais · última coleta ${quando(ultima?.fim)}`,
+            proxima ? `Próxima coleta automática às ${new Date(proxima * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (a cada 2 h, top 50 de cada fonte)` : '',
             gosto && gosto.likes + gosto.deslikes > 0 ? `Aprendendo com ${gosto.likes} likes e ${gosto.deslikes} deslikes` : '',
             gosto?.gosta.length ? `Curte: ${gosto.gosta.join(', ')}` : '', gosto?.evita.length ? `Evita: ${gosto.evita.join(', ')}` : '',
           ].filter(Boolean).join('\n')}>{titulo}</h1>
@@ -261,8 +273,45 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
         )} />
       )}
       {atalhos && <Atalhos onFechar={() => setAtalhos(false)} />}
+      {menu && <MenuAdicionar m={menu} onFechar={() => setMenu(null)} />}
     </div>
   )
+}
+
+/** Botão direito num card do radar: "Adicionar ao canvas", com a lista dos canvas (como as notas no canvas). */
+function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal }; onFechar: () => void }) {
+  const caixa = useRef<HTMLDivElement>(null)
+  const [lista, setLista] = useState<ResumoCanvas[]>([])
+  const [pos, setPos] = useState({ x: m.x, y: m.y })
+  const [estado, setEstado] = useState<{ ok?: string; erro?: string; indo?: boolean }>({})
+  useEffect(() => { listarCanvases().then(setLista).catch(() => setEstado({ erro: 'Não consegui ler os canvas.' })) }, [])
+  useEffect(() => {
+    const r = caixa.current?.getBoundingClientRect()
+    if (r) setPos({ x: Math.min(m.x, window.innerWidth - r.width - 8), y: Math.min(m.y, window.innerHeight - r.height - 8) })
+  }, [m, lista])
+  useEffect(() => {
+    const fora = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as HTMLElement)) onFechar() }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onFechar()
+    window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc); window.addEventListener('scroll', onFechar, true)
+    return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc); window.removeEventListener('scroll', onFechar, true) }
+  }, [onFechar])
+  const adicionar = async (c: ResumoCanvas) => {
+    setEstado({ indo: true })
+    try { await criarIdeia(m.s, c.slug); setEstado({ ok: `💡 Virou ideia em ${c.icone} ${c.nome}` }); window.setTimeout(onFechar, 1100) }
+    catch (e) { setEstado({ erro: (e as Error).message }) }
+  }
+  return createPortal(
+    <div ref={caixa} className="menu-ctx glass glass--light menu-adicionar" role="menu" style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+      <p className="menu-titulo">Adicionar ao canvas</p>
+      {estado.ok ? <p className="menu-aviso">{estado.ok}</p> : estado.erro ? <p className="menu-aviso is-erro">{estado.erro}</p> : (
+        <div className="menu-adicionar-lista">
+          {lista.filter((c) => !c.arquivado).map((c) => (
+            <button key={c.slug} role="menuitem" disabled={estado.indo} onClick={() => adicionar(c)}>
+              <span className="menu-emoji"><IconeCanvas c={c} /></span>{c.nome}</button>
+          ))}
+        </div>
+      )}
+    </div>, document.body)
 }
 
 const LISTA_ATALHOS: [string, [string, string][]][] = [
@@ -357,17 +406,19 @@ const dataPost = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace('.', '') : ''
 
 /** Like espelhado no X: o que se quer lá ainda não foi feito (e não deu erro). */
-const noXPendente = (s: Sinal) => s.fonte === 'x' && s.x_quer != null && s.x_feito !== s.x_quer && !s.x_erro
-const estadoNoX = (s: Sinal) => s.x_erro ? `Não consegui no X (${s.x_erro}). Clique no like de novo para tentar.`
-  : noXPendente(s) ? (s.x_quer ? 'Curtindo no X…' : 'Tirando o like no X…') : s.x_feito === 1 ? 'Curtido no X também' : 'O like também curte no X'
+const REDES: Record<string, string> = { x: 'X', instagram: 'Instagram' }   // o like vai para a rede de origem
+const noXPendente = (s: Sinal) => !!REDES[s.fonte] && s.x_quer != null && s.x_feito !== s.x_quer && !s.x_erro
+const estadoNoX = (s: Sinal) => { const r = REDES[s.fonte] ?? 'X'
+  return s.x_erro ? `Não consegui no ${r} (${s.x_erro}). Clique no like de novo para tentar.`
+    : noXPendente(s) ? (s.x_quer ? `O like vai para o ${r} na próxima coleta` : `O like sai do ${r} na próxima coleta`) : s.x_feito === 1 ? `Curtido no ${r} também` : `O like também curte no ${r} (na próxima coleta)` }
 
 /** Card do radar → 💡 ideia no canvas, já com o título, o link, a imagem e o texto do card. */
-async function criarIdeia(s: Sinal) {
+async function criarIdeia(s: Sinal, canvas = 'inbox') {
   const m = s.metricas as { texto?: string }
-  const titulo = s.fonte === 'x' ? `${s.autor ?? 'X'}: ${(m.texto || s.titulo || '').replace(/\s+/g, ' ').slice(0, 60)}` : s.titulo
+  const titulo = REDES[s.fonte] ? `${s.autor ?? REDES[s.fonte]}: ${(m.texto || s.titulo || '').replace(/\s+/g, ' ').slice(0, 60)}` : s.titulo
   const conteudo = [s.url, s.porque && `> ${s.porque}`, m.texto || s.resumo, s.autor && `Fonte: ${s.autor}`].filter(Boolean).join('\n\n')
   const r = await fetch('/api/canvas/entrada', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Canvas': canvas },
     body: JSON.stringify({ conteudo: conteudo || titulo, pronto: { titulo, url: s.url, thumb: s.imagem } }),
   })
   if (!r.ok) throw new Error('Não consegui criar a ideia.')
@@ -384,16 +435,16 @@ function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>)
   return (
     <span className="acoes">
       <button className={`btn-icone acoes-like ${s.voto === 1 ? 'is-on' : ''}`} aria-label="Curti" aria-pressed={s.voto === 1}
-        title={`Curti: mais disso (ensina o radar e fica em Curtidos)${s.fonte === 'x' ? '\n' + estadoNoX(s) : ''}`}
+        title={`Curti: mais disso (ensina o radar e fica em Curtidos)${REDES[s.fonte] ? '\n' + estadoNoX(s) : ''}`}
         onClick={() => onVotar(s, 1)}><Icone n="like" t={16} />
-        {s.fonte === 'x' && (noXPendente(s) || s.x_erro || s.x_feito === 1) &&
+        {!!REDES[s.fonte] && (noXPendente(s) || s.x_erro || s.x_feito === 1) &&
           <i className={`acoes-x ${s.x_erro ? 'is-erro' : noXPendente(s) ? 'is-indo' : 'is-ok'}`} />}
       </button>
       <button className="btn-icone" aria-label="Não curti" title="Não curti: tira do feed e ensina o radar"
         onClick={() => onVotar(s, -1)}><Icone n="deslike" t={16} /></button>
       <span className="acoes-sep" />
       <button className={`btn-icone ${feita ? 'is-on' : ''}`} aria-label="Virar ideia" disabled={criando}
-        title={feita ? 'Já virou 💡 ideia no canvas' : 'Transformar em 💡 ideia (vai para o canvas principal)'}
+        title={feita ? 'Já virou 💡 ideia no canvas' : 'Transformar em 💡 ideia no Inbox (botão direito no card escolhe o canvas)'}
         onClick={virarIdeia}><Icone n="ideia" t={16} /></button>
       <button className="btn-icone acoes-jarvis" aria-label="Perguntar ao Jarvis" title="Perguntar ao Jarvis sobre este card (⌘I)" onClick={() => onConversar(s)}>
         <span className="orb orb--msg" /></button>
@@ -417,7 +468,7 @@ function CardX({ s, ativo, onMarcar, onVotar, onConversar }: PropsCard) {
   const texto = m.texto || [s.titulo, s.resumo].filter(Boolean).join(' ').replace(/…\s*/, ' ')
   const video = m.midia === 'video' || /video_thumb|tweet_video/.test(s.imagem ?? '')
   return (
-    <article className={`card glass glass--light card--x ${s.url ? 'is-clicavel' : ''} ${ativo ? 'is-foco' : ''}`} onClick={abrirCard(s)}>
+    <article className={`card glass glass--light card--x ${s.url ? 'is-clicavel' : ''} ${ativo ? 'is-foco' : ''}`} onClick={abrirCard(s)} data-sinal={s.id}>
       <div className="card-topo">
         <Fonte f="x" />
         {s.tipo && <span className="tipo">{NOME_TIPO[s.tipo] ?? s.tipo}</span>}
@@ -444,11 +495,43 @@ function CardX({ s, ativo, onMarcar, onVotar, onConversar }: PropsCard) {
   )
 }
 
+/** Reel do Instagram: @autor, a capa (abre o Reel; a legenda fica no hover) e embaixo views · curtidas · comentários · data. */
+function CardInsta({ s, ativo, onMarcar, onVotar, onConversar }: PropsCard) {
+  const m = s.metricas as { curtidas?: number; comentarios?: number; views?: number; texto?: string; origem?: string }
+  return (
+    <article className={`card glass glass--light card--x card--ig ${s.url ? 'is-clicavel' : ''} ${ativo ? 'is-foco' : ''}`} onClick={abrirCard(s)} data-sinal={s.id}>
+      <div className="card-topo">
+        <Fonte f="instagram" />
+        {s.tipo && <span className="tipo">{NOME_TIPO[s.tipo] ?? s.tipo}</span>}
+        {m.origem === 'algoritmo' && <span className="tipo" title="Veio da página de Reels (o algoritmo sugeriu), não de um perfil acompanhado">sugerido</span>}
+        <Nota s={s} />
+      </div>
+      <p className="x-autor"><a href={`https://www.instagram.com/${s.autor}/`} target="_blank" rel="noreferrer"><b>@{s.autor}</b></a></p>
+      {s.imagem && (
+        <a className="x-midia is-video ig-capa" href={s.url ?? undefined} target="_blank" rel="noreferrer" aria-label="Abrir o Reel no Instagram"
+          title={m.texto || s.titulo}>
+          <img src={s.imagem} alt="" loading="lazy" referrerPolicy="no-referrer" />
+          <span className="play" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M7 5.2v9.6l8-4.8Z" /></svg></span>
+        </a>
+      )}
+      {/* sem a legenda no card (fica no hover da capa e vai para a ideia); os números embaixo da capa */}
+      <div className="x-numeros">
+        {!!m.views && <span title={`${fmt(m.views)} visualizações`}><Icone n="olho" t={14} />{compacto(m.views)}</span>}
+        <span title={`${fmt(m.curtidas)} curtidas`}><Icone n="coracao" t={14} />{compacto(m.curtidas)}</span>
+        <span title={`${fmt(m.comentarios)} comentários`}><Icone n="chat" t={14} />{compacto(m.comentarios)}</span>
+        {s.publicado_em && <span title="Publicado em"><Icone n="calendario" t={14} />{new Date(s.publicado_em).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '')}</span>}
+      </div>
+      <div className="card-pe"><Acoes s={s} onMarcar={onMarcar} onVotar={onVotar} onConversar={onConversar} /></div>
+    </article>
+  )
+}
+
 function Card(props: PropsCard) {
   if (props.s.fonte === 'x') return <CardX {...props} />
+  if (props.s.fonte === 'instagram') return <CardInsta {...props} />
   const { s, grande, ativo, onMarcar, onVotar, onConversar } = props
   return (
-    <article className={`card glass ${grande ? 'glass--escuro card--grande' : 'glass--light'} ${s.url ? 'is-clicavel' : ''} ${ativo ? 'is-foco' : ''}`} onClick={abrirCard(s)}>
+    <article className={`card glass ${grande ? 'glass--escuro card--grande' : 'glass--light'} ${s.url ? 'is-clicavel' : ''} ${ativo ? 'is-foco' : ''}`} onClick={abrirCard(s)} data-sinal={s.id}>
       <div className="card-topo">
         <Fonte f={s.fonte} />
         {s.tipo && <span className="tipo">{NOME_TIPO[s.tipo] ?? s.tipo}</span>}

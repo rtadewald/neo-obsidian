@@ -21,10 +21,11 @@ export type Vista = { x: number; y: number; zoom: number }
 let modulo: Modulo | null = null
 const Excalidraw = lazy(() => import('@excalidraw/excalidraw').then((m) => { modulo = m; return { default: m.Excalidraw } }))
 
-/** Teclas de ferramenta do Excalidraw: apertar uma delas no canvas entra no modo desenho já com a ferramenta. */
+/** Teclas de ferramenta do Excalidraw: apertar uma delas no canvas entra no modo desenho já com a ferramenta.
+ *  O T (texto) ficou de fora: no canvas ele não entra no modo desenho (lá dentro continua sendo o texto). */
 export const TECLAS_FERRAMENTA: Record<string, string> = {
   r: 'rectangle', '2': 'rectangle', d: 'diamond', '3': 'diamond', o: 'ellipse', '4': 'ellipse', a: 'arrow', '5': 'arrow',
-  l: 'line', '6': 'line', p: 'freedraw', x: 'freedraw', '7': 'freedraw', t: 'text', '8': 'text', e: 'eraser', '0': 'eraser',
+  l: 'line', '6': 'line', p: 'freedraw', x: 'freedraw', '7': 'freedraw', '8': 'text', '0': 'eraser',
 }
 
 /** O que a mesa usa para falar com a camada: empurrar o pan/zoom do canvas e escolher a ferramenta. */

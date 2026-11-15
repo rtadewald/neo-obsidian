@@ -7,8 +7,19 @@ DADOS = APP / "dados"
 DB = DADOS / "jarvis.db"
 FRONT_DIST = APP / "frontend" / "dist"
 
-# Q30: o agente escreve sem perguntar só aqui; o resto do vault é leitura.
-ESCRITA_LIVRE = [VAULT / "1 Copies" / "0 Ideias", VAULT / "1 Copies" / "1 Priorizar"]
 
 MODELO_CHAT = "claude-sonnet-5-5"   # Sonnet 5.5 (sem isto, herdaria o "opus" do settings.json do usuário)
 MODELO_RADAR = "haiku"    # classificação e "por que importa" dos sinais
+
+# perfil "Claude Profile" do Chrome (deviceId da extensão Claude in Chrome nele): X e Instagram do radar rodam só nele,
+# longe do Chrome do dia a dia. Fica em app/dados/chrome.json ({"perfil": "<deviceId>"}), fora do git. Se a extensão
+# for reinstalada, o id muda: veja list_connected_browsers.
+def _chrome_perfil() -> str:
+    import json
+    try:
+        return json.loads((DADOS / "chrome.json").read_text(encoding="utf-8"))["perfil"]
+    except (OSError, ValueError, KeyError):
+        return ""
+
+
+CHROME_PERFIL = _chrome_perfil()

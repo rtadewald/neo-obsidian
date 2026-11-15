@@ -23,7 +23,8 @@ const ICONE: Record<(typeof NAV)[number], string> = {
 }
 /** Aba do radar de onde veio um sinal, pela fonte ou pelo link. */
 const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
-  a.fonte === 'x' || /^https?:\/\/(www\.)?(x|twitter)\.com\//.test(a.url ?? '') ? 'X' : 'Sites'
+  a.fonte === 'x' || /^https?:\/\/(www\.)?(x|twitter)\.com\//.test(a.url ?? '') ? 'X'
+    : a.fonte === 'instagram' || /^https?:\/\/(www\.)?instagram\.com\//.test(a.url ?? '') ? 'Instagram' : 'Sites'
 
 export default function App() {
   // canvas isolados: null = página de controle (lista dos canvas); clicar em NEO-OBSIDIAN volta para ela
@@ -82,6 +83,24 @@ export default function App() {
     window.addEventListener('pointerup', soltar)
   }   // trouxe um card para a conversa: o chat abre
 
+  // modo foco (só no canvas): navbar, breadcrumb, minimapa, pastas e barra de baixo saem para as bordas; o chat fica.
+  // F liga (fora de campos e do Excalidraw), Esc desliga; o botão da barra do canvas manda o evento 'modo-foco'.
+  const [focoTela, setFocoTela] = useState(false)
+  useEffect(() => { if (pagina !== 'Canvas' || !canvasSlug) setFocoTela(false) }, [pagina, canvasSlug])
+  useEffect(() => {
+    const alternar = () => setFocoTela((f) => !f)
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setFocoTela(false); return }
+      if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor, .excalidraw') || document.querySelector('.modal-fundo, .paleta-fundo, .canvas.is-desenhando')) return
+      if (!document.querySelector('.canvas')) return
+      e.preventDefault(); alternar()
+    }
+    window.addEventListener('keydown', tecla); window.addEventListener('modo-foco', alternar)
+    return () => { window.removeEventListener('keydown', tecla); window.removeEventListener('modo-foco', alternar) }
+  }, [])
+
   // o chat ocupa a altura toda, do topo ao pé da tela
   const corpo = useRef<HTMLElement>(null)
 
@@ -109,7 +128,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className="app">
+    <div className={`app ${focoTela ? 'modo-foco' : ''}`}>
       <div className="lateral-area">
       {/* breadcrumb: NEO-OBSIDIAN (todos os canvas) › canvas › vista; nas outras páginas, só o nome dela */}
       <nav className="migalhas" aria-label="Onde você está">
@@ -146,6 +165,7 @@ export default function App() {
               : <Canvases onAbrir={setCanvasSlug} />)
             : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => abrirModal({ raiz, nome })} />
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} foco={foco} onConversar={setFoco} ir={irSinal} />
+            : pagina === 'Instagram' ? <Radar key="instagram" titulo="Instagram" fontes={['instagram']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Agendamento' ? <Calendario />
             : <EmBreve pagina={pagina} />}
@@ -157,6 +177,18 @@ export default function App() {
         <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
           alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}
           onAbrirSinal={abrirSinal}
+          onTela={(ev) => {   // o Jarvis mexendo na tela, como o Rodrigo faria com o mouse
+            if (ev.acao === 'pagina' && ev.pagina && (NAV as readonly string[]).includes(ev.pagina)) setPagina(ev.pagina)
+            else if (ev.acao === 'abrir_canvas') { setModal(null); setCanvasSlug(ev.canvas ?? null); setPagina('Canvas') }
+            else if (ev.acao === 'mostrar' && ev.raiz && ev.nome) {
+              const alvo = { raiz: ev.raiz, nome: ev.nome } as Alvo
+              setModal(null); if (ev.canvas) setCanvasSlug(ev.canvas); setPagina('Canvas'); setMudou((n) => n + 1)
+              setMostrar((m) => ({ alvo, n: (m?.n ?? 0) + 1 }))
+            }
+            else if (ev.acao === 'abrir_nota' && ev.raiz && ev.nome) setModal({ raiz: ev.raiz, nome: ev.nome } as Alvo)
+            else if (ev.acao === 'fechar_nota') { setModal(null); setVoltar(null) }
+            else if (ev.acao === 'foco') window.dispatchEvent(new Event('modo-foco'))
+          }}
           trecho={trecho} limparTrecho={() => setTrecho(null)} pedido={pedido} onFim={() => setVersao((v) => v + 1)} />
       </main>
 

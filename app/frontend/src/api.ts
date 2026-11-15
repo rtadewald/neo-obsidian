@@ -41,7 +41,7 @@ export const api = {
   status: (id: number, status: string) =>
     fetch(`/api/sinais/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).then(j),
   atualizar: () => fetch('/api/radar/atualizar', { method: 'POST' }).then(j<{ status: string }>),
-  estado: () => fetch('/api/radar/estado').then(j<{ rodando: boolean; reavaliando: boolean; ultima: Coleta }>),
+  estado: () => fetch('/api/radar/estado').then(j<{ rodando: boolean; reavaliando: boolean; ultima: Coleta; proxima?: number }>),
   votar: (id: number, voto: number) =>
     fetch(`/api/sinais/${id}/voto`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voto }) }).then(j),
   gosto: () => fetch('/api/radar/gosto').then(j<Gosto>),
@@ -56,9 +56,11 @@ export type EventoChat =
   | { t: 'ferramenta'; nome: string; alvo: string }
   | { t: 'fim'; sessao: string; custo: number | null }
   | { t: 'erro'; v: string }
+  | { t: 'mudou' }   // uma ferramenta do Jarvis mudou o vault/app: o canvas recarrega na hora
+  | { t: 'tela'; acao: string; pagina?: string; canvas?: string | null; raiz?: string; nome?: string }   // o Jarvis mexe na tela
 
 /** POST /api/chat e lê o SSE linha a linha. */
-export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; modo?: 'vault' | 'app'; onde?: string }, cb: (e: EventoChat) => void) {
+export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; onde?: string; canvas?: string }, cb: (e: EventoChat) => void) {
   const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
   if (!r.ok || !r.body) throw new Error(`${r.status}`)
   const leitor = r.body.getReader()

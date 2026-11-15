@@ -163,7 +163,7 @@ def querer_no_x(id_: int, curtido: bool) -> bool:
     """Marca o like que o post do X deve ter lá. Devolve True se há algo a fazer."""
     with conexao() as c:
         l = c.execute("select fonte, x_feito from sinais where id=?", (id_,)).fetchone()
-        if not l or l["fonte"] != "x":
+        if not l or l["fonte"] not in ("x", "instagram"):   # o like vai para a rede de origem
             return False
         if not curtido and not l["x_feito"]:   # nunca foi curtido lá: nada a desfazer
             c.execute("update sinais set x_quer=null, x_erro=null where id=?", (id_,))
@@ -175,7 +175,7 @@ def querer_no_x(id_: int, curtido: bool) -> bool:
 def pendentes_x(limite: int = 15) -> list[dict]:
     with conexao() as c:
         return [dict(l) for l in c.execute(
-            "select id, url, x_quer from sinais where fonte='x' and x_quer is not null and x_erro is null "
+            "select id, fonte, url, x_quer from sinais where fonte in ('x','instagram') and x_quer is not null and x_erro is null "
             "and coalesce(x_feito, -1) != x_quer order by votado_em limit ?", (limite,)).fetchall()]
 
 
@@ -241,6 +241,31 @@ def mensagens(conversa: str, limite: int = 80):
         linhas = c.execute("select papel, texto, criado_em from mensagens where conversa=? order by id desc limit ?",
                            (conversa, limite)).fetchall()
     return [dict(l) for l in reversed(linhas)]
+
+
+def lista_conversas() -> list[dict]:
+    """As conversas do chat, da mais recente para a mais antiga, com o título (a primeira mensagem do Rodrigo)."""
+    with conexao() as c:
+        linhas = c.execute("""
+            select m.conversa as id, count(*) as n, max(m.criado_em) as atualizado_em,
+                   (select texto from mensagens x where x.conversa = m.conversa and x.papel = 'usuario' order by x.id limit 1) as primeira,
+                   (select titulo from conversas k where k.id = m.conversa) as titulo
+            from mensagens m group by m.conversa order by atualizado_em desc""").fetchall()
+    out = []
+    for l in linhas:
+        d = dict(l)
+        t = d.pop("primeira") or ""
+        # tira o cabeçalho do sinal/trecho que o app põe antes do pedido: fica a última linha não citada
+        corpo = [x for x in t.splitlines() if x.strip() and not x.startswith((">", "📡", "📎", "🖼️"))]
+        d["titulo"] = d["titulo"] or (corpo[-1] if corpo else t.splitlines()[0] if t else "Conversa")[:80]
+        out.append(d)
+    return out
+
+
+def apagar_conversa(conversa: str):
+    with conexao() as c:
+        c.execute("delete from mensagens where conversa=?", (conversa,))
+        c.execute("delete from conversas where id=?", (conversa,))
 
 
 def registrar_coleta(inicio: float, status: str, detalhes: dict):

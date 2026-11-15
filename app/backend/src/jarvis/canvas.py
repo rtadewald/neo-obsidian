@@ -148,6 +148,7 @@ def _travado(f):
 LAYOUTS = DADOS / "canvas"
 CANVASES = DADOS / "canvases.json"
 PRODUTOS = DADOS / "produtos.json"
+NOVAS = DADOS / "novas.json"   # 💡 ideias que chegaram de fora (radar, link colado, Jarvis) e ainda não foram usadas nem vistas
 INBOX = {"slug": "inbox", "nome": "Inbox", "icone": "📥", "cor": "#e6e1d8"}
 TODOS = {"slug": "todos", "nome": "Todas as notas", "icone": "🗂️", "cor": "#e6e1d8"}
 _atual: contextvars.ContextVar[str] = contextvars.ContextVar("canvas", default="inbox")
@@ -166,9 +167,21 @@ def _json(arq: Path, padrao):
 
 
 def lista_canvases() -> list[dict]:
-    """Os canvas temáticos (cada um é um valor de `grupo:`), em ordem alfabética, depois o Inbox."""
-    d = sorted(_json(CANVASES, []), key=lambda c: c["nome"].lower())
+    """Os canvas temáticos (cada um é um valor de `grupo:`), na ordem que o Rodrigo arrastou (`ordem`; os sem ordem,
+    em ordem alfabética, no fim), depois o Inbox."""
+    d = sorted(_json(CANVASES, []), key=lambda c: (c.get("ordem", 10**6), c["nome"].lower()))
     return [*d, INBOX]
+
+
+@_travado
+def ordenar_canvases(slugs: list[str]) -> list[dict]:
+    """Grava a ordem arrastada (pastas da esquerda e página Todos os canvas). Os que não vierem ficam no fim."""
+    lista = [c for c in lista_canvases() if c["slug"] != "inbox"]
+    pos = {s: i for i, s in enumerate(slugs)}
+    for i, c in enumerate(sorted(lista, key=lambda c: (pos.get(c["slug"], 10**6 + lista.index(c))))):
+        c["ordem"] = i
+    _gravar_canvases(lista)
+    return lista_canvases()
 
 
 def lista_produtos() -> list[dict]:
@@ -201,7 +214,7 @@ def _gravar_canvases(lista: list[dict]):
 
 @_travado
 def salvar_canvas(c: dict) -> dict:
-    """Cria (sem slug) ou edita um canvas: nome, ícone e cor. Renomear leva o nome novo para o `grupo:` das notas."""
+    """Cria (sem slug) ou edita um canvas: nome, ícone, cor e arquivado. Renomear leva o nome novo para o `grupo:` das notas."""
     lista = [x for x in lista_canvases() if x["slug"] != "inbox"]
     nome = _limpo(c.get("nome") or "").strip()
     atual = next((x for x in lista if x["slug"] == c.get("slug")), None)
@@ -224,6 +237,11 @@ def salvar_canvas(c: dict) -> dict:
     for k in ("icone", "cor"):
         if c.get(k):
             atual[k] = c[k].strip()[:9]
+    if c.get("arquivado") is not None:   # arquivado: sai das pastas da esquerda e vai para a linha de baixo da página
+        if c["arquivado"]:
+            atual["arquivado"] = True
+        else:
+            atual.pop("arquivado", None)
     _gravar_canvases(lista)
     return atual
 
@@ -393,15 +411,42 @@ def _todas() -> dict:
     return {"ideias": ideias, "entradas": entradas, "producoes": producoes}
 
 
+def _gravar_novas(nomes: list[str]):
+    DADOS.mkdir(parents=True, exist_ok=True)
+    NOVAS.write_text(json.dumps(list(dict.fromkeys(nomes)), ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def marcar_nova(nome: str):
+    """Ideia que chegou de fora ganha o selo NOVO no card, até ser usada (ganhar uma produção) ou vista."""
+    _gravar_novas([*_json(NOVAS, []), nome])
+
+
+def marcar_vista(nomes: list[str]):
+    _gravar_novas([n for n in _json(NOVAS, []) if n not in set(nomes)])
+
+
+def _novas(tudo: dict) -> list[str]:
+    """As novas que continuam novas: a ideia existe e ainda não tem produção (usar a ideia tira o selo sozinho)."""
+    usadas = {p.get("ideia") for p in tudo["producoes"]}
+    ideias = {i["nome"] for i in tudo["ideias"]}
+    lista = _json(NOVAS, [])
+    vivas = [n for n in lista if n in ideias and n not in usadas]
+    if len(vivas) != len(lista):
+        _gravar_novas(vivas)
+    return vivas
+
+
 def estado(slug: str | None = None) -> dict:
     info = canvas_info(slug)
     tudo = _todas()
+    novas = _novas(tudo)
     if info["slug"] != "todos":   # o canvas mostra as notas que vivem nele (Inbox: as que não vivem em nenhum)
         alvo = None if info["slug"] == "inbox" else info["nome"]
         tudo = {k: [x for x in v if x["canvas"] == alvo] for k, v in tudo.items()}
     lay = _layout(info["slug"])
     return {"canvas": info, "produtos": lista_produtos(), "visiveis": lay["visiveis"], **tudo, "pos": lay["pos"],
-            "arquivados": lay["arquivados"], "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
+            "arquivados": lay["arquivados"], "novas": novas,
+            "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
 @_travado
@@ -466,6 +511,7 @@ def criar_ideia(titulo: str, brief: str = "", fontes: list[str] | None = None, p
     texto = _definir("---\norigin:\ntags:\n---\n", "fontes", links or None) + (f"\n{brief.strip()}\n" if brief.strip() else "\n")
     notas._escrever(p, texto)
     marcar_no_canvas("ideias", p.stem)
+    marcar_nova(p.stem)   # toda ideia nova nasce com o selo NOVO (criada à mão, pelo Jarvis, pela busca)
     if pos:
         posicoes({f"i:{p.stem}": pos})
     return {"nome": p.stem, "raiz": "ideias"}
@@ -532,6 +578,7 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
     cab = "---\n" + "".join(f'{k}: "{v}"\n' for k, v in fm.items() if v or k in ("url", "tipo")) + "tags:\n---\n\n"
     notas._escrever(p, cab + corpo.strip() + "\n")
     marcar_no_canvas("ideias", p.stem)
+    marcar_nova(p.stem)
     if pos:
         posicoes({f"i:{p.stem}": pos})
     return {"nome": p.stem, "raiz": "ideias"}
@@ -607,6 +654,8 @@ def _id(raiz: str, nome: str) -> str:
 def renomeou(raiz: str, antes: str, raiz_depois: str, depois: str):
     """Renomeou, mudou status ou publicou: o card continua no mesmo lugar do canvas."""
     _renomear_pos(_id(raiz, antes), _id(raiz_depois, depois))
+    if antes in _json(NOVAS, []):
+        _gravar_novas([depois if n == antes else n for n in _json(NOVAS, [])])
 
 
 # ---------- mídia dos cards ----------

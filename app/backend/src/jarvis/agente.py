@@ -1,15 +1,20 @@
-"""O chat do Jarvis: uma sessão do Claude Code por conversa, rodando dentro do vault (ou no código do app, no modo construtor)."""
+"""O chat do Jarvis: uma sessão do Claude Code por conversa, rodando dentro do vault. Ele usa o app inteiro como o
+Rodrigo usa: a ferramenta `app` chama as mesmas rotas da API que a interface chama, e `tela` mexe na tela dele."""
+import inspect
 import json
+import re
 from pathlib import Path
 from typing import AsyncIterator
 
 from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage,
                               StreamEvent, ToolUseBlock, create_sdk_mcp_server, tool)
 
-from . import canvas, construtor, db, youtube
-from .config import APP, ESCRITA_LIVRE, MODELO_CHAT, VAULT
+import httpx
 
-FERRAMENTAS = ["Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch", "Skill", "TodoWrite"]
+from . import canvas, db, notas, youtube
+from .config import APP, MODELO_CHAT, VAULT
+
+FERRAMENTAS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch", "WebFetch", "Skill", "TodoWrite"]
 
 
 @tool("transcrever_youtube", "Pega a legenda (manual ou automática) de um vídeo do YouTube como texto corrido, "
@@ -155,12 +160,120 @@ async def _marcar_winner(args: dict) -> dict:
         return _falha(e)
 
 
+# ---------- o app inteiro: a API (o que a interface faz) e a tela do Rodrigo ----------
+_eventos: list[dict] = []   # o que as ferramentas pedem ao front nesta resposta (recarregar, abrir canvas, mostrar card…)
+_canvas_da_vez = "inbox"    # o canvas aberto quando a mensagem chegou: o padrão do X-Canvas
+
+
+def _api():
+    from .main import app as api   # tarde, para não importar main ao importar agente
+    return api
+
+
+@tool("rotas", "Lista as rotas da API do Neo-Obsidian (as mesmas que a interface usa), com o que cada uma faz e o corpo "
+      "que recebe. Use antes de `app` quando não souber a rota.", {"filtro": str})
+async def _rotas(args: dict) -> dict:
+    f = (args.get("filtro") or "").lower()
+    linhas = []
+    for r in _api().routes:
+        caminho, metodos = getattr(r, "path", ""), sorted(getattr(r, "methods", None) or [])
+        if not caminho.startswith("/api/") or caminho.startswith("/api/chat") or f not in caminho.lower():
+            continue
+        fn = getattr(r, "endpoint", None)
+        doc = (inspect.getdoc(fn) or "").split("\n")[0] if fn else ""
+        corpo = ""
+        for prm in (inspect.signature(fn).parameters.values() if fn else []):
+            campos = getattr(prm.annotation, "model_fields", None)
+            if campos:
+                corpo = " corpo {" + ", ".join(f"{k}: {str(v.annotation).replace('typing.', '')}" for k, v in campos.items()) + "}"
+        linhas.append(f"{'/'.join(m for m in metodos if m != 'HEAD')} {caminho}{corpo}{(' · ' + doc) if doc else ''}")
+    return _ok("\n".join(linhas) or "Nenhuma rota com esse filtro.")
+
+
+@tool("app", "Usa o app do jeito que a interface usa: chama uma rota da API do Neo-Obsidian (veja `rotas`). "
+      "Tudo o que o Rodrigo faz na tela passa por aqui (criar/renomear/arquivar/apagar notas e canvas, mover cards, "
+      "posições, status, produto, ligar ideia e produção, desenho do canvas…). `corpo` é JSON (objeto) ou vazio; em GET "
+      "vira query. `canvas` é o slug do canvas (vazio = o que o Rodrigo está vendo). O canvas na tela recarrega sozinho "
+      "depois de cada mudança.", {
+          "type": "object",
+          "properties": {"metodo": {"type": "string", "enum": ["GET", "POST", "PUT", "DELETE"]},
+                         "rota": {"type": "string", "description": "ex.: /api/canvas ou /api/notas/ideias/💡 Nome"},
+                         "corpo": {"type": "string", "description": "JSON"},
+                         "canvas": {"type": "string"}},
+          "required": ["metodo", "rota"]})
+async def _app(args: dict) -> dict:
+    try:
+        metodo, rota = args["metodo"].upper(), args["rota"].strip()
+        if not rota.startswith("/api/") or rota.startswith("/api/chat"):
+            raise ValueError("só rotas /api/ do app (fora o próprio chat)")
+        corpo = json.loads(args["corpo"]) if (args.get("corpo") or "").strip() else None
+        cab = {"X-Canvas": (args.get("canvas") or _canvas_da_vez).strip()}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=_api()), base_url="http://neo", timeout=120) as c:
+            r = await c.request(metodo, rota, headers=cab, params=corpo if metodo == "GET" and isinstance(corpo, dict) else None,
+                                json=corpo if metodo != "GET" else None)
+        if metodo != "GET" and r.status_code < 400:
+            _eventos.append({"t": "mudou"})
+        texto = r.text
+        if len(texto) > 24000:
+            texto = texto[:24000] + f"\n… (cortado: {len(r.text)} caracteres; filtre ou peça uma rota mais específica)"
+        return {"content": [{"type": "text", "text": f"HTTP {r.status_code}\n{texto}"}], "is_error": r.status_code >= 400}
+    except Exception as e:
+        return _falha(e)
+
+
+def _achar(alvo: str) -> tuple[str, str]:
+    """Acha a nota pelo nome, tolerando o emoji 💡 que falta ou um pedaço do nome."""
+    for n in (alvo, f"💡 {alvo}"):
+        try:
+            return canvas.achar(n)
+        except FileNotFoundError:
+            pass
+    a = alvo.lower()
+    for raiz in ("ideias", "priorizar", "publicados", "entradas"):
+        for n, _ in notas._arquivos(raiz):
+            if a in n.lower():
+                return raiz, n
+    raise FileNotFoundError(alvo)
+
+
+def _canvas_da_nota(nome: str) -> str | None:
+    t = canvas._todas()
+    for item in [*t["ideias"], *t["producoes"]]:
+        if nome in (item.get("nome"), *[s.get("nome") for s in item.get("saidas", []) if isinstance(s, dict)]):
+            return canvas._canvas_por_nome(item["canvas"])["slug"] if item.get("canvas") else "inbox"
+    return None
+
+
+@tool("tela", "Mexe na tela do Rodrigo, como ele faria com o mouse: acao = pagina (alvo: Canvas, Calendário, X, Sites, "
+      "Instagram, Agendamento), abrir_canvas (alvo: nome ou slug do canvas; vazio = página com todos), mostrar (alvo: "
+      "nome da nota: abre o canvas dela, enquadra e seleciona o card), abrir_nota (alvo: nome da nota, abre no modal), "
+      "fechar_nota, foco (liga/desliga o modo foco).", {"acao": str, "alvo": str})
+async def _tela(args: dict) -> dict:
+    try:
+        acao, alvo = args["acao"].strip(), (args.get("alvo") or "").strip()
+        ev: dict = {"t": "tela", "acao": acao}
+        if acao == "pagina":
+            ev["pagina"] = alvo
+        elif acao == "abrir_canvas":
+            ev["canvas"] = canvas._canvas_por_nome(alvo)["slug"] if alvo else None
+        elif acao in ("mostrar", "abrir_nota"):
+            raiz, nome = _achar(alvo)
+            ev.update(raiz=raiz, nome=nome, canvas=_canvas_da_nota(nome))
+        elif acao not in ("fechar_nota", "foco"):
+            raise ValueError("acao: pagina, abrir_canvas, mostrar, abrir_nota, fechar_nota ou foco")
+        _eventos.append(ev)
+        return _ok("Feito na tela.")
+    except Exception as e:
+        return _falha(e)
+
+
 FERRAMENTAS_CANVAS = [_transcrever_youtube, _criar_ideia, _criar_saida, _ligar, _criar_entrada, _posicionar,
-                      _mudar_status, _agendar, _mover_para_canvas, _listar_canvas, _marcar_produto, _marcar_winner]
+                      _mudar_status, _agendar, _mover_para_canvas, _listar_canvas, _marcar_produto, _marcar_winner,
+                      _rotas, _app, _tela]
 SERVIDOR_MCP = create_sdk_mcp_server("jarvis", tools=FERRAMENTAS_CANVAS)
 NOMES_MCP = [f"mcp__jarvis__{n}" for n in ("transcrever_youtube", "criar_ideia", "criar_saida", "ligar_ao_canvas",
                                            "criar_entrada", "posicionar", "mudar_status", "agendar", "mover_para_canvas",
-                                           "listar_canvas", "marcar_produto", "marcar_winner")]
+                                           "listar_canvas", "marcar_produto", "marcar_winner", "rotas", "app", "tela")]
 
 INSTRUCOES = """
 # Você é o Jarvis, no app Neo-Obsidian
@@ -209,10 +322,33 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
 - Mudar status ou publicar: `mudar_status`. Data: `agendar`. Canvas: `listar_canvas` e `mover_para_canvas`. Produto: `marcar_produto`.
   Winner: `marcar_winner`. Posição: `posicionar`.
 - Nunca renomeie, mova ou apague arquivos à mão para mudar status ou pasta: a ferramenta faz isso direito.
-- Você escreve sem perguntar só em `1 Copies/0 Ideias/` e `1 Copies/1 Priorizar/` (Edit/Write); fora delas, proponha e
-  espere o Rodrigo confirmar no chat (o app bloqueia). Editar texto de uma copy: Edit direto no arquivo, sem mexer no
+- Você pode escrever em qualquer nota do vault (Edit/Write); evite `.obsidian/` e `.trash/`. Nota atômica nova vai
+  em `2 Notas/` com o frontmatter do template (`2 Notas/Engine/templates/T - Atomic Note.md`: `origin`, `tags`); para
+  ligar, ponha o `[[link]]` no texto das duas notas. Editar texto de uma copy: Edit direto no arquivo, sem mexer no
   frontmatter além do necessário.
-- O canvas se atualiza sozinho depois da sua resposta.
+
+## Terminal (Bash)
+- Você tem Bash, como um Claude Code no terminal: baixar vídeo (`yt-dlp`, ou `ffmpeg -i <m3u8>` para player vturb/
+  ConverteAI: o `main.m3u8` está no `player.js` da página), extrair áudio (`ffmpeg`), transcrever (`whisper <audio>
+  --model small --language Portuguese`, ~1 min por minuto de vídeo; rode em segundo plano se for longo), scripts Python.
+- Arquivos temporários (vídeo, áudio) vão em `/tmp/jarvis/`, nunca no vault; no vault entra só o resultado (a
+  transcrição na nota, uma imagem em `2 Notas/Engine/attachments/`).
+- Não há trava nenhuma: você roda como o Rodrigo no terminal dele. Por isso, antes de apagar (prefira `mv` para
+  `~/.Trash`), de mexer em `.obsidian/`, de `git push` ou de qualquer coisa sem volta, confirme com ele no chat.
+
+## Você usa o app inteiro, como o Rodrigo
+- Tudo o que ele faz na tela você faz pela ferramenta `app`, que chama as mesmas rotas da API que a interface chama
+  (`rotas` lista todas, com o corpo de cada uma). Prefira as ferramentas específicas acima quando existirem; para o
+  resto (renomear, arquivar, lixeira, criar/renomear/arquivar canvas, cor, posições, desenho, planejamento…), use `app`.
+  Sem `canvas`, a chamada vale para o canvas que ele está vendo agora.
+- ids dos cards (arquivar, posições): `i:💡 Nome` = card da ideia; `g:💡 Nome` = a produção agrupada dela (as copies
+  curtas com aquele `ideia:`); `p:priorizar/<nome>` ou `p:publicados/<nome>` = copy solta ou VSL; `e:<nome>` = entrada.
+  Confira com `GET /api/canvas` quando tiver dúvida.
+- `tela` mexe na tela dele: trocar de aba, abrir um canvas, mostrar um card (enquadra e seleciona), abrir uma nota no
+  modal, modo foco. Depois de criar ou mexer em algo, mostre com `tela` → mostrar quando ajudar ele a ver.
+- O canvas recarrega sozinho a cada mudança. "Esses", "os selecionados" = os cards selecionados (vêm em "Onde o
+  Rodrigo está").
+- Antes de apagar (lixeira, excluir canvas) ou de mexer em muita coisa de uma vez, confirme com ele no chat.
 
 ## Conversa
 - Responda em PT-BR, curto e direto; o chat ocupa uma coluna estreita. Listas curtas, nada de tabelas largas.
@@ -231,65 +367,14 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
 """.replace("__AGENTS__", str(APP.parent / "AGENTS.md"))
 
 
-def _dentro(caminho: str) -> bool:
-    p = Path(caminho if Path(caminho).is_absolute() else VAULT / caminho).resolve()
-    return any(p.is_relative_to(d.resolve()) for d in ESCRITA_LIVRE)
-
-
-async def _guarda_escrita(entrada, tool_use_id, contexto):
-    """PreToolUse: Write/Edit só nas pastas liberadas (Q30). Roda sempre, mesmo com regras de allow do usuário."""
-    alvo = (entrada.get("tool_input") or {}).get("file_path", "")
-    if _dentro(alvo):
-        return {}
-    return {"hookSpecificOutput": {
-        "hookEventName": "PreToolUse", "permissionDecision": "deny",
-        "permissionDecisionReason": f"O Jarvis só escreve em 1 Copies/0 Ideias e 1 Copies/1 Priorizar. "
-                                    f"Mostre a mudança para {alvo} no chat e peça confirmação ao Rodrigo."}}
-
-
 def _opcoes(sessao: str | None, contexto: str) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         cwd=str(VAULT), setting_sources=["user", "project"], model=MODELO_CHAT,
         tools=FERRAMENTAS, mcp_servers={"jarvis": SERVIDOR_MCP},
-        allowed_tools=["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill", "TodoWrite", *NOMES_MCP],
-        permission_mode="acceptEdits", resume=sessao, include_partial_messages=True,
+        allowed_tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Skill", "TodoWrite", *NOMES_MCP],
+        permission_mode="bypassPermissions", resume=sessao, include_partial_messages=True,
         system_prompt={"type": "preset", "preset": "claude_code", "append": INSTRUCOES + contexto},
-        hooks={"PreToolUse": [HookMatcher(matcher="Write|Edit", hooks=[_guarda_escrita])]},
-    )
-
-
-INSTRUCOES_APP = """
-# Você é o Jarvis, no modo construtor do Neo-Obsidian
-
-O Rodrigo está usando o app agora e pediu uma mudança nele. O diretório atual é o código do app: `backend/`
-(FastAPI, Python, `uv`) e `frontend/` (React + Vite + TypeScript, CSS em `frontend/src/index.css`). O Vite recarrega a
-tela sozinho quando você salva um arquivo do front; mudança no backend precisa reiniciar a API (avise).
-
-- Responda em PT-BR, curto. Faça a mudança pedida e diga em uma linha o que mudou.
-- Você só escreve dentro desta pasta. Não mexa em `dados/` (banco e layout do usuário).
-- Antes de cada pedido o app guarda um ponto de restauração; o Rodrigo tem um botão "desfazer" no chat.
-- Siga o estilo do código que já existe: nomes em PT-BR, poucos comentários, sem abstrações a mais.
-- Antes de mexer, leia o guia do app em `__AGENTS__` (regras, modelo do canvas, armadilhas conhecidas).
-""".replace("__AGENTS__", str(APP.parent / "AGENTS.md"))
-
-
-async def _guarda_app(entrada, tool_use_id, contexto):
-    alvo = (entrada.get("tool_input") or {}).get("file_path", "")
-    p = Path(alvo if Path(alvo).is_absolute() else APP / alvo).resolve()
-    if p.is_relative_to(APP.resolve()) and not p.is_relative_to((APP / "dados").resolve()):
-        return {}
-    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                   "permissionDecisionReason": "No modo construtor só dá para escrever no código do app."}}
-
-
-def _opcoes_app(sessao: str | None, aqui: str = "") -> ClaudeAgentOptions:
-    return ClaudeAgentOptions(
-        cwd=str(APP), setting_sources=["user"], model=MODELO_CHAT,
-        tools=["Read", "Glob", "Grep", "Write", "Edit", "TodoWrite"],
-        allowed_tools=["Read", "Glob", "Grep", "TodoWrite"],
-        permission_mode="acceptEdits", resume=sessao, include_partial_messages=True,
-        system_prompt={"type": "preset", "preset": "claude_code", "append": INSTRUCOES_APP + aqui},
-        hooks={"PreToolUse": [HookMatcher(matcher="Write|Edit", hooks=[_guarda_app])]},
+        # sem travas: o Rodrigo quis o Jarvis igual ao Claude Code no terminal (Bash e escrita em qualquer lugar)
     )
 
 
@@ -316,20 +401,24 @@ def _erro_legivel(msg: str) -> str:
     return msg[:400]
 
 
-async def conversar(conversa: str, texto: str, sinal_id: int | None = None, modo: str = "vault", onde: str = "") -> AsyncIterator[dict]:
-    """Envia uma mensagem e devolve eventos para o front: texto (delta), ferramenta, fim, erro."""
+async def conversar(conversa: str, texto: str, sinal_id: int | None = None, onde: str = "", canvas_slug: str = "") -> AsyncIterator[dict]:
+    """Envia uma mensagem e devolve eventos para o front: texto (delta), ferramenta, mudou, tela, fim, erro."""
+    global _canvas_da_vez
     db.guardar_mensagem(conversa, "usuario", texto)
     sessao = db.sessao_da_conversa(conversa)
     resposta: list[str] = []
+    _eventos.clear()
+    _canvas_da_vez = canvas_slug or "inbox"
+    canvas._atual.set(_canvas_da_vez)   # as ferramentas específicas (criar_ideia…) criam no canvas que ele está vendo
     try:
-        if modo == "app":
-            construtor.ponto(texto)
         # onde o Rodrigo está no app agora (tela, canvas, filtros, nota aberta, seleção): vai em toda mensagem
         aqui = f"\n## Onde o Rodrigo está no app agora\n{onde.strip()}\n" if onde.strip() else ""
-        opcoes = _opcoes_app(sessao, aqui) if modo == "app" else _opcoes(sessao, _contexto_sinal(sinal_id) + aqui)
+        opcoes = _opcoes(sessao, _contexto_sinal(sinal_id) + aqui)
         async with ClaudeSDKClient(opcoes) as cli:
             await cli.query(texto)
             async for m in cli.receive_response():
+                while _eventos:   # o que as ferramentas pediram ao front (recarregar o canvas, abrir, mostrar…)
+                    yield _eventos.pop(0)
                 if isinstance(m, StreamEvent):
                     ev = m.event
                     if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta" \

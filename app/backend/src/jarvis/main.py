@@ -1,5 +1,6 @@
 """API do Jarvis. Dev: `uv run jarvis` (porta 8740). O front (Vite) faz proxy de /api para cá."""
 import asyncio
+import time
 import json
 
 from fastapi import FastAPI, HTTPException
@@ -7,14 +8,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agente, anuncios, auth, canvas, construtor, db, metricool, notas, planejamento, preferencias, radar, videos_x
+from . import agente, anuncios, auth, canvas, db, metricool, notas, planejamento, preferencias, radar, videos_x
 from .config import FRONT_DIST
-from .coletores import x_curtir
 
 MODO_AUTH = auth.preparar()
 db.iniciar()
-if db.pendentes_x():   # likes que ficaram na fila quando o app parou
-    x_curtir.agendar()
 app = FastAPI(title="Neo-Obsidian")
 
 
@@ -62,8 +60,7 @@ def votar(id_: int, corpo: Voto):
         raise HTTPException(400, "voto é -1, 0 ou 1")
     db.votar(id_, corpo.voto)
     preferencias.invalidar()
-    if db.querer_no_x(id_, corpo.voto == 1):   # post do X: o like vai para o X de verdade também
-        x_curtir.agendar()
+    db.querer_no_x(id_, corpo.voto == 1)   # post do X: o like vai para o X de verdade na próxima coleta do X
     return {"ok": True}
 
 
@@ -106,24 +103,56 @@ async def atualizar():
     return {"status": "iniciado"}
 
 
+# ---------- coleta automática: a cada 2 h, contadas da última coleta, enquanto o app está de pé ----------
+INTERVALO_COLETA = 2 * 3600
+_proxima: float | None = None
+
+
+def _quando_proxima() -> float:
+    u = db.ultima_coleta()
+    return (u["inicio"] + INTERVALO_COLETA) if u and u.get("inicio") else time.time() + 60
+
+
+async def _coleta_automatica():
+    global _tarefa, _proxima
+    await asyncio.sleep(60)   # deixa o app subir antes da primeira (se já passou das 2 h)
+    while True:
+        _proxima = _quando_proxima()
+        espera = _proxima - time.time()
+        if espera > 0:
+            await asyncio.sleep(min(espera, 600))   # acorda de 10 em 10 min: uma coleta manual empurra a próxima
+            continue
+        if not (_tarefa and not _tarefa.done()):
+            _tarefa = asyncio.create_task(radar.coletar())
+            await _tarefa
+        else:
+            await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def _ligar_coleta_automatica():
+    asyncio.create_task(_coleta_automatica())
+
+
 @app.get("/api/radar/estado")
 def estado():
+    """Se há coleta rodando, a última coleta e quando roda a próxima (automática, a cada 2 h)."""
     return {"rodando": bool(_tarefa and not _tarefa.done()), "reavaliando": bool(_reav and not _reav.done()),
-            "ultima": db.ultima_coleta()}
+            "ultima": db.ultima_coleta(), "proxima": _proxima or _quando_proxima()}
 
 
 class Mensagem(BaseModel):
     conversa: str = "radar"
     texto: str
     sinal: int | None = None
-    modo: str = "vault"   # vault | app (modo construtor: o agente mexe no código do próprio app)
+    canvas: str = ""      # slug do canvas aberto: o padrão das ferramentas do Jarvis
     onde: str = ""        # onde o Rodrigo está no app (tela, canvas, filtros, nota aberta): vai para o contexto do agente
 
 
 @app.post("/api/chat")
 async def chat(m: Mensagem):
     async def eventos():
-        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.modo, m.onde):
+        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.onde, m.canvas):
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
     return StreamingResponse(eventos(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -132,6 +161,19 @@ async def chat(m: Mensagem):
 @app.get("/api/chat/{conversa}")
 def historico(conversa: str):
     return db.mensagens(conversa)
+
+
+@app.get("/api/chats")
+def chats():
+    """As conversas do Jarvis (mais recente primeiro): id, titulo, n de mensagens, atualizado_em."""
+    return db.lista_conversas()
+
+
+@app.delete("/api/chats/{conversa}")
+def chats_apagar(conversa: str):
+    """Apaga uma conversa do Jarvis (as mensagens e a sessão)."""
+    db.apagar_conversa(conversa)
+    return {"ok": True}
 
 
 @app.get("/api/metricool/estado")
@@ -325,12 +367,23 @@ class NovoCanvas(BaseModel):
     nome: str | None = None
     icone: str | None = None
     cor: str | None = None
+    arquivado: bool | None = None
 
 
 @app.post("/api/canvases")
 def canvases_salvar(corpo: NovoCanvas):
     """Sem slug cria; com slug edita (renomear troca o `grupo:` das notas do canvas)."""
     return _erros(lambda: canvas.salvar_canvas(corpo.model_dump()))
+
+
+class OrdemCanvases(BaseModel):
+    slugs: list[str]
+
+
+@app.post("/api/canvases/ordem")
+def canvases_ordem(corpo: OrdemCanvases):
+    """Muda a ordem dos canvas (arrastar nas pastas da esquerda ou na página Todos os canvas). O Inbox fica no fim."""
+    return _erros(lambda: canvas.ordenar_canvases(corpo.slugs))
 
 
 @app.delete("/api/canvases/{slug}")
@@ -445,8 +498,21 @@ class Arquivar(BaseModel):
     sim: bool = True
 
 
+class Vistas(BaseModel):
+    nomes: list[str]
+
+
+@app.post("/api/canvas/vista")
+def canvas_vista(corpo: Vistas):
+    """Marca 💡 ideias como vistas: tira o selo NOVO dos cards (nomes das ideias, com o 💡)."""
+    canvas.marcar_vista(corpo.nomes)
+    return {"ok": True}
+
+
 @app.post("/api/canvas/arquivar")
 def canvas_arquivar(corpo: Arquivar):
+    """Arquiva (sim) ou desarquiva um card do canvas. id do card: `i:💡 Nome` (ideia), `g:💡 Nome` (produção agrupada
+    da ideia), `p:<raiz>/<nome>` (copy solta ou VSL; raiz priorizar ou publicados), `e:<nome>` (entrada)."""
     canvas.arquivar(corpo.id, corpo.sim)
     return {"ok": True}
 
@@ -523,21 +589,6 @@ class Saida(BaseModel):
 @app.post("/api/canvas/saida")
 def canvas_saida(corpo: Saida):
     return _erros(lambda: canvas.criar_saida(corpo.ideia, corpo.formato, corpo.titulo))
-
-
-# ---------- modo construtor ----------
-
-@app.get("/api/construtor")
-def construtor_estado():
-    return construtor.estado()
-
-
-@app.post("/api/construtor/desfazer")
-def construtor_desfazer():
-    return _erros(construtor.desfazer)
-
-
-_ads: asyncio.Task | None = None
 
 
 @app.get("/api/ads")

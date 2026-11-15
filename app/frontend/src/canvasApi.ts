@@ -18,6 +18,7 @@ export type EstadoCanvas = {
   canvas?: InfoCanvas
   produtos?: Produto[]
   visiveis?: string[]   // cards trazidos à mão (⌘↵, Mover para): aparecem mesmo publicados no Inbox
+  novas?: string[]      // 💡 ideias que chegaram (radar, link, Jarvis) e ainda não foram usadas nem vistas: selo NOVO
 }
 export type Alvo = { raiz: Raiz; nome: string }
 /** De onde a nota foi aberta: o modal mostra um botão para voltar para lá. */
@@ -40,16 +41,28 @@ export const porFormato = (a: Producao, b: Producao) => {
 
 /** Canvas: onde a nota vive (o `grupo:` dela; sem grupo, o 📥 Inbox). O app diz à API em qual está pelo cabeçalho
  *  X-Canvas. Produto (FIA, FID…) é outra coisa: as tags da nota; no canvas é só filtro e uma corzinha no card. */
-export type InfoCanvas = { slug: string; nome: string; icone: string; cor: string }
+export type InfoCanvas = { slug: string; nome: string; icone: string; cor: string; arquivado?: boolean }
 export type Produto = { slug: string; nome: string; icone: string; tags: string[]; cor: string }
 export type ResumoCanvas = InfoCanvas & { ideias: number; producoes: number; vsls: number; publicadas: number; produtos: Record<string, number> }
 export const INBOX = 'inbox'
 let canvasAtual = INBOX
 export const usarCanvas = (slug: string) => { canvasAtual = slug }
 export const cabecalhoCanvas = () => ({ 'X-Canvas': canvasAtual })
+/** Slug do canvas aberto (o chat manda ao Jarvis: as ferramentas dele valem para este canvas). */
+export const canvasAberto = () => canvasAtual
 /** A nota é do produto se tem uma tag que começa por um dos prefixos dele. */
 export const ehDoProduto = (tags: string[] | undefined, p: Produto) => (tags ?? []).some((t) => p.tags.some((x) => t.replace(/^#/, '').startsWith(x)))
 export const produtosDe = (tags: string[] | undefined, ps: Produto[]) => ps.filter((p) => ehDoProduto(tags, p))
+/** Arrastar para reordenar: tira `de` e põe no lugar de `para` (depois dele se veio de cima, antes se veio de baixo). */
+export const moverNaLista = (slugs: string[], de: string, para: string) => {
+  if (de === para) return slugs
+  const l = slugs.filter((s) => s !== de)
+  const i = l.indexOf(para)
+  l.splice(slugs.indexOf(de) < slugs.indexOf(para) ? i + 1 : i, 0, de)
+  return l
+}
+export const ordenarCanvases = (slugs: string[]) =>
+  fetch('/api/canvases/ordem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slugs }) })
 export const listarCanvases = () => fetch('/api/canvases').then((r) => r.json() as Promise<ResumoCanvas[]>)
 
 export async function post<T = unknown>(rota: string, corpo: unknown, metodo = 'POST'): Promise<T> {

@@ -1,4 +1,4 @@
-"""Coletor do X (Q27): lê o feed "Para você" no Chrome do Rodrigo, já logado, pela extensão Claude in Chrome.
+"""Coletor do X (Q27): lê o feed "Para você" no perfil "Claude Profile" do Chrome (já logado), pela extensão Claude in Chrome.
 Cada coleta traz só posts inéditos (pula os ids já vistos), e a página do X mostra só o último lote.
 
 Só leitura: abre uma aba nova no grupo do Jarvis, rola o feed com um script que extrai os posts do DOM e fecha a aba.
@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..config import CHROME_PERFIL
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, ToolResultBlock, ToolUseBlock, UserMessage, query
 
 ALVO = 50
@@ -92,6 +93,7 @@ window.__jxDone = false; window.__jx = '[]';
 LE = "window.__jxDone ? 'PRONTO ' + window.__jxCount : 'PENDENTE ' + (window.__jxN || 0)"
 
 PROMPT = """Você coleta o feed do X para o Rodrigo. Só leitura: não clique em nada, não curta, não reposte, não siga.
+0. Chame select_browser com deviceId "__PERFIL__" (o perfil "Claude Profile" do Chrome). Se não der, responda só "SEM_PERFIL".
 1. Chame tabs_context_mcp com createIfEmpty: true e use a aba que ela devolver (não crie outra). Navegue nela para
    https://x.com/home (feed "Para você").
 2. Espere 3 s (computer, action wait). Se a página pedir login, feche a aba e responda só "SEM_LOGIN".
@@ -153,7 +155,7 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
         model="sonnet", tools=[], setting_sources=[], max_turns=30, extra_args={"chrome": None},
         # sem busca de ferramentas (as do Chrome ficariam adiadas e invisíveis com tools=[]) e sem os conectores da conta
         env={"ENABLE_TOOL_SEARCH": "false", "ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
-        allowed_tools=["mcp__claude-in-chrome__tabs_context_mcp", "mcp__claude-in-chrome__tabs_create_mcp",
+        allowed_tools=["mcp__claude-in-chrome__select_browser", "mcp__claude-in-chrome__tabs_context_mcp", "mcp__claude-in-chrome__tabs_create_mcp",
                        "mcp__claude-in-chrome__navigate", "mcp__claude-in-chrome__javascript_tool",
                        "mcp__claude-in-chrome__tabs_close_mcp", "mcp__claude-in-chrome__computer"],
         permission_mode="dontAsk",
@@ -161,7 +163,7 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
     arq = f"jarvis-x-{uuid.uuid4().hex[:10]}.json"
     ids = sorted({c[-9:] for c in conhecidos or [] if c.isdigit()})
     script = EXTRAI.replace("__ALVO__", str(ALVO)).replace("__ARQ__", arq).replace("__CONHECIDOS__", json.dumps(ids))
-    prompt = PROMPT.replace("__EXTRAI__", script).replace("__LE__", LE)
+    prompt = PROMPT.replace("__EXTRAI__", script).replace("__LE__", LE).replace("__PERFIL__", CHROME_PERFIL)
     final = ""
     async for m in query(prompt=prompt, options=opts):
         if isinstance(m, AssistantMessage) and DEBUG:
@@ -176,6 +178,8 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
             final = m.result or ""
     if "SEM_LOGIN" in final:
         raise RuntimeError("o X pediu login no Chrome")
+    if "SEM_PERFIL" in final:
+        raise RuntimeError("não achei o perfil Claude Profile do Chrome (a extensão está aberta nele?)")
     alvo = DOWNLOADS / arq
     for _ in range(30):  # o download pode levar um instante para aparecer
         if alvo.exists() and alvo.stat().st_size > 0:

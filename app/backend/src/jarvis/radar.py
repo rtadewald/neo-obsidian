@@ -9,6 +9,8 @@ from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 from . import db, preferencias
 from .coletores import x as coletor_x
+from .coletores import x_curtir
+from .coletores import instagram_radar as coletor_ig
 from .coletores.fontes import COLETORES
 from .config import MODELO_RADAR
 
@@ -97,12 +99,22 @@ async def coletar(com_x: bool = True) -> dict:
                 except Exception as e:  # uma fonte fora do ar não derruba as outras
                     det[nome] = {"erro": f"{type(e).__name__}: {e}"[:200]}
         if com_x:  # abre uma aba no Chrome do Rodrigo e leva ~1,5 min
+            if db.pendentes_x():   # antes de rolar o feed: os likes da fila vão ao X (o algoritmo já aprende)
+                try:
+                    det["x_likes"] = await asyncio.to_thread(x_curtir.espelhar)
+                except Exception as e:
+                    det["x_likes"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
             try:
                 # só posts inéditos: o script pula os já vistos e o lote novo substitui o anterior na página do X
                 itens = await coletor_x.coletar(db.externos_recentes("x", 250))
                 det["x"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}
             except Exception as e:
                 det["x"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
+            try:   # Instagram: a conta do radar no mesmo perfil do Chrome (perfis seguidos + Reels do algoritmo)
+                itens = await coletor_ig.coletar(db.externos_recentes("instagram", 600))
+                det["instagram"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}
+            except Exception as e:
+                det["instagram"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
         try:
             det["classificados"] = 0
             for _ in range(4):  # lotes de 60

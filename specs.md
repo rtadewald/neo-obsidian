@@ -16,8 +16,9 @@
 >   - **YouTube:** fora por enquanto.
 > - **Viralizou acima da média (Q29):** views comparadas à média dos últimos posts do próprio perfil para criadores
 >   recorrentes (média guardada no banco); views ÷ seguidores como estimativa para quem aparece pela primeira vez.
-> - **Agente e vault (Q30):** lê o vault inteiro; escreve sem perguntar só em `1 Copies/0 Ideias/` e `1 Copies/1 Priorizar/`;
->   qualquer outra escrita pede aprovação no chat.
+> - **Agente e vault (Q30, revisto em 15/11/2026):** lê e escreve o vault inteiro (menos `.obsidian/`, `.trash/`, `.git/`) e
+>   usa o app inteiro como o Rodrigo, pelas mesmas rotas da API; confirma no chat antes de apagar ou de mudanças em massa.
+>   O modo construtor (o chat mexendo no código do app) saiu.
 > - **Metricool na v1 (Q23):** histórico de posts, desempenho de cada um e agendados dos próximos dias, no painel e no
 >   chat. Só leitura. Pela API REST (planos Advanced/Custom; token em Account Settings > API) ou, sem esse plano, pelo MCP
 >   remoto com OAuth (histórico limitado ao plano) — **depende do plano (Q32, em aberto)**.
