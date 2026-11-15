@@ -108,7 +108,11 @@ export default function App() {
   useEffect(() => {
     const alternar = () => { setTrabalho(false); setFocoTela((f) => !f) }
     const tecla = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setFocoTela(false); setTrabalho(false); return }
+      if (e.key === 'Escape') {
+        // Esc fecha primeiro o que estiver por cima (nota, busca, menu) e não mexe no modo desenho: F/W só saem com nada aberto
+        if (e.defaultPrevented || document.querySelector('.modal-fundo, .paleta-fundo, .menu-ctx, .canvas.is-desenhando')) return
+        setFocoTela(false); setTrabalho(false); return
+      }
       const k = e.key.toLowerCase()
       if ((k !== 'f' && k !== 'w') || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
       const t = e.target as HTMLElement | null
