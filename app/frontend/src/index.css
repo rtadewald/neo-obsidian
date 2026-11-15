@@ -1549,5 +1549,5 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .skills-cat-nome em { font-style: normal; font-weight: 500; opacity: .7; }
 .skills-cat-seta { display: inline-block; width: 12px; font-size: 13px; transition: transform .15s var(--ease); }
 .skills-cat-nome.is-aberta .skills-cat-seta { transform: rotate(90deg); }
-.skills-cat-itens { display: flex; flex-direction: column; gap: 1px; }
+.skills-cat-itens { display: flex; flex-direction: column; gap: 1px; padding-left: 12px; }   /* recuo: as skills ficam dentro da categoria */
 .skills-nome { padding: 6px 8px 6px 0; }
