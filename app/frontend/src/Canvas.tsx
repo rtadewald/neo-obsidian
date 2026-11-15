@@ -110,7 +110,7 @@ const CardIdeia = memo(({ id, data, selected }: NodeProps<Node<DadosIdeia, 'idei
       <Alcas /><BotaoChat id={id} />
       {novo && <button type="button" className="selo-novo nodrag" onClick={(e) => { e.stopPropagation(); ver?.([ideia.nome]) }}
         title="Chegou agora (radar, link ou Jarvis). Some quando você gera uma saída. Clique para marcar como visto.">Novo</button>}
-      <header><span className="cartao-tipo">💡</span><b>{ideia.nome.replace(/^💡\s*/, '')}</b><MarcaProduto tags={[ideia.tags, ...saidas.map((x) => x.tags)]} /></header>
+      <header><span className="cartao-tipo">💡</span><b>{ideia.nome.replace(/^💡\s*/, '')}</b></header>
       <MidiaCard m={ideia} />
       {ideia.previa && !ideia.links?.length && <p className="cartao-previa">{ideia.previa}</p>}
       {saidas.length === 0 && <footer className="mudo">sem produção ainda · botão direito → gerar</footer>}
@@ -121,14 +121,8 @@ const CardIdeia = memo(({ id, data, selected }: NodeProps<Node<DadosIdeia, 'idei
 /** Selo NOVO: a mesa passa a ação de marcar como visto por contexto. */
 const VistoUI = createContext<((nomes: string[]) => void) | null>(null)
 
-/** Produto (FIA, FID…): uma bolinha da cor dele no canto do card. A mesa passa a lista dos produtos por contexto. */
+/** Produtos (FIA, FID…): a lista vem da mesa por contexto. A bolinha de cor saiu do card; o produto continua como filtro. */
 const ProdutosUI = createContext<Produto[]>([])
-function MarcaProduto({ tags }: { tags: (string[] | undefined)[] }) {
-  const ps = useContext(ProdutosUI)
-  const meus = produtosDe(tags.flatMap((t) => t ?? []), ps)
-  if (!meus.length) return null
-  return <span className="cartao-produtos" title={meus.map((p) => `${p.icone} ${p.nome}`).join(' · ')}>{meus.map((p) => <i key={p.slug} style={{ background: p.cor }} />)}</span>
-}
 
 /** Botão que aparece no hover do card: leva a nota para o chat do Jarvis (a mesa passa a ação por contexto). */
 const ChatUI = createContext<((id: string) => void) | null>(null)
@@ -155,7 +149,7 @@ function CartaoProducao({ id, titulo, saidas, destaque, selected, novo }: { id: 
       <Alcas /><BotaoChat id={id} />
       {novo && <button type="button" className="selo-novo nodrag" onClick={(e) => { e.stopPropagation(); ver?.(saidas.map((x) => x.nome)) }}
         title="Criada agora. Some quando você abre a copy. Clique para marcar como vista.">Novo</button>}
-      <header><span className="cartao-tipo">{ICONE_GRUPO}</span><b>{titulo}</b>{winner && <Fogo />}<MarcaProduto tags={saidas.map((s) => s.tags)} /></header>
+      <header><span className="cartao-tipo">{ICONE_GRUPO}</span><b>{titulo}</b>{winner && <Fogo />}</header>
       {previa && <p className="cartao-previa">{previa}</p>}
       <div className="cartao-formatos">
         {saidas.map((s) => (
@@ -197,7 +191,7 @@ function CartaoVSL({ id, p, selected }: { id: string; p: Producao; selected?: bo
     <div className={`cartao cartao--vsl ${selected ? 'is-sel' : ''} ${p.winner ? 'is-winner' : ''}`}>
       <Alcas /><BotaoChat id={id} />
       <header><span className="cartao-tipo">📺</span><b>{p.nome.replace(/^[^\p{L}\p{N}]+/u, '').replace(/^VSL\s*[-·:]?\s*/i, '')}</b>
-        <span className="cartao-selo">VSL</span>{p.winner && <Fogo />}<MarcaProduto tags={[p.tags]} /></header>
+        <span className="cartao-selo">VSL</span>{p.winner && <Fogo />}</header>
       {p.previa && <p className="cartao-previa">{p.previa}</p>}
       <footer><i className={`ponto is-${p.status}`} />{STATUS.find((s) => s.k === p.status)?.nome}{p.scheduled ? ` · ${dataCurta(p.scheduled)}` : ''}
         {p.palavras ? ` · ${Math.round(p.palavras / 150)} min` : ''}</footer>
