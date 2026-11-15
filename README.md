@@ -111,6 +111,7 @@ As pastas de status abrem uma tabela com os números do período, barras por mê
 | `⌘1` … `⌘7` | Trocar de página (Canvas, Calendário, X…) |
 | `⌘1` com uma nota aberta | Ir para a 💡 ideia da nota |
 | `⌘2`, `⌘3`… com uma nota aberta | Ir para a 1ª, 2ª… versão da ideia (as abas de cima) |
+| `⌥N` / `⌥I` | Nova criação (Reels por padrão) / nova ideia, no canvas aberto ou com seletor de canvas |
 | `⌘J` | Mostrar ou esconder o Jarvis |
 | `⌘I` | Mandar a nota (ou o trecho selecionado) ao Jarvis |
 | `⌘⇧D` | Ditar a mensagem no chat |

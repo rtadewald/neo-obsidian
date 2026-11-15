@@ -152,11 +152,16 @@ export default function App() {
         e.preventDefault()
         setPaleta(true)
       }
-      // ⌘⇧I nova ideia, ⌘⇧N nova produção (no canvas aberto; fora dele, com seletor de canvas)
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())) {
+      // ⌥I nova ideia, ⌥N nova criação (no canvas aberto; fora dele, com seletor de canvas). Pela tecla física (e.code):
+      // no Mac o ⌥N vira o til. ⌘⇧I/⌘⇧N também valem onde o navegador deixa (o Chrome reserva o ⌘⇧N para a janela anônima).
+      const opcao = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (e.code === 'KeyI' || e.code === 'KeyN')
+      const comando = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())
+      if (opcao || comando) {
+        const t = e.target as HTMLElement | null
         if (document.querySelector('.modal-fundo .modal-nota, .paleta-fundo')) return
+        if (opcao && t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor')) return   // ⌥ dentro de um campo escreve o caractere
         e.preventDefault(); e.stopPropagation()
-        setNovo(e.key.toLowerCase() === 'i' ? 'ideia' : 'producao')
+        setNovo((opcao ? e.code === 'KeyI' : e.key.toLowerCase() === 'i') ? 'ideia' : 'producao')
         return
       }
       // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
