@@ -1398,7 +1398,7 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 
 /* nota aberta: a barra de cima sobe e o modal ganha a altura dela */
 .lateral-area { transition: transform .38s var(--ease), opacity .3s ease, margin-top .38s var(--ease); }
-.app.com-nota .lateral-area { margin-top: -50px; transform: translateY(-20px); opacity: 0; pointer-events: none; }
+.app.com-nota .lateral-area { margin-top: -30px; /* topo da nota e do chat = 24px, igual à margem esquerda da nota */ transform: translateY(-20px); opacity: 0; pointer-events: none; }
 
 /* sumário da nota (títulos em árvore, como o Obsidian) */
 .modal-corpo--sumario { display: flex; gap: 22px; }

@@ -1,4 +1,5 @@
 import { lembrarAberta } from './Paleta'
+import { exportarPdf } from './exportarPdf'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EditorView } from '@codemirror/view'
@@ -442,7 +443,10 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
         <button className={`btn-icone ${semSumario ? '' : 'is-on'}`} onClick={alternarSumario} aria-pressed={!semSumario}
           title={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
           <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2.5" /><path d="M12.5 3.5v13M14.6 7.2h-.1M14.6 10h-.1" /></svg></button>
-        <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
+        {fixo
+          ? <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
+          : <button className="btn-icone" onClick={async () => { await salvar(); exportarPdf(alvo.nome, ref.current.texto) }} title="Exportar em PDF" aria-label="Exportar em PDF">
+              <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.8h6.5L15.5 7v10.2H5z" /><path d="M11.5 2.8V7h4M10.2 9.4v5.2M7.9 12.4l2.3 2.3 2.3-2.3" /></svg></button>}
       </div>
 
       <div className="modal-corpo modal-corpo--sumario">
