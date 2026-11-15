@@ -95,6 +95,43 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
     return () => window.clearTimeout(t)
   }, [ativo])
 
+  // No modo desenho, com a seleção (ou a mão) ativa, clicar num card abre a nota como fora do desenho:
+  // o clique passa para o card de baixo quando não há desenho no ponto. Com as outras ferramentas, desenha por cima.
+  useEffect(() => {
+    const el = caixa.current
+    if (!ativo || !el) return
+    let alvo: { x: number; y: number; card: HTMLElement } | null = null
+    const cardEm = (x: number, y: number) => document.elementsFromPoint(x, y).find((n) => !el.contains(n) && n.closest('.react-flow__node')) as HTMLElement | undefined
+    const temDesenho = (x: number, y: number) => {
+      const a = api.current
+      if (!a) return false
+      const st = a.getAppState(), z = st.zoom.value as number, r = el.getBoundingClientRect()
+      const sx = (x - r.left) / z - st.scrollX, sy = (y - r.top) / z - st.scrollY, folga = 6 / z
+      return a.getSceneElements().some((e) => !e.isDeleted && sx >= Math.min(e.x, e.x + e.width) - folga && sx <= Math.max(e.x, e.x + e.width) + folga
+        && sy >= Math.min(e.y, e.y + e.height) - folga && sy <= Math.max(e.y, e.y + e.height) + folga)
+    }
+    const desce = (e: PointerEvent) => {
+      alvo = null
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
+      const tipo = api.current?.getAppState().activeTool.type
+      if (tipo !== 'selection' && tipo !== 'hand') return
+      const card = cardEm(e.clientX, e.clientY)
+      if (!card || temDesenho(e.clientX, e.clientY)) return
+      alvo = { x: e.clientX, y: e.clientY, card }
+      e.stopPropagation(); e.preventDefault()
+    }
+    const sobe = (e: PointerEvent) => {
+      if (!alvo) return
+      const a = alvo; alvo = null
+      e.stopPropagation()
+      if (Math.hypot(e.clientX - a.x, e.clientY - a.y) > 5) return
+      cardEm(e.clientX, e.clientY)?.click()   // o React Flow abre a nota (o chip de formato abre aquela saída)
+    }
+    el.addEventListener('pointerdown', desce, true)
+    window.addEventListener('pointerup', sobe, true)
+    return () => { el.removeEventListener('pointerdown', desce, true); window.removeEventListener('pointerup', sobe, true) }
+  }, [ativo])
+
   // Esc com a ferramenta de seleção e nada selecionado sai do modo desenho
   useEffect(() => {
     if (!ativo) return

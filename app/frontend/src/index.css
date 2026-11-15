@@ -1207,7 +1207,6 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 /* a camada termina onde começa o chat (a barra de ferramentas centraliza no espaço visível); no modo desenho as
    pastas saem do rodapé e o painel de estilo do Excalidraw para acima da barra do canvas */
 .desenho { right: var(--livre-dir, 0px); }
-.canvas.is-desenhando .canvas-pastas .pasta { display: none; }
 .desenho .excalidraw .App-menu__left { max-height: calc(100vh - 210px); overflow-y: auto; }
 
 /* os canvas como pastas, numa coluna na esquerda */
@@ -1228,7 +1227,6 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 .pastinha.is-ativa .pastinha-frente { box-shadow: 0 0 0 2px #1d1d1f, 0 8px 18px -10px rgba(40, 34, 32, .55); }
 .pastinha.is-ativa .pastinha-nome { color: var(--ink); font-weight: 600; }
 .pastinha--todos .pastinha-frente { margin-top: 5px; background: rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); color: var(--mute); }
-.canvas.is-desenhando .canvas-lista, .canvas.is-desenhando .canvas-trilho { display: none; }
 
 /* pipe entre os tipos e os produtos na barra de baixo */
 .canvas-tipos-sep { width: 1px; height: 16px; margin: 0 5px; background: rgba(23, 24, 27, .2); flex: none; }
@@ -1556,3 +1554,11 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .modo-trabalho .desenho .excalidraw .layer-ui__wrapper, .modo-foco .desenho .excalidraw .layer-ui__wrapper { top: -6px !important; }
 .desenho .excalidraw .sidebar-trigger, .desenho .excalidraw .default-sidebar-trigger, .desenho .excalidraw .HintViewer,
 .desenho .excalidraw .main-menu-trigger, .desenho .excalidraw .dropdown-menu-button { display: none !important; }   /* menu ☰ do Excalidraw também sai */
+
+/* pinados e últimos abertos agora dentro da lista de pastas da esquerda, abaixo de uma linha */
+.canvas-lista .trilho-sep--pastas { width: 44px; margin: 2px 0; }
+.canvas-lista .trilho-item { width: 58px; }
+.canvas-lista .trilho-abrir { padding: 7px 3px 6px; gap: 3px; border-radius: 10px; }
+.canvas-lista .trilho-ic { font-size: 18px; }
+.canvas-lista .trilho-nome { font-size: 9.5px; }
+.canvas-lista .trilho-secao { height: 16px; }

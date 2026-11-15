@@ -1031,31 +1031,28 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <span className="pastinha-nome">{c.nome}</span>
             </button>
           ))}
-          <button type="button" className="pastinha pastinha--todos" onClick={() => onTrocarCanvas(null)} title="Todos os canvas (criar, renomear, apagar)">
-            <span className="pastinha-frente"><span className="pastinha-ic">▦</span></span><span className="pastinha-nome">Todos</span>
-          </button>
+          {/* abaixo das pastas, separados por uma linha: os cards pinados e os últimos abertos (antes ficavam numa barra à parte) */}
+          {(() => {
+            const pins = vistas.pinados.filter(existe), hist = vistas.historico.filter(existe)
+            if (!pins.length && !hist.length) return null
+            const item = (id: string, pinado: boolean) => (
+              <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''}`}>
+                <button className="trilho-abrir" onClick={() => abrirVista(id)} title={nomeDoId(id)}>
+                  {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
+                </button>
+                <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
+              </div>
+            )
+            return <>
+              <span className="trilho-sep trilho-sep--pastas" />
+              {pins.length > 0 && <><span className="trilho-secao" title="Pinados"><Icone n="pin" t={13} /></span>{pins.map((id) => item(id, true))}</>}
+              {pins.length > 0 && hist.length > 0 && <span className="trilho-sep" />}
+              {hist.length > 0 && <><span className="trilho-secao" title="Últimos abertos"><Icone n="atualizar" t={13} /></span>{hist.map((id) => item(id, false))}</>}
+            </>
+          })()}
         </nav>
       )}
 
-      {(() => {
-        const pins = vistas.pinados.filter(existe), hist = vistas.historico.filter(existe)
-        if (!pins.length && !hist.length) return null
-        const item = (id: string, pinado: boolean) => (
-          <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''}`}>
-            <button className="trilho-abrir" onClick={() => abrirVista(id)} title={nomeDoId(id)}>
-              {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
-            </button>
-            <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
-          </div>
-        )
-        return (
-          <nav className="canvas-trilho" aria-label="Canvas pinados e últimos abertos">
-            {pins.length > 0 && <><span className="trilho-secao" title="Pinados"><Icone n="pin" t={13} /></span>{pins.map((id) => item(id, true))}</>}
-            {pins.length > 0 && hist.length > 0 && <span className="trilho-sep" />}
-            {hist.length > 0 && <><span className="trilho-secao" title="Últimos abertos"><Icone n="atualizar" t={13} /></span>{hist.map((id) => item(id, false))}</>}
-          </nav>
-        )
-      })()}
 
       <aside className="canvas-pastas" aria-label="Pastas">
         <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
