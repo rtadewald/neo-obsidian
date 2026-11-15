@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Calendario } from './Calendario'
 import { CalendarioEditorial } from './CalendarioEditorial'
-import { Canvas, type Passo } from './Canvas'
+import { Canvas, aquecerCanvases, type Passo } from './Canvas'
 import { Canvases, preCarregarCanvases } from './Canvases'
 import { INBOX, cabecalhoCanvas, carregarTudo, listarCanvases, onde, usarCanvas } from './canvasApi'
 import { ModalNota } from './ModalNota'
@@ -72,6 +72,8 @@ export default function App() {
   const [trecho, setTrecho] = useState<Trecho | null>(null)
   const [pedido, setPedido] = useState<{ texto: string; n: number }>({ texto: '', n: 0 })
   const [versao, setVersao] = useState(0)
+  // todos os canvas ficam carregados: na abertura e, depois, logo após cada mudança no vault
+  useEffect(() => { const t = window.setTimeout(aquecerCanvases, 400); return () => window.clearTimeout(t) }, [mudou, versao])
   const mandarTrecho = useCallback((t: Trecho, p?: string) => {
     setTrecho(t); setChat(true)
     if (p) setPedido((x) => ({ texto: p, n: x.n + 1 }))

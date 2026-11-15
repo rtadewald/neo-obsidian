@@ -350,9 +350,13 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   // as pastas da esquerda: a lista dos canvas com as contagens (relida quando algo muda no vault)
   useEffect(() => { listarCanvases().then(setTodosCanvas).catch(() => {}) }, [versao, setTodosCanvas])
   const chaveLocal = (k: string) => `${k}#${canvas}`   // cada canvas guarda a sua vista, pinados etc.
-  const [est, setEst] = useState<EstadoCanvas | null>(null)
-  const [visao, setVisao] = useState<Visao>('principal')
-  const visaoRef = useRef<Visao>('principal')
+  const [est, setEst] = useState<EstadoCanvas | null>(() => cacheEst.get(canvas) ?? null)
+  // volta para a vista em que você estava neste canvas (principal, pasta ou card aberto em canvas próprio)
+  const [visao, setVisao] = useState<Visao>(() => { try { return (localStorage.getItem(`canvas-visao#${canvas}`) as Visao) || 'principal' } catch { return 'principal' } })
+  useEffect(() => { try { localStorage.setItem(`canvas-visao#${canvas}`, visao) } catch { /* sem storage */ } }, [visao, canvas])
+  // o zoom e a posição da última vez já entram na primeira pintura (sem pular depois)
+  const [vpInicial] = useState(() => { try { return JSON.parse(localStorage.getItem(`canvas-vp-${visao}#${canvas}`) || 'null') as { x: number; y: number; zoom: number } | null } catch { return null } })
+  const visaoRef = useRef<Visao>(visao)
   visaoRef.current = visao
   const [filtro, setFiltro] = useState<Filtro>('todos')   // o seletor de status saiu da barra (as pastas abrem cada status)
   // chips liga/desliga, independentes: todos começam ligados e cada clique esconde ou mostra aquele tipo
@@ -433,8 +437,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   // Posições já movidas aqui mas ainda gravando no servidor: uma recarga que chega antes da gravação traria a posição
   // velha e o card pularia de volta por um instante. Elas passam por cima do que vem do servidor até a gravação acabar.
   const posPendentes = useRef<Record<string, { x: number; y: number }>>({})
-  const recarregar = useCallback(() => carregarCanvas().then((e) => setEst({ ...e, pos: { ...e.pos, ...posPendentes.current } }))
-    .catch(() => avisar('Não consegui ler o canvas.')), [avisar])
+  const recarregar = useCallback(() => carregarCanvas().then((e) => { cacheEst.set(canvas, e); setEst({ ...e, pos: { ...e.pos, ...posPendentes.current } }) })
+    .catch(() => avisar('Não consegui ler o canvas.')), [avisar, canvas])
   // selo NOVO: marcar como visto tira o selo (o card, o botão direito ou o clique no selo)
   const marcarVisto = useCallback((nomes: string[]) => { post('vista', { nomes }).then(recarregar).catch(() => {}) }, [recarregar])
   const recarregarRef = useRef(recarregar)
@@ -674,6 +678,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     if (id.startsWith('e:')) return est.entradas.some((e) => e.nome === r)
     return est.producoes.some((p) => `${p.raiz}/${p.nome}` === r)
   }, [est])
+  // a vista guardada pode ser de um card que não existe mais: volta ao principal
+  useEffect(() => { if (est && visao.startsWith('foco:') && !existe(visao.slice(5))) setVisao('principal') }, [est])  // eslint-disable-line react-hooks/exhaustive-deps
   const lixeira = async (a: Alvo) => {
     const r = await fetch(`/api/notas/${a.raiz}/${encodeURIComponent(a.nome)}/acao`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'lixeira' }) })
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Não consegui deletar.')
@@ -983,6 +989,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           onVista={(v) => rf.setViewport(v)} onSair={sairDoDesenho} />}
         <ReactFlow<No, Edge>
           proOptions={{ hideAttribution: true }}   // sem o selo "React Flow" no canto
+          defaultViewport={vpInicial ?? undefined}
           nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO}
           onNodeDragStart={(_, __, ns) => comecouArraste(ns)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
           onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
@@ -1276,6 +1283,23 @@ function FiltroProdutos({ opcoes, fora, onAlternar, onTodos, textos = { todos: '
 }
 
 let listaCanvasGuardada: ResumoCanvas[] = []   // a lista sobrevive à troca de canvas (a mesa remonta)
+/** Cache do estado de cada canvas: trocar de canvas desenha na hora com o que já se sabe e atualiza por trás. */
+const cacheEst = new Map<string, EstadoCanvas>()
+let aquecendo: Promise<void> | null = null
+/** Carrega todos os canvas ativos em segundo plano (na abertura do app e depois de mudanças), para a troca ser instantânea. */
+export function aquecerCanvases() {
+  if (aquecendo) return aquecendo
+  aquecendo = listarCanvases().then(async (l) => {
+    listaCanvasGuardada = l
+    for (const c of l.filter((x) => !x.arquivado)) {
+      try {
+        const r = await fetch('/api/canvas', { headers: { 'X-Canvas': c.slug } })
+        if (r.ok) cacheEst.set(c.slug, await r.json())
+      } catch { /* tenta de novo na próxima */ }
+    }
+  }).catch(() => {}).finally(() => { aquecendo = null })
+  return aquecendo
+}
 
 function Pasta({ nome, n, ativa, cor, onClick, children }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void; children?: ReactNode }) {
   return (

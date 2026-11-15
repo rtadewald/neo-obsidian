@@ -135,7 +135,8 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
   // Esc com a ferramenta de seleção e nada selecionado sai do modo desenho
   useEffect(() => {
     if (!ativo) return
-    const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && controle.current?.podeSair()) onSair() }
+    // o Esc que fecha uma nota, a busca ou um menu não tira do modo desenho
+    const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.modal-fundo, .paleta-fundo, .menu-ctx') && controle.current?.podeSair()) onSair() }
     window.addEventListener('keydown', tecla, true)
     return () => window.removeEventListener('keydown', tecla, true)
   }, [ativo, onSair, controle])
