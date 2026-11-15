@@ -296,6 +296,27 @@ def _nota_acao(raiz: str, nome: str, corpo: Acao):
     raise HTTPException(400, "ação desconhecida")
 
 
+@app.get("/api/skills")
+def skills_lista():
+    return notas.lista_skills()
+
+
+class NovaSkill(BaseModel):
+    nome: str
+    descricao: str = ""
+    categoria: str = "Copywriting"
+
+
+@app.post("/api/skills")
+def skill_nova(corpo: NovaSkill):
+    try:
+        return notas.criar_skill(corpo.nome, corpo.descricao, corpo.categoria)
+    except FileExistsError:
+        raise HTTPException(409, "já existe uma skill com esse nome")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/notas/{raiz}/{nome:path}")
 def nota_ler(raiz: str, nome: str):
     n = notas.ler(raiz, nome)
@@ -328,6 +349,7 @@ def nota_nova(corpo: Nova):
     try:
         d = notas.criar(corpo.titulo)
         canvas.marcar_no_canvas(d["raiz"], d["nome"])
+        canvas.marcar_nova(d["nome"])   # copy nova também nasce com o selo NOVO
         return d
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")

@@ -49,6 +49,10 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   useEffect(() => { recarregar() }, [recarregar, versao])
   useEffect(() => setAtiva(alvo), [alvo])
   useEffect(() => { if (ativa.raiz !== 'entradas') lembrarAberta(ativa.raiz, ativa.nome) }, [ativa])   // entra nas últimas abertas da ⌘P
+  // copy com o selo NOVO: abrir conta como ver
+  useEffect(() => {
+    if (ativa.raiz !== 'ideias' && est?.novas?.includes(ativa.nome)) post('vista', { nomes: [ativa.nome] }).then(() => onMudou?.()).catch(() => {})
+  }, [ativa, est?.novas])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // o grupo: a ideia da nota ativa e todas as saídas dela
   const grupo = useMemo(() => {
@@ -312,14 +316,19 @@ function rotuloSaida(p: Producao, ideia?: string) {
   return `${p.formato} ${sobra || ({ '📱': 'Reels', '💰': 'Ad', '🏞️': 'Carrossel', '📝': 'Feed', '📺': 'VSL', '🎥': 'YouTube', '🗣️': 'Stories', '🎙️': 'Live' } as Record<string, string>)[p.formato] || ''}`.trim()
 }
 
-function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink }: {
-  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void
+/** O editor de uma nota (cabeçalho, propriedades, texto e sumário). Usado no modal e na página Skills
+ *  (`fixo`: o título não renomeia, para os arquivos das skills). */
+export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink, fixo }: {
+  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean
   onTrecho?: (t: Trecho, pedido?: string) => void; onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)
   const [texto, setTexto] = useState('')
   const [estado, setEstado] = useState<Estado>('salvo')
   const [titulo, setTitulo] = useState<string | null>(null)
+  // o sumário da direita pode sair (vale para todas as notas e para a página Skills; fica guardado)
+  const [semSumario, setSemSumario] = useState(() => { try { return localStorage.getItem('sumario-oculto') === '1' } catch { return false } })
+  const alternarSumario = () => setSemSumario((v) => { try { localStorage.setItem('sumario-oculto', v ? '0' : '1') } catch { /* sem storage */ } return !v })
   const view = useRef<EditorView | null>(null)
   const timer = useRef<number | undefined>(undefined)
   const ref = useRef({ nota, texto, estado })
@@ -415,7 +424,8 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLi
               <input className="ideias-titulo-campo" autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} onBlur={confirmarTitulo}
                 onFocus={(e) => e.target.select()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitulo(null) } }} aria-label="Nome da nota" />
             </form>
-          ) : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
+          ) : fixo ? <h1>{alvo.nome.split('/').pop()}</h1>
+            : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
         </div>
         {/* o estado só aparece quando pede atenção (conflito com o Obsidian ou erro ao salvar) */}
         {(estado === 'conflito' || estado === 'erro') && <span className={`ideias-estado is-${estado}`}>
@@ -429,6 +439,9 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLi
           <button className="modal-desligar" onClick={async () => { await salvar(); onTrecho({ texto: '', linhaIni: 1, linhaFim: texto.split('\n').length, raiz: alvo.raiz, nome: alvo.nome, caminho }) }}
             title="Manda esta nota para o chat (⌘I manda só o trecho selecionado)"><span className="orb orb--msg" /> Perguntar ao Jarvis</button>
         )}
+        <button className={`btn-icone ${semSumario ? '' : 'is-on'}`} onClick={alternarSumario} aria-pressed={!semSumario}
+          title={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
+          <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2.5" /><path d="M12.5 3.5v13M14.6 7.2h-.1M14.6 10h-.1" /></svg></button>
         <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
       </div>
 
@@ -437,7 +450,7 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLi
           <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink}
             onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
         </div>
-        <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />
+        {!semSumario && <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />}
       </div>
     </>
   )

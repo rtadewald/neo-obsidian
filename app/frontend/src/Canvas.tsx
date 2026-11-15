@@ -25,7 +25,7 @@ import {
 type Visao = 'principal' | 'edicao' | 'agendado' | `pub-${string}` | `foco:${string}`
 type DadosIdeia = { ideia: Ideia; saidas: Producao[]; novo?: boolean }
 type DadosEntrada = { entrada: Entrada }
-type DadosProd = { prod: Producao }
+type DadosProd = { prod: Producao; novo?: boolean }
 /** A produção: as saídas de uma ideia (📱 💰 🏞️…) num card só; no vault continuam notas separadas. */
 type DadosGrupo = { ideia: Ideia; saidas: Producao[]; destaque: StatusProd | null }
 type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'>
@@ -144,14 +144,17 @@ const Fogo = () => <span className="cartao-fogo" title="Winner 🔥 (tag na nota
 
 /** Card de produção: as notas de uma mesma copy (as saídas de uma ideia, ou uma copy sozinha), um chip por formato.
  *  Só existem dois tipos de card no canvas: 💡 ideia e 🎬 produção. */
-function CartaoProducao({ id, titulo, saidas, destaque, selected }: { id: string; titulo: string; saidas: Producao[]; destaque: StatusProd | null; selected?: boolean }) {
+function CartaoProducao({ id, titulo, saidas, destaque, selected, novo }: { id: string; titulo: string; saidas: Producao[]; destaque: StatusProd | null; selected?: boolean; novo?: boolean }) {
+  const ver = useContext(VistoUI)
   const winner = saidas.some((s) => s.winner)
   const prox = saidas.filter((s) => s.status !== 'publicado' && s.scheduled).map((s) => s.scheduled!).sort()[0]
   const previa = saidas.find((s) => s.previa)?.previa
   const sozinha = saidas.length === 1 ? saidas[0] : null
   return (
-    <div className={`cartao cartao--grupo ${selected ? 'is-sel' : ''} ${winner ? 'is-winner' : ''}`}>
+    <div className={`cartao cartao--grupo ${selected ? 'is-sel' : ''} ${winner ? 'is-winner' : ''} ${novo ? 'is-novo' : ''}`}>
       <Alcas /><BotaoChat id={id} />
+      {novo && <button type="button" className="selo-novo nodrag" onClick={(e) => { e.stopPropagation(); ver?.(saidas.map((x) => x.nome)) }}
+        title="Criada agora. Some quando você abre a copy. Clique para marcar como vista.">Novo</button>}
       <header><span className="cartao-tipo">{ICONE_GRUPO}</span><b>{titulo}</b>{winner && <Fogo />}<MarcaProduto tags={saidas.map((s) => s.tags)} /></header>
       {previa && <p className="cartao-previa">{previa}</p>}
       <div className="cartao-formatos">
@@ -186,7 +189,7 @@ const CardEntrada = memo(({ data, selected }: NodeProps<Node<DadosEntrada, 'entr
 // copy sem outras saídas: o mesmo card de produção, com uma nota só
 const CardProd = memo(({ id, data, selected }: NodeProps<Node<DadosProd, 'producao'>>) => data.prod.formato === VSL
   ? <CartaoVSL id={id} p={data.prod} selected={selected} />
-  : <CartaoProducao id={id} titulo={data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '')} saidas={[data.prod]} destaque={null} selected={selected} />)
+  : <CartaoProducao id={id} titulo={data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '')} saidas={[data.prod]} destaque={null} selected={selected} novo={data.novo} />)
 
 /** 📺 VSL: card à parte, um por roteiro (não se junta às produções curtas). */
 function CartaoVSL({ id, p, selected }: { id: string; p: Producao; selected?: boolean }) {
@@ -267,7 +270,7 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
   for (const p of est.producoes) {
     if (p.ideia && saidasDe.has(p.ideia)) continue   // está dentro do card da produção
     const id = `p:${p.raiz}/${p.nome}`
-    if (entra(id, casa(p))) add(id, { type: 'producao', data: { prod: p } }, -(p.scheduled ? Date.parse(p.scheduled) / 1000 : p.mtime))
+    if (entra(id, casa(p))) add(id, { type: 'producao', data: { prod: p, novo: novas.has(p.nome) } }, -(p.scheduled ? Date.parse(p.scheduled) / 1000 : p.mtime))
   }
   if (foco) { const r = itens.find((x) => x.id === v.slice(5)); if (r) r.ordem = -Infinity }   // o card do canvas próprio vem primeiro
 

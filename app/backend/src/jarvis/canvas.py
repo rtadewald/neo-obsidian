@@ -450,11 +450,13 @@ def marcar_vista(nomes: list[str]):
 
 
 def _novas(tudo: dict) -> list[str]:
-    """As novas que continuam novas: a ideia existe e ainda não tem produção (usar a ideia tira o selo sozinho)."""
+    """As novas que continuam novas: a 💡 ideia existe e ainda não tem produção (usar a ideia tira o selo sozinho);
+    a copy criada à mão (⌘⇧N, nova copy) fica nova até ser vista (aberta ou o selo clicado)."""
     usadas = {p.get("ideia") for p in tudo["producoes"]}
     ideias = {i["nome"] for i in tudo["ideias"]}
+    copias = {p["nome"] for p in tudo["producoes"]}
     lista = _json(NOVAS, [])
-    vivas = [n for n in lista if n in ideias and n not in usadas]
+    vivas = [n for n in lista if (n in ideias and n not in usadas) or n in copias]
     if len(vivas) != len(lista):
         _gravar_novas(vivas)
     return vivas

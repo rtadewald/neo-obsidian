@@ -10,16 +10,18 @@ import { Chat } from './Chat'
 import { EmBreve } from './EmBreve'
 import { Icone } from './Icone'
 import { Radar } from './Radar'
+import { Skills } from './Skills'
+import { NovoRapido, type TipoNovo } from './NovoRapido'
 import { Paleta } from './Paleta'
 import type { Raiz, Trecho } from './notas'
 import type { Sinal } from './api'
 
 // navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
 // ⌘P busca notas e abre no modal.
-const GRUPOS = [['Canvas', 'Calendário'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
+const GRUPOS = [['Canvas', 'Calendário', 'Skills'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
-  Canvas: 'grafo', Calendário: 'calendario', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
+  Canvas: 'grafo', Calendário: 'calendario', Skills: 'skills', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
 }
 /** Aba do radar de onde veio um sinal, pela fonte ou pelo link. */
 const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
@@ -46,6 +48,8 @@ export default function App() {
   const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
+  const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
+  const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
   const abrirNoCanvasDela = async (raiz: Raiz, nome: string) => {
     try {
@@ -126,6 +130,13 @@ export default function App() {
         e.preventDefault()
         setPaleta(true)
       }
+      // ⌘⇧I nova ideia, ⌘⇧N nova produção (no canvas aberto; fora dele, com seletor de canvas)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())) {
+        if (document.querySelector('.modal-fundo .modal-nota, .paleta-fundo')) return
+        e.preventDefault(); e.stopPropagation()
+        setNovo(e.key.toLowerCase() === 'i' ? 'ideia' : 'producao')
+        return
+      }
       // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
         e.preventDefault()
@@ -133,7 +144,7 @@ export default function App() {
       }
       // ⌘1…⌘7 trocam de aba, na ordem da navbar (com uma nota aberta, os números navegam entre as versões dela: ModalNota)
       const n = Number(e.key)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-nota')) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota')) {
         e.preventDefault()
         setPagina(NAV[n - 1])
       }
@@ -179,6 +190,7 @@ export default function App() {
               ? <Canvas key={canvasSlug} canvas={canvasSlug} onCaminho={setCaminhoCanvas} onTrocarCanvas={setCanvasSlug} mostrar={mostrar} onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
               : <Canvases onAbrir={setCanvasSlug} />)
             : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => abrirModal({ raiz, nome })} />
+            : pagina === 'Skills' ? <Skills versao={versao} onTrecho={mandarTrecho} onAbrirNota={(alvo) => abrirModal(alvo)} />
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Instagram' ? <Radar key="instagram" titulo="Instagram" fontes={['instagram']} foco={foco} onConversar={setFoco} ir={irSinal} />
             : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} foco={foco} onConversar={setFoco} ir={irSinal} />
@@ -207,6 +219,9 @@ export default function App() {
           trecho={trecho} limparTrecho={() => setTrecho(null)} pedido={pedido} onFim={() => setVersao((v) => v + 1)} />
       </main>
 
+      {novo && <NovoRapido tipo={novo} canvasAtual={canvasSlug} comSeletor={pagina !== 'Canvas' || !canvasSlug} onFechar={() => setNovo(null)}
+        onCriado={(c, msg) => { setNovo(null); if (pagina === 'Canvas' && canvasSlug === c) setMudou((n) => n + 1); setAvisoApp(msg); window.setTimeout(() => setAvisoApp((a) => (a === msg ? null : a)), 2600) }} />}
+      {avisoApp && <div className="ideias-aviso" role="status">{avisoApp}</div>}
       {paleta && <Paleta onFechar={() => setPaleta(false)}
         onAbrir={(raiz, nome) => { setPaleta(false); abrirNoCanvasDela(raiz, nome) }}
         onImportar={canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card

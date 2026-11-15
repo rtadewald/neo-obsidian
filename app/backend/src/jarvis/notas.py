@@ -14,6 +14,7 @@ devolve conflito em vez de sobrescrever.
 import json
 import os
 import re
+import unicodedata
 import tempfile
 import time
 from datetime import datetime
@@ -46,7 +47,19 @@ class Conflito(Exception):
     pass
 
 
+def _arquivo_skill(rel: str) -> Path | None:
+    """Um .md qualquer dentro de 3 Skills (ex.: `viral-hooks/references/guia.md`), sem sair da pasta nem entrar
+    em pastas escondidas."""
+    partes = rel.split("/")
+    if len(partes) < 2 or not rel.endswith(".md") or any(not x or x.startswith(".") or "\\" in x or "\x00" in x for x in partes):
+        return None
+    p = (SKILLS / rel).resolve()
+    return p if p.is_relative_to(SKILLS.resolve()) else None
+
+
 def _caminho(raiz: str, nome: str) -> Path | None:
+    if raiz == "skills" and "/" in nome:   # arquivo de apoio da skill (references/, exemplos…)
+        return _arquivo_skill(nome)
     if NOME_RUIM.search(nome):
         return None
     if raiz in TODAS:
@@ -117,6 +130,48 @@ def salvar(raiz: str, nome: str, texto: str, mtime: float | None) -> dict:
         raise Conflito(f"{p.name} mudou fora do app")
     _escrever(p, texto)
     return {"mtime": p.stat().st_mtime}
+
+
+def _categoria(texto: str) -> str:
+    m = re.match(r"^---\n(.*?)\n---", texto, flags=re.S)
+    c = re.search(r"^category:\s*(.+)$", m.group(1), flags=re.M) if m else None
+    return c.group(1).strip().strip('"\'') if c else "Outras"
+
+
+def _descricao(texto: str) -> str:
+    m = re.match(r"^---\n(.*?)\n---", texto, flags=re.S)
+    d = re.search(r"^description:\s*(.+)$", m.group(1), flags=re.M) if m else None
+    return d.group(1).strip().strip('"\'') if d else _previa(texto)
+
+
+def lista_skills() -> list[dict]:
+    """As skills de 3 Skills, em ordem alfabética: nome, descrição do frontmatter e os outros .md da pasta."""
+    out = []
+    for p in sorted(SKILLS.glob("*/SKILL.md"), key=lambda x: x.parent.name.lower()):
+        pasta = p.parent
+        try:
+            texto = p.read_text(encoding="utf-8", errors="replace")
+            outros = sorted(str(x.relative_to(SKILLS)) for x in pasta.rglob("*.md")
+                            if x != p and not any(y.startswith(".") for y in x.relative_to(pasta).parts))
+            out.append({"nome": pasta.name, "descricao": _descricao(texto), "categoria": _categoria(texto),
+                        "mtime": p.stat().st_mtime, "arquivos": outros})
+        except OSError:
+            pass
+    return out
+
+
+def criar_skill(nome: str, descricao: str = "", categoria: str = "Copywriting") -> dict:
+    """Pasta nova em 3 Skills com um SKILL.md no formato das outras (frontmatter name/description)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()).strip("-")
+    if not slug:
+        raise ValueError("Dê um nome à skill.")
+    pasta = SKILLS / slug
+    if pasta.exists():
+        raise FileExistsError(slug)
+    pasta.mkdir(parents=True)
+    desc = descricao.strip() or "Descreva aqui quando usar esta skill."
+    _escrever(pasta / "SKILL.md", f"---\nname: {slug}\ndescription: {desc}\ncategory: {categoria.strip() or 'Copywriting'}\n---\n\n# {nome.strip()}\n\n")
+    return {"raiz": "skills", "nome": slug}
 
 
 def criar(titulo: str) -> dict:
