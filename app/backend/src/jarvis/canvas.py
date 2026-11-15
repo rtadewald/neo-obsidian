@@ -189,6 +189,30 @@ def lista_produtos() -> list[dict]:
     return _json(PRODUTOS, [])
 
 
+CORES_PRODUTO = ["#e0a32e", "#5b8def", "#e0679f", "#3fae7a", "#9b6be0", "#e2683c", "#2bb0c0", "#8a8f98"]
+
+
+@_travado
+def novo_produto(nome: str, icone: str = "") -> dict:
+    """Cadastra um produto em produtos.json. A tag dele segue o padrão das outras: ícone + nome em minúsculas, sem
+    espaço (ex.: 🎓 Dados → 🎓dados). Devolve o produto criado."""
+    nome = nome.strip()
+    if not nome:
+        raise ValueError("Dê um nome ao produto.")
+    lista = lista_produtos()
+    slug = _slug(nome)
+    if any(p["slug"] == slug or p["nome"].lower() == nome.lower() for p in lista):
+        raise ValueError(f"Já existe um produto {nome}.")
+    icone = icone.strip()
+    tag = f"{icone}{re.sub(r'[^a-z0-9]+', '', slug)}"
+    usadas = {p.get("cor") for p in lista}
+    cor = next((c for c in CORES_PRODUTO if c not in usadas), CORES_PRODUTO[len(lista) % len(CORES_PRODUTO)])
+    p = {"slug": slug, "nome": nome, "icone": icone, "tags": [tag], "cor": cor}
+    PRODUTOS.parent.mkdir(parents=True, exist_ok=True)
+    PRODUTOS.write_text(json.dumps([*lista, p], ensure_ascii=False, indent=1), encoding="utf-8")
+    return p
+
+
 def canvas_info(slug: str | None = None) -> dict:
     slug = slug or _atual.get()
     if slug == "todos":

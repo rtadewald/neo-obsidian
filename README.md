@@ -6,8 +6,8 @@
 
 **Suas notas do Obsidian num canvas. Da ideia ao post publicado.**
 
-Um app local por cima do vault, onde cada ideia vira um card e cada card agrupa<br>
-todas as versões dela: Reels, anúncio, carrossel, VSL. Com o Claude no chat ao lado.
+Um app local que roda por cima do seu vault: cada ideia vira um card, cada card junta<br>
+todas as versões dela (Reels, anúncio, carrossel, VSL) e o Claude trabalha no chat ao lado.
 
 <br>
 
@@ -19,20 +19,39 @@ todas as versões dela: Reels, anúncio, carrossel, VSL. Com o Claude no chat ao
 ![Obsidian](https://img.shields.io/badge/obsidian-vault%20local-7c3aed?style=flat-square&logo=obsidian&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/feito%20com-Claude%20Code-d97757?style=flat-square)
 
+<br>
+
+<img src="docs/prints/canvas.jpg" alt="Um canvas do Neo-Obsidian: cards de ideias e produções, as pastas dos canvas à esquerda e as pastas de status embaixo">
+
 </div>
 
 <br>
 
-## Por quê
+## O problema
 
-O Obsidian é ótimo para escrever e péssimo para enxergar o funil. Uma ideia de conteúdo vira um Reels, depois um anúncio, depois um carrossel. São notas soltas em pastas diferentes, e ninguém lembra mais qual saiu de qual, o que está agendado e o que ficou parado em edição.
+Quem produz conteúdo todo dia no Obsidian conhece a cena. Uma ideia boa aparece. Ela vira um roteiro de Reels. O Reels funciona, então vira um anúncio. O anúncio vira uma landing page, um carrossel, um trecho de VSL. Cada versão é uma nota, e cada nota mora numa pasta diferente.
 
-O Neo-Obsidian não substitui o vault: **ele lê e escreve os mesmos arquivos `.md`**. Por cima deles, monta um canvas onde a ideia é o centro e as produções se penduram nela. Você abre o Obsidian e está tudo lá, do mesmo jeito. Abre o app e enxerga o mapa.
+Duas semanas depois ninguém lembra:
 
-## Como funciona
+- qual anúncio saiu de qual Reels;
+- o que já foi publicado e o que ficou parado em edição;
+- quais ideias ainda nem viraram nada.
+
+O Obsidian é ótimo para **escrever** uma nota. Ele não foi feito para **enxergar o funil** de produção: as notas são uma lista de arquivos, as ligações viram um grafo bonito mas inútil para decidir o que gravar amanhã, e o Canvas nativo é um quadro que você tem que montar e manter à mão.
+
+## A solução
+
+O Neo-Obsidian **não substitui o vault**. Ele lê e escreve os mesmos arquivos `.md`, do mesmo jeito que você já usa. Se fechar o app e abrir o Obsidian, está tudo lá, sem nenhum formato novo.
+
+O que ele faz é montar, a partir dessas notas, a vista que falta:
+
+- **A ideia é o centro.** Toda copy que tem `ideia: "[[💡 Nome]]"` no frontmatter se pendura no card daquela ideia. Um clique e você vê o Reels, o anúncio e a LP lado a lado, cada um com seu status.
+- **O status é o do vault.** A pasta e o emoji no nome do arquivo dizem onde a copy está (Priorizar, em edição, 🔹 agendada, ✅ publicada). Mudar o status no app move e renomeia o arquivo, e os `[[links]]` acompanham.
+- **O canvas se monta sozinho.** Você não arrasta nada para começar: as notas com `grupo:` aparecem no canvas daquele tema já agrupadas. Arrastar só serve para organizar do seu jeito, e a posição fica guardada.
+- **O Claude está do lado, dentro do vault.** O chat (o Jarvis) é uma sessão do Claude Code rodando no seu vault, com o seu `CLAUDE.md` e as suas skills. Ele escreve a próxima versão direto na nota, cria ideias, move cards e mostra coisas na sua tela.
 
 ```
- link, vídeo, texto ─▶ 💡 ideia ─▶ 🎬 produções (uma por formato)
+ link, vídeo, texto ─▶ 💡 ideia ─▶ 🎬 versões (uma por formato)
                           │          📱 Reels · 💰 Ad · 🏞️ Carrossel · 📺 VSL
                           │                │
                           │                ▼  status = pasta + emoji no nome
@@ -41,29 +60,71 @@ O Neo-Obsidian não substitui o vault: **ele lê e escreve os mesmos arquivos `.
                 radar (X, GitHub, Hugging Face, HN) ─▶ 👍 / 👎 ─▶ vira 💡 ideia
 ```
 
-1. **A ideia chega.** Cole um link ou texto no canvas, ou mande um card do radar: vira uma 💡 ideia em `1 Copies/0 Ideias`, já com o material dentro (a transcrição do YouTube, o texto da página, o post do X).
-2. **As produções se agrupam.** Cada copy com `ideia: "[[💡 Nome]]"` no frontmatter entra no card daquela ideia. O card mostra um chip por formato e abre sempre no Reels.
-3. **O status é o do vault.** A pasta e o emoji no nome dizem onde a copy está (Priorizar, em edição, agendada, publicada). Mudar no app move e renomeia o arquivo, e os `[[links]]` acompanham.
-4. **O Claude trabalha junto.** O chat da direita é uma sessão do Claude Code rodando dentro do vault, com as skills de copy. Mande uma nota ou um trecho (`⌘I`) e peça a próxima versão: ele escreve direto na nota.
+## Um passeio pelo app
 
-## Recursos
+### Os canvas
 
-- **Canvas por tema** (React Flow): cada nota vive num canvas (Skills, Hacks e Dicas…, pela propriedade `grupo`), com cards de ideia, de produção e de VSL e ligações entre eles. Nota sem canvas fica no 📥 Inbox.
-- **Desenho livre** com o Excalidraw de verdade por baixo dos cards (mesmo pan/zoom): retângulos, setas, texto, lápis, cores e os atalhos dele. Aperte R, O, A, P, T… no canvas para desenhar; Esc sai.
-- **Produtos** (FIA, FID, Dados, PICO) são as tags da nota: dentro do canvas viram filtro e uma bolinha colorida no card.
-- **O que já saiu, some do Inbox.** Uma produção publicada sem canvas vai para a pasta Publicado; num canvas temático ela fica.
-- **Pastas** (Em edição, Agendado, Publicado) abrem uma **tabela** com estatísticas, filtros por formato, ano e canvas, barras por mês e ordenação. Clique numa linha para abrir a copy, e o "voltar" retorna à tabela.
-- **Modal de nota estilo Notion:** uma aba por versão da mesma ideia, **+ Saída** para criar o próximo formato, renomear no título, "Mostrar no canvas", lixeira com confirmação (`⌘⌫`).
-- **Editor como o do Obsidian** (CodeMirror 6, live preview): títulos, negrito, callouts, tarefas e `[[wikilinks]]` formatados, com as marcas aparecendo só na linha do cursor. Salva sozinho e avisa se o arquivo mudou no Obsidian em vez de sobrescrever.
-- **Propriedades editáveis no card:** o frontmatter vira uma tabela como a do Obsidian. Tags em chips, datas com calendário, `publicado` em caixinha, + Adicionar propriedade. Cada mudança reescreve só a linha daquela chave.
-- **Radar:** X, GitHub Trending, Hugging Face e Hacker News em cards. 👍 ensina o ranking e guarda em **Curtidos**, 👎 tira do feed e ensina o contrário. 💡 transforma o card em ideia no canvas, e "Perguntar ao Jarvis" leva para o chat. Vídeos do X tocam no próprio card.
-- **Calendário editorial** pelo `scheduled` (arraste para reagendar) e **Agendamento** com os posts do Instagram via Metricool.
-- **Busca rápida** `⌘P` em ideias, copies e skills, no estilo do quick switcher do Obsidian.
-- **Jarvis usa o app:** o chat cria e liga notas, move cards, arquiva, abre canvas e mostra cards na sua tela, pelas mesmas rotas que a interface usa.
+<img src="docs/prints/inicio.jpg" alt="Página inicial: uma pasta por canvas, com quantas produções, VSLs e ideias cada uma tem">
+
+Um **canvas** é um tema de trabalho (Reels de um produto, uma campanha, uma Black Friday). Cada nota vive em um canvas pela propriedade `grupo:`. A página inicial mostra uma pasta por canvas com a contagem de produções, VSLs e ideias. Botão direito numa pasta renomeia, troca a cor ou o ícone, arquiva ou exclui; arrastar muda a ordem.
+
+Dentro de um canvas, as pastas de todos os canvas ficam na esquerda para você trocar de um para outro sem voltar ao início.
+
+### O canvas por dentro
+
+- **Cards de ideia** (💡), de **produção** (o grupo das versões, com um chip por formato) e de **VSL**.
+- **Produtos** (FIA, FID, PICO…) são as tags da nota. No canvas eles viram filtro e uma bolinha colorida no card. Botão direito num card → **Produto ›** marca ou desmarca, e **＋ Novo produto** cadastra um produto novo ali mesmo (`🎓 Nome` usa o emoji como ícone).
+- **Pastas de status** embaixo (Em edição, Agendado, Publicado) abrem uma tabela com aquelas copies.
+- **Desenho livre:** um Excalidraw de verdade por baixo dos cards, com o mesmo zoom e posição. Bom para riscar setas, agrupar à mão, anotar.
+- **Cole um link ou texto** no canvas e ele vira uma 💡 ideia com o material dentro (a transcrição do YouTube, o texto da página, o post do X).
+
+### A nota
+
+<img src="docs/prints/nota.jpg" alt="Nota aberta: abas com cada versão da mesma ideia, propriedades editáveis, o texto e o sumário à direita">
+
+Clicar num card abre a nota por cima do canvas, no jeito do Notion:
+
+- **Uma aba por versão** da mesma ideia. **＋ Saída** cria o próximo formato e pede ao Jarvis para escrevê-lo.
+- **Propriedades editáveis** como no Obsidian: tags em chips, datas com calendário, `publicado` em caixinha. Cada mudança reescreve só a linha daquela chave.
+- **Editor como o do Obsidian** (CodeMirror 6, live preview): títulos, negrito, callouts, tarefas e `[[wikilinks]]` formatados, com as marcas aparecendo só na linha do cursor. Salva sozinho e, se o arquivo mudou no Obsidian, avisa em vez de sobrescrever.
+- **Sumário** dos títulos na direita, para pular para um bloco.
+- Arraste uma borda para mudar o tamanho da nota; duplo clique volta ao padrão.
+
+### As tabelas
+
+<img src="docs/prints/tabela.jpg" alt="Tabela das copies publicadas: números do período, barras por mês, filtros por formato, ano e canvas">
+
+As pastas de status abrem uma tabela com os números do período, barras por mês, filtros por formato, ano e canvas, busca no texto e ordenação. Clique numa linha para abrir a copy; o "voltar" da nota retorna para a tabela.
+
+### O resto
+
+- **Jarvis (⌘J):** o chat do Claude. Clique no balão de um card ou aperte `⌘I` numa nota para mandar a nota (ou o trecho selecionado) como contexto. Também dá para **ditar**: o 🎤 do campo (ou `⌘⇧D`) transcreve a sua voz em pt-BR enquanto você fala.
+- **Radar (X e Sites):** posts do X, GitHub Trending, Hugging Face e Hacker News em cards. 👍 ensina o ranking, 👎 tira do feed, 💡 transforma o card em ideia no canvas.
+- **Calendário** pelo `scheduled` das copies (arraste para reagendar) e **Agendamento** com os posts do Instagram via Metricool.
+- **Busca rápida (⌘P ou ⌘O):** começa pelas últimas notas que você abriu. Escolher uma leva você para o canvas dela (se ela estiver num canvas ativo) antes de abrir.
+
+## Atalhos
+
+| Atalho | O quê |
+|---|---|
+| `⌘P` / `⌘O` | Buscar e abrir qualquer nota (as últimas abertas aparecem primeiro) |
+| `⌘1` … `⌘7` | Trocar de página (Canvas, Calendário, X…) |
+| `⌘1` com uma nota aberta | Ir para a 💡 ideia da nota |
+| `⌘2`, `⌘3`… com uma nota aberta | Ir para a 1ª, 2ª… versão da ideia (as abas de cima) |
+| `⌘J` | Mostrar ou esconder o Jarvis |
+| `⌘I` | Mandar a nota (ou o trecho selecionado) ao Jarvis |
+| `⌘⇧D` | Ditar a mensagem no chat |
+| `⌘S` | Salvar agora (ele já salva sozinho 1 s depois de você parar de digitar) |
+| `⌘⌫` | Mandar a nota aberta para a lixeira do vault (com confirmação) |
+| `⌘` + clique | Abrir um `[[link]]` |
+| `W` | Modo de trabalho: esconde a barra de cima e a de baixo, o Jarvis ocupa a altura toda |
+| `F` | Modo foco |
+| `E` | Liga e desliga o desenho livre |
+| botão direito no canvas | Nova ideia, colar como ideia, nova copy; num card: Mover para ›, Produto ›, winner 🔥 |
 
 ## Instalação
 
-**Requisitos:** macOS, [uv](https://docs.astral.sh/uv/) com Python 3.12+, Node 20+, um vault do [Obsidian](https://obsidian.md/) e o [Claude Code](https://claude.com/claude-code) logado (o chat usa a assinatura, não uma chave de API).
+**Você precisa de:** macOS, [uv](https://docs.astral.sh/uv/) com Python 3.12+, Node 20+, um vault do [Obsidian](https://obsidian.md/) e o [Claude Code](https://claude.com/claude-code) logado. O chat usa a sua assinatura do Claude, não uma chave de API.
 
 ```bash
 git clone https://github.com/rtadewald/neo-obsidian.git
@@ -88,21 +149,9 @@ O `neo-obsidian` sobe a API (porta 8740) e o front (porta 5180) e abre o navegad
 | `neo-obsidian parar` | Derruba o que estiver rodando nas portas do app |
 | `neo-obsidian abrir` | Só abre o navegador |
 
-O app espera a estrutura de pastas do vault em `1 Copies/` (`0 Ideias`, `1 Priorizar`, `2 Publicados`) e as skills em `3 Skills/<nome>/SKILL.md`.
+**O que o app espera do vault:** as copies em `1 Copies/` (`0 Ideias`, `1 Priorizar`, `2 Publicados`) e as skills em `3 Skills/<nome>/SKILL.md`. As propriedades que ele usa são `ideia`, `grupo`, `tags`, `scheduled` e `publicado`, todas comuns de frontmatter: se você parar de usar o app, elas continuam fazendo sentido no Obsidian.
 
-## Usar
-
-| Atalho | O quê |
-|---|---|
-| `⌘P` | Buscar e abrir qualquer nota |
-| `⌘I` | Mandar a nota (ou o trecho selecionado) ao chat |
-| `⌘S` | Salvar agora (ele já salva sozinho depois de 1 s) |
-| `⌘⌫` | Mandar a nota aberta para a lixeira (com confirmação) |
-| `⌘` + clique | Abrir um `[[link]]` |
-| botão direito no canvas | Nova ideia, colar como ideia, nova copy; num card: Mover para › e Produto › |
-| `F` · `←` `→` · `R` | No radar: modo foco, anterior/próximo, embaralhar |
-
-## Estrutura
+## Como é feito
 
 ```
 app/
@@ -114,23 +163,21 @@ app/
     agente.py           o chat: uma sessão do Claude Code dentro do vault
     radar.py · preferencias.py · coletores/   o radar e o ranking pelos seus votos
     metricool.py · anuncios.py               posts, agendados e Meta Ads (leitura)
-    youtube.py          transcrição pela legenda
   frontend/src/         Vite + React 19 + React Flow 12 + CodeMirror 6
-    Canvas.tsx          o canvas: cards, caixas, pastas, menu
-    Tabela.tsx          a tabela das pastas e das caixas
-    ModalNota.tsx       o modal com as abas por versão
-    Editor.tsx · livePreview.ts · propriedades.ts   o editor no jeito do Obsidian
-    Radar.tsx           X e Sites
-    Chat.tsx · Paleta.tsx · CalendarioEditorial.tsx · Calendario.tsx
-  dados/                SQLite do radar, posições do canvas, miniaturas (fora do git)
+    Canvas.tsx · Canvases.tsx   o canvas e a página inicial
+    ModalNota.tsx · Editor.tsx · livePreview.ts · propriedades.ts · Sumario.tsx   a nota
+    Tabela.tsx · Radar.tsx · Chat.tsx · Paleta.tsx · CalendarioEditorial.tsx
+  dados/                SQLite do radar, posições do canvas, produtos, miniaturas (fora do git)
 specs.md                decisões e escopo
 ```
+
+Tudo roda na sua máquina. O app só fala com o seu vault, com o Claude Code (pela sua conta) e, se você usar, com o Metricool e as fontes públicas do radar.
 
 ## Próximos passos
 
 - [x] Ideia e entrada viraram uma coisa só: tudo é 💡 ideia.
 - [x] Propriedades editáveis no card, como no Obsidian.
-- [ ] Instagram no radar, com uma conta dedicada.
+- [x] Ditado no chat.
 - [ ] Retreinar o ranking do radar a partir dos Curtidos.
 - [ ] Caminho do vault configurável pela interface.
 

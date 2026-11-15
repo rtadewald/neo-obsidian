@@ -405,6 +405,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [moverAberto, setMoverAberto] = useState(false)   // submenu "Mover para ›" do botão direito (abre ao lado, no hover)
   const [moverLado, setMoverLado] = useState<'dir' | 'esq'>('dir')
   const [produtoAberto, setProdutoAberto] = useState(false)   // submenu "Produto ›"
+  const [novoProduto, setNovoProduto] = useState<string | null>(null)   // "＋ Novo produto": o campo aberto no submenu
   useEffect(() => { setProdutoAberto(false); if (menu) listarCanvases().then(setTodosCanvas).catch(() => {}) }, [menu])
   useEffect(() => setMoverAberto(false), [menu])
   const [pergunta, setPergunta] = useState<Pergunta | null>(null)
@@ -611,6 +612,19 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     const marcar = (p: Produto, sim: boolean) => tentar(async () => {
       await post('produto', { notas: notasTodas.map((x) => x.nome), produto: p.slug, sim })
     }, `${n > 1 ? `${n} cards: ` : ''}${sim ? `agora são de ${p.nome}` : `saíram de ${p.nome}`}`)
+    // novo produto: "🎓 Dados" → ícone 🎓, nome Dados (o emoji do começo é opcional); cadastra e já marca os cards
+    const criarProduto = (txt: string) => {
+      const m = /^\s*((?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\u200d|\ufe0f)+)\s*(.*)$/u.exec(txt)
+      const icone = m ? m[1] : '', nome = (m ? m[2] : txt).trim()
+      if (!nome) { setNovoProduto(null); return }
+      setNovoProduto(null)
+      tentar(async () => {
+        const r = await fetch('/api/produtos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, icone }) })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.detail || 'Não consegui criar o produto.')
+        await post('produto', { notas: notasTodas.map((x) => x.nome), produto: d.slug, sim: true })
+      }, `Produto ${icone ? icone + ' ' : ''}${nome} criado${n ? ` e marcado em ${n > 1 ? `${n} cards` : 'este card'}` : ''}`)
+    }
     return (
       <div className="menu-sub-caixa" onMouseEnter={(e) => abreAoLado(e, setProdutoAberto)} onMouseLeave={() => setProdutoAberto(false)}>
         <button role="menuitem" className={`menu-sub ${produtoAberto ? 'is-aberto' : ''}`} onClick={() => setProdutoAberto((v) => !v)}>
@@ -624,6 +638,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <i className={`menu-caixinha ${on || parte ? 'is-on' : ''}`} style={on || parte ? { background: p.cor, borderColor: p.cor } : undefined}>{on ? '✓' : parte ? '–' : ''}</i>{p.icone} {p.nome}
               {parte && <em className="menu-parte">{dentro}/{n}</em>}</button>
           })}
+          <hr />
+          {novoProduto === null
+            ? <button role="menuitem" className="menu-check" onClick={() => setNovoProduto('')} title="Cadastrar um produto novo e já marcar os cards com ele">
+                <i className="menu-caixinha menu-caixinha--mais">＋</i>Novo produto</button>
+            : <form className="menu-novo-produto" onSubmit={(e) => { e.preventDefault(); criarProduto(novoProduto) }}>
+                <input autoFocus value={novoProduto} onChange={(e) => setNovoProduto(e.target.value)} placeholder="🎓 Nome do produto"
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setNovoProduto(null) } }} aria-label="Nome do novo produto" />
+              </form>}
         </div>}
       </div>
     )

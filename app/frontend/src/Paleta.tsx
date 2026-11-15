@@ -8,6 +8,13 @@ const chave = (r: Raiz, n: string) => `${r}/${n}`
 
 type Entrada = { nome: string; raiz: Raiz; mtime: number }
 
+/** Últimas notas abertas (a mais recente primeiro), guardadas no navegador: com a busca vazia, a ⌘P/⌘O começa por elas. */
+const RECENTES = 'notas-recentes'
+const lerRecentes = (): string[] => { try { const v = JSON.parse(localStorage.getItem(RECENTES) || '[]'); return Array.isArray(v) ? v : [] } catch { return [] } }
+export function lembrarAberta(raiz: Raiz, nome: string) {
+  try { const k = chave(raiz, nome); localStorage.setItem(RECENTES, JSON.stringify([k, ...lerRecentes().filter((x) => x !== k)].slice(0, 60))) } catch { /* sem storage */ }
+}
+
 /** Pontua como o quick switcher do Obsidian: trecho contínuo vale mais, letras em sequência valem menos. */
 const sem = (s: string) => [...s].map((c) => c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').charAt(0) || c).join('')
 
@@ -48,7 +55,13 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
 
   const res = useMemo(() => {
     const peso: Record<Raiz, number> = { ideias: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
-    if (!q.trim()) return [...idx].filter((e) => e.raiz !== 'publicados').sort((a, b) => b.mtime - a.mtime).slice(0, 30).map((e) => ({ e, marcas: [] as number[] }))
+    if (!q.trim()) {   // busca vazia: as últimas abertas primeiro, depois as editadas mais recentemente
+      const porChave = new Map(idx.map((e) => [chave(e.raiz, e.nome), e]))
+      const recentes = lerRecentes().map((k) => porChave.get(k)).filter((e): e is Entrada => !!e)
+      const vistas = new Set(recentes.map((e) => chave(e.raiz, e.nome)))
+      const resto = [...idx].filter((e) => e.raiz !== 'publicados' && !vistas.has(chave(e.raiz, e.nome))).sort((a, b) => b.mtime - a.mtime)
+      return [...recentes, ...resto].slice(0, 30).map((e) => ({ e, marcas: [] as number[] }))
+    }
     return idx.map((e) => ({ e, m: casar(q.trim(), e.nome) })).filter((x) => x.m)
       .sort((a, b) => (b.m!.p + peso[b.e.raiz]) - (a.m!.p + peso[a.e.raiz])).slice(0, 40).map((x) => ({ e: x.e, marcas: x.m!.marcas }))
   }, [q, idx])

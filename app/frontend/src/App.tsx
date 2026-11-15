@@ -3,7 +3,7 @@ import { Calendario } from './Calendario'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { Canvas, type Passo } from './Canvas'
 import { Canvases, preCarregarCanvases } from './Canvases'
-import { INBOX, cabecalhoCanvas, listarCanvases, onde, usarCanvas } from './canvasApi'
+import { INBOX, cabecalhoCanvas, carregarTudo, listarCanvases, onde, usarCanvas } from './canvasApi'
 import { ModalNota } from './ModalNota'
 import type { Alvo, Voltar } from './canvasApi'
 import { Chat } from './Chat'
@@ -11,7 +11,7 @@ import { EmBreve } from './EmBreve'
 import { Icone } from './Icone'
 import { Radar } from './Radar'
 import { Paleta } from './Paleta'
-import type { Trecho } from './notas'
+import type { Raiz, Trecho } from './notas'
 import type { Sinal } from './api'
 
 // navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
@@ -46,6 +46,16 @@ export default function App() {
   const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
+  // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
+  const abrirNoCanvasDela = async (raiz: Raiz, nome: string) => {
+    try {
+      const [tudo, lista] = await Promise.all([carregarTudo(), listarCanvases()])
+      const nota = [...tudo.ideias, ...tudo.producoes, ...tudo.entradas].find((x) => x.nome === nome) as { canvas?: string | null } | undefined
+      const c = nota?.canvas ? lista.find((k) => k.nome === nota.canvas && !k.arquivado && k.slug !== INBOX) : undefined
+      if (c && c.slug !== canvasSlug) { usarCanvas(c.slug); setCanvasSlug(c.slug); setPagina('Canvas') }
+    } catch { /* sem a lista, abre no canvas atual */ }
+    setModal({ raiz, nome })
+  }
   const [caminhoCanvas, setCaminhoCanvas] = useState<Passo[]>([])   // o que o canvas aberto conta ao breadcrumb
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
   // sinal em conversa no chat: sobrevive a recarregar a página
@@ -121,9 +131,9 @@ export default function App() {
         e.preventDefault()
         setChat((c) => !c)
       }
-      // ⌘1…⌘7 trocam de aba, na ordem da navbar
+      // ⌘1…⌘7 trocam de aba, na ordem da navbar (com uma nota aberta, os números navegam entre as versões dela: ModalNota)
       const n = Number(e.key)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && n >= 1 && n <= NAV.length) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-nota')) {
         e.preventDefault()
         setPagina(NAV[n - 1])
       }
@@ -198,7 +208,7 @@ export default function App() {
       </main>
 
       {paleta && <Paleta onFechar={() => setPaleta(false)}
-        onAbrir={(raiz, nome) => { setPaleta(false); setModal({ raiz, nome }) }}
+        onAbrir={(raiz, nome) => { setPaleta(false); abrirNoCanvasDela(raiz, nome) }}
         onImportar={canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card
           setPaleta(false)
           fetch('/api/canvas/importar', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify({ nome }) })

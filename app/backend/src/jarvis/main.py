@@ -362,6 +362,16 @@ def produtos():
     return canvas.lista_produtos()
 
 
+class NovoProduto(BaseModel):
+    nome: str
+    icone: str = ""
+
+
+@app.post("/api/produtos")
+def produto_novo(corpo: NovoProduto):
+    return _erros(lambda: canvas.novo_produto(corpo.nome, corpo.icone))
+
+
 class NovoCanvas(BaseModel):
     slug: str | None = None
     nome: str | None = None

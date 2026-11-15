@@ -1,3 +1,4 @@
+import { lembrarAberta } from './Paleta'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EditorView } from '@codemirror/view'
@@ -47,6 +48,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   const recarregar = useCallback(() => carregarCanvas().then(setEst).catch(() => {}), [])
   useEffect(() => { recarregar() }, [recarregar, versao])
   useEffect(() => setAtiva(alvo), [alvo])
+  useEffect(() => { if (ativa.raiz !== 'entradas') lembrarAberta(ativa.raiz, ativa.nome) }, [ativa])   // entra nas últimas abertas da ⌘P
 
   // o grupo: a ideia da nota ativa e todas as saídas dela
   const grupo = useMemo(() => {
@@ -67,7 +69,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
 
-  // ⌘1…⌘9 vai para a 1ª…9ª saída da produção (as tabs de cima); ⌘0 volta para a 💡 ideia. Vale também com o cursor no editor.
+  // ⌘1 vai para a 💡 ideia e ⌘2…⌘9 para os filhos dela (as saídas, na ordem das tabs). Vale também com o cursor no editor.
   const navRef = useRef(grupo)
   navRef.current = grupo
   useEffect(() => {
@@ -75,8 +77,13 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || !/^[0-9]$/.test(e.key)) return
       const g = navRef.current
       if (!g) return
+      // a ordem é a da ideia: ⌘1 = a 💡 ideia original, ⌘2, ⌘3… = os filhos (as saídas, na ordem das tabs); ⌘0 também volta à ideia
+      const lista: Alvo[] = [
+        ...(g.ideia ? [{ raiz: 'ideias' as Raiz, nome: g.ideia.nome }] : []),
+        ...g.saidas.map((p) => ({ raiz: p.raiz as Raiz, nome: p.nome })),
+      ]
       const n = Number(e.key)
-      const destino = n === 0 ? (g.ideia ? { raiz: 'ideias' as Raiz, nome: g.ideia.nome } : null) : g.saidas[n - 1] ? { raiz: g.saidas[n - 1].raiz as Raiz, nome: g.saidas[n - 1].nome } : null
+      const destino = n === 0 ? (g.ideia ? lista[0] : null) : lista[n - 1] ?? null
       e.preventDefault(); e.stopPropagation()
       if (destino) setAtiva(destino)
     }
