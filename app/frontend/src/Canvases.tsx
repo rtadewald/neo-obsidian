@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { INBOX, listarCanvases, moverNaLista, ordenarCanvases, type Produto, type ResumoCanvas } from './canvasApi'
+import { INBOX, listarCanvases, moverNaLista, ordenarCanvases, type ResumoCanvas } from './canvasApi'
 
-/** Página inicial: os canvas (onde as notas vivem: o `grupo:` delas) e o 📥 Inbox (as notas sem canvas).
- *  Cada card mostra quantas copies de cada produto (FIA, FID…) vivem ali: produto é filtro, não lugar. */
+/** Página inicial: os canvas (onde as notas vivem: o `grupo:` delas). O 📥 Inbox (notas sem canvas) não aparece como pasta.
+ *  Cada card mostra produções, VSLs e ideias; produto é filtro dentro do canvas, não lugar. */
 let ultimaLista: ResumoCanvas[] | null = null
-let ultimosProdutos: Produto[] = []
 /** Busca a lista já ao abrir o app: o clique em NEO-OBSIDIAN mostra a página na hora. */
 export const preCarregarCanvases = () => {
   listarCanvases().then((l) => { ultimaLista = l }).catch(() => {})
-  fetch('/api/produtos').then((r) => r.json()).then((p) => { ultimosProdutos = p }).catch(() => {})
 }
 
 /** Cores para escolher (as mesmas que o backend sorteia ao criar) + qualquer outra pelo seletor do sistema. */
@@ -35,7 +33,6 @@ async function salvar(corpo: Record<string, string | boolean>) {
 export function Canvases({ onAbrir }: { onAbrir: (slug: string) => void }) {
   // mostra na hora a última lista conhecida e atualiza por trás (as contagens leem o vault inteiro)
   const [lista, setLista] = useState<ResumoCanvas[] | null>(ultimaLista)
-  const [produtos, setProdutos] = useState<Produto[]>(ultimosProdutos)
   const [novo, setNovo] = useState(false)
   const [corNovo, setCorNovo] = useState(CORES[0])
   const [erro, setErro] = useState('')
@@ -54,7 +51,6 @@ export function Canvases({ onAbrir }: { onAbrir: (slug: string) => void }) {
   const carregar = () => listarCanvases().then((l) => { ultimaLista = l; setLista(l) }).catch(() => setErro('Não consegui ler os canvas.'))
   useEffect(() => {
     carregar()
-    fetch('/api/produtos').then((r) => r.json()).then((p) => { ultimosProdutos = p; setProdutos(p) }).catch(() => {})
   }, [])
 
   async function criar(e: React.FormEvent<HTMLFormElement>) {
@@ -84,15 +80,11 @@ export function Canvases({ onAbrir }: { onAbrir: (slug: string) => void }) {
           <span className="pastao-numeros">
             <span><b>{c.producoes}</b> produções</span><span><b>{c.vsls}</b> VSLs</span><span><b>{c.ideias}</b> ideias</span>
           </span>
-          <span className="pastao-tags">
-            {produtos.filter((p) => c.produtos?.[p.slug]).map((p) => <i key={p.slug} title={`${c.produtos[p.slug]} copies de ${p.nome}`}><b style={{ background: p.cor }} />{p.nome} {c.produtos[p.slug]}</i>)}
-            {c.slug === INBOX && <em>notas sem canvas</em>}
-          </span>
         </span>
       </button>
     </div>
   )
-  const ativos = lista?.filter((c) => !c.arquivado) ?? []
+  const ativos = lista?.filter((c) => !c.arquivado && c.slug !== INBOX) ?? []   // o Inbox não aparece como pasta
   const arquivados = lista?.filter((c) => c.arquivado) ?? []
 
   return (
@@ -143,6 +135,9 @@ export function MenuDoCanvas({ m, onFechar, onMudou, onExcluido }: {
   const [etapa, setEtapa] = useState<'menu' | 'renomear' | 'excluir'>('menu')
   const [corAberta, setCorAberta] = useState<false | 'dir' | 'esq'>(false)   // caixinha de cores ao lado (hover)
   const [cor, setCor] = useState(m.c.cor)
+  const [iconeAberto, setIconeAberto] = useState<false | 'dir' | 'esq'>(false)   // caixinha de ícones ao lado (hover)
+  const [icone, setIcone] = useState(m.c.icone)
+  const trocarIcone = (i: string) => { setIcone(i); tentar(() => salvar({ slug: m.c.slug, icone: i }), false) }
   const [erro, setErro] = useState('')
   const caixa = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x: m.x, y: m.y })
@@ -208,10 +203,81 @@ export function MenuDoCanvas({ m, onFechar, onMudou, onExcluido }: {
           <EscolherCor cor={cor} onCor={(c) => { setCor(c); tentar(() => salvar({ slug: m.c.slug, cor: c }), false) }} />
         </div>}
       </div>
+      <div className="menu-sub-caixa" onMouseLeave={() => setIconeAberto(false)}
+        onMouseEnter={(e) => setIconeAberto(e.currentTarget.getBoundingClientRect().right + 280 > window.innerWidth ? 'esq' : 'dir')}>
+        <button role="menuitem" className={`menu-sub ${iconeAberto ? 'is-aberto' : ''}`} onClick={() => setIconeAberto((v) => (v ? false : 'dir'))}>
+          <span className="menu-emoji">{icone !== '🗂️' ? icone : '🙂'}</span>Ícone<span className="menu-seta">›</span></button>
+        {iconeAberto && <div className={`menu-lateral menu-icones is-${iconeAberto}`} role="menu">
+          <EscolherIcone icone={icone} onIcone={trocarIcone} />
+        </div>}
+      </div>
       <button role="menuitem" onClick={() => tentar(() => salvar({ slug: m.c.slug, arquivado: !m.c.arquivado }))}>
         <span className="menu-emoji">{m.c.arquivado ? '📤' : '🗄️'}</span>{m.c.arquivado ? 'Reativar' : 'Arquivar'}</button>
       <hr />
       <button role="menuitem" className="is-perigo" onClick={() => setEtapa('excluir')}><span className="menu-emoji">🗑️</span>Excluir</button>
       {erro && <p className="menu-aviso is-erro">{erro}</p>}
     </div>, document.body)
+}
+
+/** Ícone que aparece dentro da pastinha: busca por palavra (em português), grade com os resultados e "sem ícone".
+ *  Colar ou digitar um emoji direto também vale (Enter usa o que estiver no campo). */
+const EMOJIS: [string, string][] = [
+  ['🤖', 'robo ia agente bot automacao'], ['🧠', 'cerebro mente ia pensar ideia'], ['💡', 'ideia lampada luz insight'], ['✨', 'brilho magia novo destaque'],
+  ['🎨', 'arte design pintura cor paleta'], ['🖼️', 'imagem quadro foto arte design'], ['📷', 'foto camera fotografia'], ['📸', 'foto camera flash fotografia'],
+  ['🎬', 'video filme cinema producao gravar'], ['🎥', 'video camera youtube filmar'], ['📺', 'tv vsl video televisao'], ['📹', 'video camera gravar'],
+  ['🎞️', 'filme video edicao'], ['📱', 'celular reels instagram mobile app'], ['💻', 'computador notebook codigo programacao dev'], ['🖥️', 'computador tela desktop'],
+  ['⌨️', 'teclado digitar codigo'], ['🐍', 'python cobra codigo programacao'], ['🧑‍💻', 'programador dev codigo'], ['⚙️', 'engrenagem config automacao sistema'],
+  ['🛠️', 'ferramentas ferramenta construir'], ['🔧', 'chave ferramenta ajuste'], ['🧪', 'teste experimento laboratorio ciencia'], ['🔬', 'ciencia pesquisa microscopio'],
+  ['📊', 'grafico dados dashboard analise'], ['📈', 'grafico crescimento dados vendas subir'], ['📉', 'grafico queda dados'], ['🧮', 'calculo matematica numeros'],
+  ['💰', 'dinheiro venda ads trafego pago grana'], ['💸', 'dinheiro gasto pagar'], ['💳', 'cartao pagamento compra'], ['🛍️', 'compras loja venda black friday'],
+  ['🛒', 'carrinho compra loja'], ['🏷️', 'etiqueta preco oferta promocao'], ['🎁', 'presente bonus oferta'], ['🖤', 'preto black friday coracao'],
+  ['🔥', 'fogo quente viral winner destaque'], ['⭐', 'estrela favorito destaque'], ['🌟', 'estrela brilho destaque'], ['🏆', 'trofeu vitoria premio winner'],
+  ['🥇', 'medalha primeiro ouro'], ['🎯', 'alvo meta objetivo foco'], ['🚀', 'foguete lancamento crescer rapido'], ['⚡', 'raio rapido energia'],
+  ['📚', 'livros estudo curso aula'], ['📖', 'livro leitura estudo'], ['🎓', 'formatura curso formacao aula escola'], ['🧑‍🏫', 'professor aula ensino'],
+  ['✏️', 'lapis escrever editar'], ['✍️', 'escrever copy texto roteiro'], ['📝', 'nota anotacao texto copy'], ['🗒️', 'notas bloco lista'],
+  ['📣', 'megafone anuncio marketing divulgar'], ['📢', 'alto falante anuncio aviso'], ['🎙️', 'microfone podcast live audio'], ['🎧', 'fone audio musica podcast'],
+  ['🎵', 'musica som audio'], ['🗓️', 'calendario agenda data'], ['⏰', 'relogio alarme prazo tempo'], ['⏳', 'ampulheta tempo espera'],
+  ['📌', 'pin fixar alfinete'], ['📎', 'clipe anexo'], ['🗂️', 'pastas arquivo organizar'], ['📁', 'pasta arquivo'], ['📦', 'caixa pacote produto entrega'],
+  ['📥', 'inbox entrada caixa'], ['📤', 'saida enviar'], ['✉️', 'email carta mensagem'], ['💬', 'chat conversa mensagem comentario'],
+  ['❤️', 'coracao amor favorito vermelho'], ['💚', 'coracao verde'], ['💙', 'coracao azul'], ['💛', 'coracao amarelo'], ['💜', 'coracao roxo'],
+  ['🌱', 'planta crescer comeco semente'], ['🌳', 'arvore natureza'], ['🌎', 'mundo terra global'], ['🌙', 'lua noite'], ['☀️', 'sol dia'],
+  ['🏠', 'casa lar pessoal'], ['🏢', 'empresa escritorio negocio'], ['🤝', 'parceria acordo negocio cliente'], ['👥', 'pessoas equipe time comunidade'],
+  ['👤', 'pessoa perfil usuario'], ['👩', 'mulher aline esposa'], ['👨', 'homem'], ['👶', 'bebe filho crianca'], ['🧒', 'crianca'],
+  ['💼', 'trabalho negocio maleta'], ['🧾', 'recibo nota fiscal conta'], ['🔒', 'cadeado seguranca privado'], ['🔑', 'chave acesso senha'],
+  ['🎮', 'jogo game'], ['🎲', 'dado jogo sorte'], ['🍕', 'pizza comida'], ['☕', 'cafe'], ['✅', 'feito pronto check ok'], ['❌', 'erro nao cancelado'],
+  ['⚠️', 'aviso atencao cuidado'], ['❓', 'pergunta duvida'], ['🔍', 'busca lupa pesquisa'], ['🧭', 'bussola direcao estrategia'], ['🗺️', 'mapa plano estrategia'],
+  ['🎭', 'teatro drama storytelling historia'], ['📰', 'jornal noticia news'], ['🌐', 'web site internet'], ['🔗', 'link corrente'], ['🐦', 'passaro twitter x'],
+  ['🦄', 'unicornio startup'], ['🐙', 'polvo github'], ['🤗', 'hugging face abraco'], ['🅰️', 'asimov a letra'], ['🏞️', 'paisagem carrossel imagem estatico'],
+]
+const sem = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+/** Últimos ícones usados (mais recente primeiro), guardados no navegador; sobem para o topo da grade. */
+const RECENTES_KEY = 'neo-icones-recentes'
+const lerRecentes = (): string[] => { try { const v = JSON.parse(localStorage.getItem(RECENTES_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] } catch { return [] } }
+const gravarRecente = (i: string) => {
+  if (i === '🗂️') return
+  try { localStorage.setItem(RECENTES_KEY, JSON.stringify([i, ...lerRecentes().filter((x) => x !== i)].slice(0, 18))) } catch { /* sem storage: só não lembra */ }
+}
+function EscolherIcone({ icone, onIcone: onIconeBase }: { icone: string; onIcone: (i: string) => void }) {
+  const [busca, setBusca] = useState('')
+  const onIcone = (i: string) => { gravarRecente(i); onIconeBase(i) }
+  const q = sem(busca.trim())
+  const ehEmoji = /\p{Extended_Pictographic}/u.test(busca)
+  const recentes = lerRecentes()
+  const todos: [string, string][] = [
+    ...recentes.map((r): [string, string] => EMOJIS.find(([e]) => e === r) ?? [r, 'recente']),
+    ...EMOJIS.filter(([e]) => !recentes.includes(e)),
+  ]
+  const lista = q && !ehEmoji ? todos.filter(([, p]) => q.split(/\s+/).every((w) => p.includes(w))) : todos
+  return (
+    <div className="escolher-icone">
+      <form className="escolher-icone-livre" onSubmit={(e) => { e.preventDefault(); const v = ehEmoji ? busca.trim() : lista[0]?.[0]; if (v) { onIcone(v); setBusca('') } }}>
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar ícone (fogo, dinheiro, foto…)" autoFocus aria-label="Buscar ícone" />
+        <button type="button" className="escolher-icone-sem" onClick={() => onIcone('🗂️')} disabled={icone === '🗂️'}>Sem ícone</button>
+      </form>
+      <div className="escolher-icone-grade">
+        {lista.map(([i, p]) => <button key={i} type="button" className={i === icone ? 'is-on' : ''} onClick={() => onIcone(i)} title={p.split(' ')[0]}>{i}</button>)}
+        {!lista.length && <p className="escolher-icone-vazio">Nada com “{busca}”. Cole um emoji ou tente outra palavra.</p>}
+      </div>
+    </div>
+  )
 }

@@ -85,17 +85,22 @@ export default function App() {
 
   // modo foco (só no canvas): navbar, breadcrumb, minimapa, pastas e barra de baixo saem para as bordas; o chat fica.
   // F liga (fora de campos e do Excalidraw), Esc desliga; o botão da barra do canvas manda o evento 'modo-foco'.
+  // modo de trabalho (W): só as duas barras saem (navegação de cima e barra de baixo); pastas, pinados e chat ficam
   const [focoTela, setFocoTela] = useState(false)
-  useEffect(() => { if (pagina !== 'Canvas' || !canvasSlug) setFocoTela(false) }, [pagina, canvasSlug])
+  const [trabalho, setTrabalho] = useState(false)
+  useEffect(() => { if (pagina !== 'Canvas' || !canvasSlug) { setFocoTela(false); setTrabalho(false) } }, [pagina, canvasSlug])
   useEffect(() => {
-    const alternar = () => setFocoTela((f) => !f)
+    const alternar = () => { setTrabalho(false); setFocoTela((f) => !f) }
     const tecla = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setFocoTela(false); return }
-      if (e.key.toLowerCase() !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      if (e.key === 'Escape') { setFocoTela(false); setTrabalho(false); return }
+      const k = e.key.toLowerCase()
+      if ((k !== 'f' && k !== 'w') || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
       const t = e.target as HTMLElement | null
       if (t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor, .excalidraw') || document.querySelector('.modal-fundo, .paleta-fundo, .canvas.is-desenhando')) return
       if (!document.querySelector('.canvas')) return
-      e.preventDefault(); alternar()
+      e.preventDefault()
+      if (k === 'f') alternar()
+      else { setFocoTela(false); setTrabalho((w) => !w) }
     }
     window.addEventListener('keydown', tecla); window.addEventListener('modo-foco', alternar)
     return () => { window.removeEventListener('keydown', tecla); window.removeEventListener('modo-foco', alternar) }
@@ -111,8 +116,8 @@ export default function App() {
         e.preventDefault()
         setPaleta(true)
       }
-      // ⌘B mostra/oculta o chat do agente (no editor de nota fica livre para o negrito)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !(e.target as HTMLElement)?.closest?.('.cm-editor')) {
+      // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
         e.preventDefault()
         setChat((c) => !c)
       }
@@ -128,7 +133,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app ${focoTela ? 'modo-foco' : ''}`}>
+    <div className={`app ${focoTela ? 'modo-foco' : ''} ${trabalho ? 'modo-trabalho' : ''} ${modal ? 'com-nota' : ''}`}>
       <div className="lateral-area">
       {/* breadcrumb: NEO-OBSIDIAN (todos os canvas) › canvas › vista; nas outras páginas, só o nome dela */}
       <nav className="migalhas" aria-label="Onde você está">

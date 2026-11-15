@@ -31,7 +31,6 @@ type DadosGrupo = { ideia: Ideia; saidas: Producao[]; destaque: StatusProd | nul
 type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'>
 /** O que o canvas principal mostra: tudo o que não saiu, ou só um status. */
 type Filtro = 'todos' | 'ideia' | 'edicao' | 'agendado'
-const FILTROS: { k: Filtro; nome: string }[] = [{ k: 'todos', nome: 'Todos' }, { k: 'ideia', nome: 'Backlog' }, { k: 'edicao', nome: 'Em edição' }, { k: 'agendado', nome: 'Agendado' }]
 type Vistas = { pinados: string[]; historico: string[] }
 const MAX_HIST = 5
 type MenuCtx = { x: number; y: number; flow: { x: number; y: number }; no?: No; selecao?: No[] }
@@ -352,8 +351,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [visao, setVisao] = useState<Visao>('principal')
   const visaoRef = useRef<Visao>('principal')
   visaoRef.current = visao
-  const [filtro, setFiltro] = useState<Filtro>(() => { try { return (localStorage.getItem('canvas-filtro') as Filtro) || 'todos' } catch { return 'todos' } })
-  useEffect(() => { try { localStorage.setItem('canvas-filtro', filtro) } catch { /* sem storage */ } }, [filtro])
+  const [filtro, setFiltro] = useState<Filtro>('todos')   // o seletor de status saiu da barra (as pastas abrem cada status)
   // chips liga/desliga, independentes: todos começam ligados e cada clique esconde ou mostra aquele tipo
   const [tiposVer, setTiposVer] = useState<TipoVer[]>(() => {
     try { const v = JSON.parse(localStorage.getItem('canvas-tipos') || 'null'); return Array.isArray(v) ? v : TIPOS_VER.map((t) => t.k) } catch { return TIPOS_VER.map((t) => t.k) }
@@ -595,7 +593,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         <button role="menuitem" className={`menu-sub ${moverAberto ? 'is-aberto' : ''}`} onClick={() => setMoverAberto((v) => !v)}>
           <Icone n="pasta" t={15} />Mover para<span className="menu-seta">›</span></button>
         {moverAberto && <div className={`menu-caixas menu-lateral is-${moverLado} glass glass--light`} role="menu">
-          {todosCanvas.filter((c) => !c.arquivado || c.slug === canvas).map((c) => (
+          {todosCanvas.filter((c) => (!c.arquivado && c.slug !== INBOX) || c.slug === canvas).map((c) => (
             <button key={c.slug} role="menuitem" disabled={c.slug === canvas} onClick={() => mover(c)}>
               <span className="menu-emoji"><IconeCanvas c={c} /></span>{c.nome}{c.slug === canvas ? ' · aqui' : ''}</button>
           ))}
@@ -913,7 +911,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       const chat = document.querySelector('.corpo > .chat')
       if (chat !== visto) { if (visto) ro.unobserve(visto); if (chat) ro.observe(chat); visto = chat }
       const borda = fundo.current?.getBoundingClientRect().right ?? window.innerWidth
-      const livre = chat ? borda - chat.getBoundingClientRect().left : 0
+      const livre = chat && !chat.classList.contains('chat--fechado') ? borda - chat.getBoundingClientRect().left : 0   // fechado, o chat é só a bolinha do canto
       fundo.current?.style.setProperty('--livre-dir', `${Math.max(0, livre)}px`)
     }
     medir()
@@ -943,7 +941,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
 
   return (
     <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}><VistoUI.Provider value={marcarVisto}>
-    <div className={`canvas ${desenhando ? 'is-desenhando' : ''}`} ref={caixa}>
+    <div className={`canvas ${desenhando ? 'is-desenhando' : ''} ${mapa ? 'com-mapa' : ''}`} ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
         onDoubleClick={(e) => { if (!desenhando && !(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
         // fase de captura: o pan/zoom do React Flow trata o mousedown no canvas e não deixa ele subir até aqui
@@ -994,7 +992,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       {/* os canvas como pastas na esquerda: clicar troca de canvas ali mesmo */}
       {onTrocarCanvas && todosCanvas.length > 0 && (
         <nav className="canvas-lista" aria-label="Canvas">
-          {todosCanvas.filter((c) => !c.arquivado || c.slug === canvas).map((c) => (
+          {todosCanvas.filter((c) => (!c.arquivado && c.slug !== INBOX) || c.slug === canvas).map((c) => (
             <button key={c.slug} type="button" className={`pastinha ${c.slug === canvas ? 'is-ativa' : ''} ${arrastaPasta && alvoPasta === c.slug && arrastaPasta !== c.slug ? 'is-alvo' : ''} ${arrastaPasta === c.slug ? 'is-arrastando' : ''}`} style={{ '--cor': c.cor } as React.CSSProperties}
               draggable={c.slug !== INBOX} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setArrastaPasta(c.slug) }}
               onDragOver={(e) => { if (!arrastaPasta || c.slug === INBOX) return; e.preventDefault(); setAlvoPasta(c.slug) }}
@@ -1044,22 +1042,13 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           {visao !== 'principal' && <span className="canvas-nome">{NOME_VISAO(visao)}<em>{nos.length} cards</em></span>}
           {visao.startsWith('foco:') && (() => { const id = visao.slice(5), sim = vistas.pinados.includes(id)
             return <button className={`btn-icone canvas-pin ${sim ? 'is-on' : ''}`} onClick={() => pinar(id, !sim)} data-dica={sim ? 'Despinar (volta ao histórico)' : 'Pinar na barra da esquerda'}><Icone n="pin" t={14} /></button> })()}
-          <div className="canvas-tipos" role="group" aria-label="Tipos de card e produtos">
-            {TIPOS_VER.map((t) => <button key={t.k} className={`canvas-tipo ${tiposVer.includes(t.k) ? 'is-on' : ''}`} aria-pressed={tiposVer.includes(t.k)}
-              data-dica={tiposVer.includes(t.k) ? `Esconder ${t.nome.slice(3)}` : `Mostrar ${t.nome.slice(3)}`} onClick={() => alternarTipo(t.k)}>{t.nome}</button>)}
-            {(est?.produtos?.length ?? 0) > 0 && <>
-              {/* depois do pipe, os produtos: os mesmos botões liga/desliga (produto é filtro, não lugar) */}
-              <span className="canvas-tipos-sep" aria-hidden="true" />
-              {[...est!.produtos!.map((x) => ({ k: x.slug, nome: x.nome, icone: x.icone, cor: x.cor })), { k: SEM, nome: 'Sem produto', icone: '', cor: '' }].map((x) => { const on = !prodFora.includes(x.k)
-                return <button key={x.k} className={`canvas-tipo canvas-produto ${on ? 'is-on' : ''}`} aria-pressed={on} onClick={() => alternarProduto(x.k)}
-                  data-dica={on ? `Esconder ${x.nome}` : `Mostrar ${x.nome}`}>{x.cor && <i style={{ background: x.cor }} />}{x.k === SEM ? 'Sem' : x.nome}</button> })}
-            </>}
-          </div>
-          {visao === 'principal' && <>
-            <select className="canvas-filtro" value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} title="O que o canvas mostra">
-              {FILTROS.map((f) => <option key={f.k} value={f.k}>{f.nome}{f.k !== 'todos' ? ` (${contagem[f.k]})` : ''}</option>)}
-            </select>
-            </>}
+          {/* tipos de card: o mesmo menu recolhível dos produtos */}
+          <FiltroProdutos opcoes={TIPOS_VER.map((t) => ({ k: t.k, nome: t.nome.slice(t.nome.indexOf(' ') + 1), cor: '', emoji: t.nome.split(' ')[0] }))}
+            fora={TIPOS_VER.map((t) => t.k).filter((k) => !tiposVer.includes(k))} onAlternar={(k) => alternarTipo(k as TipoVer)}
+            onTodos={() => setTiposVer(TIPOS_VER.map((t) => t.k))} textos={{ todos: 'Todos os tipos', nenhum: 'Nenhum tipo', varios: 'tipos', dica: 'Filtrar por tipo de card' }} />
+          {/* produtos: um menu recolhível (marcar/desmarcar cada um); todos marcados = sem filtro */}
+          {(est?.produtos?.length ?? 0) > 0 && <FiltroProdutos opcoes={[...est!.produtos!.map((x) => ({ k: x.slug, nome: x.nome, cor: x.cor })), { k: SEM, nome: 'Sem produto', cor: '' }]}
+            fora={prodFora} onAlternar={alternarProduto} onTodos={() => setProdFora([])} />}
           {/* zoom e linhas (mostrar tudo = duplo clique no vazio): ficam na barra de cima (antes eram os controles flutuantes do canto) */}
           <span className="canvas-sep" />
           <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
@@ -1228,7 +1217,41 @@ function ModalArquivados({ est, onFechar, onAbrir, onDesarquivar }: { est: Estad
   return alvo ? createPortal(corpo, alvo) : corpo
 }
 
-/** Filtro de produto da barra: um dropdown com caixas de marcar (cada produto e "Sem produto"); todos marcados = sem filtro. */
+/** Filtro de produto da barra: um botão com as cores dos produtos ligados; abre um menu de marcar (como o Obsidian). */
+function FiltroProdutos({ opcoes, fora, onAlternar, onTodos, textos = { todos: 'Todos os produtos', nenhum: 'Nenhum produto', varios: 'produtos', dica: 'Filtrar por produto' } }: {
+  opcoes: { k: string; nome: string; cor: string; emoji?: string }[]; fora: string[]; onAlternar: (k: string) => void; onTodos: () => void
+  textos?: { todos: string; nenhum: string; varios: string; dica: string }
+}) {
+  const [aberto, setAberto] = useState(false)
+  const caixa = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!aberto) return
+    const f = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as HTMLElement)) setAberto(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setAberto(false) } }
+    window.addEventListener('pointerdown', f, true); window.addEventListener('keydown', esc, true)
+    return () => { window.removeEventListener('pointerdown', f, true); window.removeEventListener('keydown', esc, true) }
+  }, [aberto])
+  const ligados = opcoes.filter((o) => !fora.includes(o.k))
+  const rotulo = ligados.length === opcoes.length ? textos.todos : ligados.length === 0 ? textos.nenhum : ligados.length === 1 ? ligados[0].nome : `${ligados.length} ${textos.varios}`
+  return (
+    <div ref={caixa} className="filtro-produtos">
+      <button className={`canvas-filtro filtro-produtos-botao ${aberto ? 'is-aberto' : ''}`} onClick={() => setAberto((v) => !v)} aria-expanded={aberto} data-dica={textos.dica}>
+        <span className="filtro-produtos-cores">{ligados.filter((o) => o.cor).slice(0, 4).map((o) => <i key={o.k} style={{ background: o.cor }} />)}</span>
+        {ligados.some((o) => o.emoji) && <span className="filtro-produtos-emojis">{ligados.map((o) => o.emoji).join('')}</span>}
+        {rotulo}
+      </button>
+      {aberto && (
+        <div className="filtro-produtos-menu glass glass--light" role="menu">
+          <button role="menuitemcheckbox" aria-checked={fora.length === 0} onClick={onTodos}><span className="filtro-check">{fora.length === 0 ? '✓' : ''}</span>Todos</button>
+          {opcoes.map((o) => { const on = !fora.includes(o.k)
+            return <button key={o.k} role="menuitemcheckbox" aria-checked={on} onClick={() => onAlternar(o.k)}>
+              <span className="filtro-check">{on ? '✓' : ''}</span>{o.emoji ? <span className="menu-emoji">{o.emoji}</span> : o.cor ? <i style={{ background: o.cor }} /> : <i className="is-vazio" />}{o.nome}</button> })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 let listaCanvasGuardada: ResumoCanvas[] = []   // a lista sobrevive à troca de canvas (a mesa remonta)
 
 function Pasta({ nome, n, ativa, cor, onClick, children }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void; children?: ReactNode }) {

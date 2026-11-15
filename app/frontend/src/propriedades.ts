@@ -9,6 +9,7 @@ export type Extra = {
   status?: { valor: string; opcoes: { k: string; rotulo: string }[]; mudar: (s: string) => void }
   onData?: (data: string) => void          // scheduled muda pelo app (que também agenda)
   onPublicado?: (sim: boolean) => void     // publicado muda o status (pasta)
+  onLink?: (nome: string) => void          // clicar num [[link]] das propriedades abre a nota
 }
 
 export const definirExtra = StateEffect.define<Extra>()
@@ -166,7 +167,23 @@ class Painel extends WidgetType {
         continue
       }
       const t = document.createElement('input'); t.className = 'cm-prop-campo'; t.value = v; t.placeholder = 'Vazio'
-      if (/^\[\[.*\]\]$/.test(v)) t.classList.add('is-link')
+      const wiki = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]$/.exec(v)
+      if (wiki) {   // [[nota]] ou [[nota|apelido]]: mostra o nome, clicar abre; o lápis volta para o texto cru
+        const nome = wiki[1].trim(), visto = (wiki[2] ?? nome.split('/').pop() ?? nome).trim()
+        const caixa = document.createElement('span'); caixa.className = 'cm-prop-campo cm-prop-wiki'
+        const a = document.createElement('a'); a.textContent = visto; a.title = `Abrir ${nome}`
+        a.onclick = (e) => { e.preventDefault(); this.extra.onLink?.(nome) }
+        const ed = document.createElement('button'); ed.textContent = '✎'; ed.title = 'Editar o link'
+        ed.onclick = () => { caixa.replaceWith(t); t.focus(); t.select() }
+        caixa.append(a, ed)
+        t.onkeydown = (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); t.blur() }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); t.value = v; t.blur() }
+        }
+        t.onblur = () => { if (t.value.trim() !== v) trocar(view, chave, t.value.trim()); else t.replaceWith(caixa) }
+        linha(chave, caixa, chave)
+        continue
+      }
       t.onkeydown = (e) => {
         if (e.key === 'Enter') { e.preventDefault(); t.blur() }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); t.value = v; t.blur() }

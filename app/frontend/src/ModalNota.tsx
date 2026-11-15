@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { EditorView } from '@codemirror/view'
+import { Sumario } from './Sumario'
 import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
@@ -111,6 +112,62 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     } catch (e) { avisar((e as Error).message) }
   }
 
+  // tamanho da nota: arrastar uma borda ou um canto muda largura/altura (a nota fica no meio, então cresce dos dois lados).
+  // O tamanho fica guardado e vale para todas as notas; duplo clique numa alça volta ao padrão (70vw).
+  const [tam, setTam] = useState<{ w: number; h: number } | null>(() => { try { return JSON.parse(localStorage.getItem('nota-tamanho') || 'null') } catch { return null } })
+  const caixaNota = useRef<HTMLDivElement>(null)
+  const redimensionar = (e: React.PointerEvent, dx: -1 | 0 | 1, dy: -1 | 0 | 1) => {
+    if (e.button !== 0) return
+    e.preventDefault(); e.stopPropagation()
+    const r = caixaNota.current!.getBoundingClientRect()
+    const x0 = e.clientX, y0 = e.clientY, w0 = r.width, h0 = r.height
+    let ult = { w: w0, h: h0 }
+    const mover = (ev: PointerEvent) => {
+      ult = {
+        w: Math.round(Math.min(window.innerWidth - 16, Math.max(480, w0 + dx * 2 * (ev.clientX - x0)))),
+        h: Math.round(Math.min(window.innerHeight - 16, Math.max(320, h0 + dy * 2 * (ev.clientY - y0)))),
+      }
+      setTam(ult)
+    }
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar)
+      document.body.classList.remove('redimensionando')
+      try { localStorage.setItem('nota-tamanho', JSON.stringify(ult)) } catch { /* sem storage */ }
+    }
+    document.body.classList.add('redimensionando')
+    window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar)
+  }
+  const padrao = () => { setTam(null); try { localStorage.removeItem('nota-tamanho') } catch { /* sem storage */ } }
+  const ALCAS: [string, -1 | 0 | 1, -1 | 0 | 1][] = [['n', 0, -1], ['s', 0, 1], ['e', 1, 0], ['w', -1, 0], ['ne', 1, -1], ['nw', -1, -1], ['se', 1, 1], ['sw', -1, 1]]
+
+  // [[link]] (nas propriedades ou ⌘clique no texto): abre a nota aqui mesmo quando o app a conhece; senão, no Obsidian
+  const abrirLink = (nome: string) => {
+    const n = nome.split('/').pop()!.replace(/\.md$/, '')
+    const achada: Alvo | null = !est ? null
+      : est.ideias.some((i) => i.nome === n) ? { raiz: 'ideias', nome: n }
+      : est.entradas.some((e) => e.nome === n) ? { raiz: 'entradas', nome: n }
+      : (() => { const p = est.producoes.find((x) => x.nome === n); return p ? { raiz: p.raiz as Raiz, nome: p.nome } : null })()
+    if (achada) setAtiva(achada)
+    else window.location.href = `obsidian://open?vault=${encodeURIComponent('Obsidian Notes')}&file=${encodeURIComponent(nome)}`
+  }
+
+  // Jarvis aberto (⌘J) com a nota aberta: o fundo escurecido cobre tudo e a nota se centraliza no espaço à esquerda do chat
+  const [dirChat, setDirChat] = useState(0)
+  useEffect(() => {
+    const medir = () => {
+      const c = document.querySelector('.corpo > .chat:not(.chat--fechado)')
+      setDirChat(c ? Math.max(0, window.innerWidth - c.getBoundingClientRect().left + 10) : 0)
+    }
+    medir()
+    const corpo = document.querySelector('.corpo')
+    const mo = new MutationObserver(medir)
+    if (corpo) mo.observe(corpo, { attributes: true, childList: true, subtree: false })
+    const ro = new ResizeObserver(medir)
+    if (corpo) ro.observe(corpo)
+    window.addEventListener('resize', medir)
+    return () => { mo.disconnect(); ro.disconnect(); window.removeEventListener('resize', medir) }
+  }, [])
+
   const tabs: { alvo: Alvo; rotulo: string; prod?: Producao }[] = grupo
     ? [
         // a ideia abre sozinha (mostra os filhos); a produção abre com uma tab por formato
@@ -121,8 +178,11 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     : [{ alvo: ativa, rotulo: ativa.nome }]
 
   return (
-    <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
-      <div className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}>
+    <div className="modal-fundo" style={dirChat ? { paddingRight: dirChat } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
+      <div ref={caixaNota} className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}
+        style={tam ? { width: Math.min(tam.w, window.innerWidth - 16), height: Math.min(tam.h, window.innerHeight - 16) } : undefined}>
+        {ALCAS.map(([k, dx, dy]) => <div key={k} className={`modal-alca modal-alca--${k}`} onPointerDown={(e) => redimensionar(e, dx, dy)} onDoubleClick={padrao}
+          title="Arraste para mudar o tamanho da nota (duplo clique volta ao padrão)" />)}
         <header className="modal-tabs">
           {voltar && (
             <button className="modal-volta modal-volta--tabela" onClick={voltar.fn} title={`Voltar para a tabela ${voltar.rotulo}`}>
@@ -177,10 +237,12 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
         {ativa.raiz === 'ideias' && grupo && grupo.saidas.length > 0 && (
           <div className="modal-entradas">
             <span className="mudo">Produção</span>
-            <button className="modal-entrada modal-filho" onClick={() => setAtiva({ raiz: grupo.saidas[0].raiz as Raiz, nome: grupo.saidas[0].nome })} title="Abrir a produção (uma tab por formato)">
-              <span>🎬 {grupo.ideia?.nome.replace(/^💡\s*/, '')}</span>
-              <em>{grupo.saidas.map((p) => p.formato || '📄').join(' ')}</em>
-            </button>
+            {/* cada saída da ideia com o nome da própria nota (ex.: 📺 VSL BF26 Aline) */}
+            {grupo.saidas.map((p) => (
+              <button key={`${p.raiz}/${p.nome}`} className="modal-entrada modal-filho" onClick={() => setAtiva({ raiz: p.raiz as Raiz, nome: p.nome })} title={`Abrir ${p.nome}`}>
+                <span>{p.nome}</span>
+              </button>
+            ))}
           </div>
         )}
         {ativa.raiz === 'entradas' && grupo && grupo.usadaEm.length > 0 && (
@@ -191,7 +253,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
         )}
 
         <PainelNota key={`${ativa.raiz}/${ativa.nome}`} alvo={ativa} prod={grupo?.prod ?? undefined} ideia={grupo?.ideia?.nome}
-          versao={versao} onTrecho={onTrecho} avisar={avisar}
+          versao={versao} onTrecho={onTrecho} avisar={avisar} onLink={abrirLink}
           onMudou={(novo) => { if (novo) setAtiva(novo); recarregar(); onMudou?.() }} />
         {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
         {apagar && (
@@ -220,8 +282,8 @@ function rotuloSaida(p: Producao, ideia?: string) {
   return `${p.formato} ${sobra || ({ '📱': 'Reels', '💰': 'Ad', '🏞️': 'Carrossel', '📝': 'Feed', '📺': 'VSL', '🎥': 'YouTube', '🗣️': 'Stories', '🎙️': 'Live' } as Record<string, string>)[p.formato] || ''}`.trim()
 }
 
-function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
-  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number
+function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink }: {
+  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void
   onTrecho?: (t: Trecho, pedido?: string) => void; onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)
@@ -304,11 +366,12 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
 
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
 
-  const extra: Extra | undefined = prod ? {
+  const extra: Extra = prod ? {
     status: { valor: prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
     onData: mudarData,
     onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
-  } : undefined
+    onLink,
+  } : { onLink }
 
   if (!nota) return <div className="modal-corpo"><p className="mudo">Carregando…</p></div>
 
@@ -324,9 +387,10 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
             </form>
           ) : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
         </div>
-        <span className={`ideias-estado is-${estado}`}>
+        {/* o estado só aparece quando pede atenção (conflito com o Obsidian ou erro ao salvar) */}
+        {(estado === 'conflito' || estado === 'erro') && <span className={`ideias-estado is-${estado}`}>
           {estado === 'conflito' ? <button onClick={abrir}>{ROTULO[estado]} · recarregar</button> : ROTULO[estado]}
-        </span>
+        </span>}
         {prod && ideia && (
           <button className="modal-desligar" onClick={() => executar(() => post('ligar', { producao: { raiz: prod.raiz, nome: prod.nome }, ideia: null }), 'Saiu da ideia')}
             title="Tira esta copy da ideia (a nota continua igual)">Desligar da ideia</button>
@@ -338,9 +402,12 @@ function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar }: {
         <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>
       </div>
 
-      <div className="modal-corpo">
-        <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra}
-          onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
+      <div className="modal-corpo modal-corpo--sumario">
+        <div className="modal-editor">
+          <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink}
+            onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
+        </div>
+        <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />
       </div>
     </>
   )

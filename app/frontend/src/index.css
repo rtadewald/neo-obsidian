@@ -518,10 +518,14 @@ kbd { font: 500 11px/1 Raleway, system-ui, sans-serif; padding: 3px 6px; border-
 .ads-num dt { font-size: 11px; color: var(--mute); text-transform: lowercase; }
 .ads-num dd { margin: 0; font-size: 14px; font-weight: 500; font-feature-settings: 'tnum'; }
 
-/* chat recolhido: vira uma faixa fina à direita */
-.corpo.sem-chat { grid-template-columns: minmax(0, 1fr) 58px; }
+/* chat recolhido: vira uma bolinha no canto inferior direito */
+.corpo.sem-chat { grid-template-columns: minmax(0, 1fr) 0; column-gap: 0; }
 .chat-recolher { margin-left: 4px; }
-.chat--fechado { padding: 10px 0; align-items: center; }
+.chat.chat--fechado { position: fixed; right: 22px; bottom: 22px; z-index: 90; width: 50px; height: 50px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  box-shadow: 0 12px 28px -10px rgba(30, 24, 22, .45), inset 0 0 0 1px rgba(255, 255, 255, .8); transition: transform .18s var(--ease); }
+.chat.chat--fechado:hover { transform: scale(1.07); }
+.chat--fechado .chat-abrir { width: 100%; height: 100%; padding: 0; justify-content: center; border-radius: 50%; }
+.chat--fechado .chat-abrir-nome, .chat--fechado .chat-abrir .i { display: none; }
 .chat-abrir { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; padding: 6px 0; border: 0; background: none; color: var(--mute); cursor: pointer; border-radius: 14px; }
 .chat-abrir:hover { color: var(--ink); background: rgba(255, 255, 255, .3); }
 .chat-abrir-nome { writing-mode: vertical-rl; font-size: 12px; font-weight: 500; letter-spacing: .32em; color: var(--ink); }
@@ -817,10 +821,10 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .pagina { position: relative; }
 .modal-fundo { position: absolute; inset: 0; z-index: 75; display: flex; justify-content: center; align-items: stretch; padding: 0; border-radius: var(--r); background: rgba(30, 26, 24, .22); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fundo-in .14s ease-out; }
 @keyframes fundo-in { from { opacity: 0; } }
-.modal-nota { position: relative; width: min(1240px, calc(100% - 32px)); height: 90vh; max-height: calc(100% - 24px); align-self: center; display: flex; flex-direction: column; border-radius: 22px; overflow: hidden; background: rgba(250, 249, 247, .96) !important; box-shadow: 0 40px 90px -30px rgba(30, 24, 22, .6), inset 0 0 0 1px rgba(255, 255, 255, .8); }
-.modal-tabs { display: flex; align-items: center; gap: 8px; padding: 10px 12px 0 16px; border-bottom: 1px solid rgba(23, 24, 27, .08); }
+.modal-nota { position: relative; width: 70vw; min-width: min(480px, 100%); height: calc(100vh - 36px); max-height: none; align-self: center; display: flex; flex-direction: column; border-radius: 22px; overflow: hidden; background: rgba(250, 249, 247, .96) !important; box-shadow: 0 40px 90px -30px rgba(30, 24, 22, .6), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.modal-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px 0 16px; border-bottom: 1px solid rgba(23, 24, 27, .08); }
 .modal-tabs nav { flex: 1; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-.modal-tab { position: relative; height: 38px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; border-radius: 10px 10px 0 0; font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; max-width: 260px; }
+.modal-tab { position: relative; height: 38px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; border-radius: 10px 10px 0 0; font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
 .modal-tab span { overflow: hidden; text-overflow: ellipsis; }
 .modal-tab:hover { background: rgba(23, 24, 27, .04); color: var(--ink); }
 .modal-tab.is-ativa { color: var(--ink); font-weight: 600; }
@@ -829,7 +833,7 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .modal-mais { position: relative; }
 .modal-mais-menu { position: fixed; margin-top: 4px; }
 .modal-entradas { display: flex; align-items: center; gap: 6px; padding: 10px 26px 0; flex-wrap: wrap; font-size: 12px; }
-.modal-entrada { height: 28px; padding: 0 10px 0 4px; display: inline-flex; align-items: center; gap: 7px; border-radius: 9px; background: rgba(23, 24, 27, .05); max-width: 280px; }
+.modal-entrada { height: 28px; padding: 0 10px 0 4px; display: inline-flex; align-items: center; gap: 7px; border-radius: 9px; background: rgba(23, 24, 27, .05); max-width: 100%; }
 .modal-entrada:hover { background: rgba(23, 24, 27, .1); }
 .modal-entrada span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
 .modal-entrada img { width: 34px; height: 20px; object-fit: cover; border-radius: 5px; }
@@ -885,7 +889,7 @@ button.cartao-formato:hover { background: rgba(23, 24, 27, .12); transform: tran
 .perguntar-botoes { display: flex; justify-content: flex-end; gap: 8px; padding: 4px 0 16px; }
 .perguntar-botoes .pilula { height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13px; background: rgba(23, 24, 27, .06); }
 .perguntar-botoes .is-perigo { background: #b4521f; color: #fff; }
-.modal-volta { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; margin-bottom: 6px; padding: 0 11px; border-radius: 999px; font-size: 12.5px; background: rgba(212, 227, 74, .28); color: var(--ink); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal-volta { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; margin-bottom: 6px; padding: 0 11px; border-radius: 999px; font-size: 12.5px; background: rgba(212, 227, 74, .28); color: var(--ink); white-space: nowrap; }
 .modal-volta .i { transform: rotate(180deg); }
 .modal-volta:hover { background: #1d1d1f; color: #f4f2ef; }
 .modal-filho em { font-style: normal; margin-left: 6px; letter-spacing: 2px; }
@@ -1382,3 +1386,106 @@ button.migalhas-item:hover { background: rgba(23, 24, 27, .06); color: var(--ink
 .pastinha.is-alvo .pastinha-frente { box-shadow: 0 0 0 2px #8fd61f, 0 8px 18px -10px rgba(40, 34, 32, .55); transform: translateY(-2px); }
 .canvases-item.is-alvo .pastao-frente { box-shadow: 0 0 0 3px #8fd61f, 0 -6px 14px -10px rgba(40, 34, 32, .35); }
 .pastinha[draggable="true"], .canvases-item[draggable="true"] { cursor: grab; }
+
+/* nota aberta: a barra de cima sobe e o modal ganha a altura dela */
+.lateral-area { transition: transform .38s var(--ease), opacity .3s ease, margin-top .38s var(--ease); }
+.app.com-nota .lateral-area { margin-top: -50px; transform: translateY(-20px); opacity: 0; pointer-events: none; }
+
+/* sumário da nota (títulos em árvore, como o Obsidian) */
+.modal-corpo--sumario { display: flex; gap: 22px; }
+.modal-editor { flex: 1; min-width: 0; height: 100%; }
+.sumario { position: relative; flex: none; width: 240px; height: 100%; overflow-y: auto; scrollbar-width: thin; padding: 2px 4px 24px 14px; border-left: 1px solid rgba(23, 24, 27, .08); box-sizing: border-box; }
+.sumario-topo { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.sumario-tudo { width: 26px; height: 26px; }
+.sumario svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sumario ul { list-style: none; margin: 0; padding: 0; }
+.sumario ul ul { margin-left: 9px; padding-left: 8px; border-left: 1px solid rgba(23, 24, 27, .1); }
+.sumario-item { display: flex; align-items: center; gap: 2px; border-radius: 8px; }
+.sumario-item:hover { background: rgba(23, 24, 27, .05); }
+.sumario-seta { flex: none; width: 18px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--mute); cursor: pointer; }
+.sumario-seta svg { transition: transform .15s ease; }
+.sumario-seta.is-fechado svg { transform: rotate(-90deg); }
+.sumario-link { flex: 1; min-width: 0; padding: 4px 6px 4px 0; border: 0; background: none; text-align: left; font: inherit; font-size: 13px; line-height: 1.35; color: var(--ink-2); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sumario-item.is-atual .sumario-link { color: var(--ink); font-weight: 600; }
+@media (max-width: 900px) { .sumario { display: none; } }
+
+/* filtro de produtos recolhível (abre para cima, a barra fica no rodapé) */
+.filtro-produtos { position: relative; }
+.filtro-produtos-botao { display: inline-flex; align-items: center; gap: 7px; }
+.filtro-produtos-cores:empty { display: none; }
+.filtro-produtos-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60; min-width: 190px; padding: 6px; border-radius: 16px; display: flex; flex-direction: column;
+  background: rgba(250, 249, 247, .97) !important; box-shadow: 0 18px 40px -16px rgba(30, 24, 22, .45), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.filtro-produtos-menu button { display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 6px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: 13px; color: var(--ink); text-align: left; cursor: pointer; white-space: nowrap; }
+.filtro-produtos-menu button:hover { background: rgba(23, 24, 27, .06); }
+.filtro-check { width: 14px; text-align: center; font-weight: 600; }
+.filtro-produtos-menu i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.filtro-produtos-menu i.is-vazio { box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .3); }
+
+/* nota aberta: o fundo escurecido cobre a tela inteira, até as bordas; a nota fica no meio com 70vw */
+.modal-fundo:has(> .modal-nota) { position: fixed; inset: 0; border-radius: 0; z-index: 85; }
+/* a bolinha do Jarvis fica por cima de tudo, inclusive da nota aberta */
+.corpo > .chat.chat--fechado { z-index: 90; }
+
+/* alças de tamanho da nota: bordas e cantos (a área de pegar é maior que o que se vê) */
+.modal-alca { position: absolute; z-index: 30; }
+.modal-alca--n, .modal-alca--s { left: 18px; right: 18px; height: 10px; cursor: ns-resize; }
+.modal-alca--n { top: -3px; } .modal-alca--s { bottom: -3px; }
+.modal-alca--e, .modal-alca--w { top: 18px; bottom: 18px; width: 10px; cursor: ew-resize; }
+.modal-alca--e { right: -3px; } .modal-alca--w { left: -3px; }
+.modal-alca--ne, .modal-alca--nw, .modal-alca--se, .modal-alca--sw { width: 22px; height: 22px; }
+.modal-alca--ne { top: -3px; right: -3px; cursor: nesw-resize; } .modal-alca--sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
+.modal-alca--nw { top: -3px; left: -3px; cursor: nwse-resize; } .modal-alca--se { bottom: -3px; right: -3px; cursor: nwse-resize; }
+.modal-alca--se::after { content: ''; position: absolute; right: 8px; bottom: 8px; width: 8px; height: 8px; border-right: 2px solid rgba(23, 24, 27, .22); border-bottom: 2px solid rgba(23, 24, 27, .22); border-bottom-right-radius: 4px; }
+body.redimensionando, body.redimensionando * { user-select: none !important; }
+
+/* nota aberta: atrás dela fica só o canvas, como no modo foco (pastas, pinados, barra de baixo e minimapa saem) */
+.com-nota .canvas-lista { transform: translateX(-130%); opacity: 0; pointer-events: none; }
+.com-nota .canvas-trilho { transform: translateX(-130%); opacity: 0; pointer-events: none; }
+.com-nota .canvas-pastas { transform: translateY(140%); opacity: 0; pointer-events: none !important; }
+.com-nota .canvas-pastas > * { pointer-events: none !important; }
+.com-nota .canvas-mapa { transform: translateX(calc(100% + 40px)); opacity: 0; pointer-events: none; }
+
+/* propriedade com [[link]]: mostra só o nome e abre a nota; o lápis edita o texto cru */
+.cm-prop-wiki { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.cm-prop-wiki a { color: #5a6f0a; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(90, 111, 10, .4); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-prop-wiki a:hover { text-decoration-color: currentColor; }
+.cm-prop-wiki button { border: 0; background: none; padding: 2px 4px; color: var(--mute); cursor: pointer; opacity: 0; font-size: 12px; }
+.cm-prop:hover .cm-prop-wiki button { opacity: 1; }
+.sumario-alca { position: absolute; top: 0; bottom: 0; left: 0; width: 10px; cursor: ew-resize; z-index: 2; }
+.sumario-alca:hover, body.redimensionando .sumario-alca { background: linear-gradient(90deg, rgba(23, 24, 27, .18) 0, rgba(23, 24, 27, .18) 2px, transparent 2px); }
+/* com a nota aberta, o Jarvis aberto fica por cima do fundo escurecido (a nota encolhe para caber ao lado) */
+.com-nota .corpo > .chat { z-index: 90; }
+.modal-fundo:has(> .modal-nota) .modal-nota { max-width: calc(100% - 24px); }
+
+/* pastas da esquerda: centralizadas na altura livre (acima da barra de baixo) */
+.canvas-lista { top: calc((100% - 96px) / 2); translate: 0 -50%; }
+.filtro-produtos-emojis { letter-spacing: 1px; }
+.canvas-barra .filtro-produtos + .filtro-produtos { margin-left: 2px; }
+/* barra de baixo: só reserva o canto direito quando o minimapa está ligado */
+.canvas .canvas-pastas { right: calc(var(--livre-dir, 0px) + 16px); }
+.canvas.com-mapa .canvas-pastas { right: calc(var(--livre-dir, 0px) + 228px); }
+/* Jarvis aberto junto com a nota: mesma caixa da nota (fundo sólido, cantos, sombra), por cima do fundo escurecido */
+.com-nota .corpo > .chat:not(.chat--fechado) { background: rgba(250, 249, 247, .96) !important; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 22px;
+  box-shadow: 0 40px 90px -30px rgba(30, 24, 22, .6), inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.modal-fundo:has(> .modal-nota) { box-sizing: border-box; }
+
+/* menu do canvas: escolher o ícone da pastinha */
+.menu-icones { width: 252px; padding: 8px; }
+.escolher-icone-grade { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.escolher-icone-grade button { height: 36px; padding: 0; border: 0; border-radius: 9px; background: none; font-size: 19px; cursor: pointer; display: grid; place-items: center; }
+.escolher-icone-grade button:hover { background: rgba(23, 24, 27, .07); }
+.escolher-icone-grade button.is-on { background: rgba(212, 227, 74, .45); box-shadow: inset 0 0 0 1.5px rgba(23, 24, 27, .25); }
+.escolher-icone-livre { display: flex; gap: 6px; margin-top: 8px; }
+.escolher-icone-livre input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0; border-radius: 9px; font: inherit; font-size: 13px; background: rgba(23, 24, 27, .06); }
+.escolher-icone-sem { flex: none; height: 30px; padding: 0 10px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: 12.5px; color: var(--mute); cursor: pointer; }
+.escolher-icone-sem:hover:not(:disabled) { background: rgba(23, 24, 27, .06); color: var(--ink); }
+.escolher-icone-sem:disabled { opacity: .4; cursor: default; }
+
+/* modo de trabalho (W): a navegação de cima e a barra de baixo saem; pastas, pinados, pastas de status e chat ficam */
+.canvas-barra { transition: transform .38s var(--ease), opacity .3s ease; }
+.modo-trabalho .lateral-area { transform: translateY(-110%); opacity: 0; pointer-events: none; }
+.modo-trabalho .canvas-barra { transform: translateY(160%); opacity: 0; pointer-events: none !important; }
+.escolher-icone .escolher-icone-livre { margin: 0 0 8px; }
+.escolher-icone-grade { max-height: 232px; overflow-y: auto; scrollbar-width: thin; }
+.escolher-icone-vazio { grid-column: 1 / -1; margin: 6px 4px; font-size: 12.5px; color: var(--mute); }
+.menu-icones { width: 268px; }

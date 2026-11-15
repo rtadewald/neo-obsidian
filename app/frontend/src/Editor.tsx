@@ -108,6 +108,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, vie
           }),
           keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { cb.current.onSalvar?.(); return true } },
             { key: 'Mod-i', preventDefault: true, run: (v) => { cb.current.onJarvis?.(selecao(v)); return true } },
+            { key: 'Mod-b', preventDefault: true, run: (v) => { envolver(v, '**'); return true } },   // negrito, como no Obsidian
             indentWithTab, ...defaultKeymap, ...historyKeymap]),
           EditorView.updateListener.of((u) => { if (u.docChanged) cb.current.onMudar(u.state.doc.toString()) }),
         ],
@@ -131,6 +132,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, vie
       status: e?.status && { valor: e.status.valor, opcoes: e.status.opcoes, mudar: (s) => extraRef.current?.status?.mudar(s) },
       onData: e?.onData && ((d) => extraRef.current?.onData?.(d)),
       onPublicado: e?.onPublicado && ((b) => extraRef.current?.onPublicado?.(b)),
+      onLink: (n) => extraRef.current?.onLink?.(n),
     }
     v.dispatch({ effects: definirExtra.of(fixo) })
   }, [assinatura, chave])
