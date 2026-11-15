@@ -364,8 +364,32 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   useEffect(() => { try { localStorage.setItem('canvas-produtos-fora', JSON.stringify(prodFora)) } catch { /* sem storage */ } }, [prodFora])
   const alternarProduto = (k: string) => setProdFora((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]))
   // canvas próprio de um card: pinados ficam na barra da esquerda; abaixo, as últimas aberturas
-  const [vistas, setVistas] = useState<Vistas>(() => { try { return { pinados: [], historico: [], ...JSON.parse(localStorage.getItem(chaveLocal('canvas-vistas')) || '{}') } } catch { return { pinados: [], historico: [] } } })
-  useEffect(() => { try { localStorage.setItem(chaveLocal('canvas-vistas'), JSON.stringify(vistas)) } catch { /* sem storage */ } }, [vistas])
+  // pinados são globais (o card pinado continua pinado em qualquer canvas onde ele esteja); o histórico é de cada canvas
+  const [vistas, setVistas] = useState<Vistas>(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem(chaveLocal('canvas-vistas')) || '{}') as Partial<Vistas>
+      return { pinados: pinadosGlobais(), historico: local.historico ?? [] }
+    } catch { return { pinados: pinadosGlobais(), historico: [] } }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(chaveLocal('canvas-vistas'), JSON.stringify({ pinados: [], historico: vistas.historico }))
+      // grava os pinados globais sem perder os de cards que não estão neste canvas
+      const daqui = new Set(est ? [...est.ideias.map((i) => `i:${i.nome}`), ...est.producoes.map((p) => `p:${p.raiz}/${p.nome}`), ...est.producoes.filter((p) => p.ideia).map((p) => `g:${p.ideia}`), ...est.entradas.map((e) => `e:${e.nome}`)] : [])
+      const outros = pinadosGlobais().filter((id) => !daqui.has(id) && !vistas.pinados.includes(id))
+      localStorage.setItem('canvas-pinados', JSON.stringify([...vistas.pinados, ...outros]))
+    } catch { /* sem storage */ }
+  }, [vistas])  // eslint-disable-line react-hooks/exhaustive-deps
+  // outra aba do app (ou outro canvas) mudou os pinados: esta acompanha
+  useEffect(() => {
+    const f = (e: StorageEvent) => {
+      if (e.key !== 'canvas-pinados') return
+      const novos = pinadosGlobais()
+      setVistas((v) => (JSON.stringify(v.pinados) === JSON.stringify(novos) ? v : { ...v, pinados: novos }))
+    }
+    window.addEventListener('storage', f)
+    return () => window.removeEventListener('storage', f)
+  }, [])
   const abrirVista = useCallback((id: string) => {
     setVisao(`foco:${id}`)
     setVistas((v) => v.pinados.includes(id) ? v : { ...v, historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) })
@@ -1040,7 +1064,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               onDragOver={(e) => { if (!arrastaPasta || c.slug === INBOX) return; e.preventDefault(); setAlvoPasta(c.slug) }}
               onDragEnd={() => { setArrastaPasta(null); setAlvoPasta(null) }}
               onDrop={(e) => { e.preventDefault(); if (arrastaPasta && c.slug !== INBOX) soltarPasta(arrastaPasta, c.slug) }}
-              onClick={() => { if (c.slug !== canvas) onTrocarCanvas(c.slug) }}
+              onClick={() => { if (c.slug !== canvas) onTrocarCanvas(c.slug); else if (visao !== 'principal') setVisao('principal') }}   // o canvas aberto: volta do card/pasta para o canvas
               onContextMenu={(e) => { if (c.slug === INBOX) return; e.preventDefault(); e.stopPropagation(); setMenuPasta({ x: e.clientX, y: e.clientY, c }) }} title={`${c.nome}: ${c.producoes} produções, ${c.vsls} VSLs, ${c.ideias} ideias`}>
               <span className="pastinha-aba" />
               <span className="pastinha-frente">{c.icone !== '🗂️' && <span className="pastinha-ic">{c.icone}</span>}<em>{c.producoes + c.vsls}</em></span>
@@ -1294,6 +1318,18 @@ function FiltroProdutos({ opcoes, fora, onAlternar, onTodos, textos = { todos: '
   )
 }
 
+/** Pinados globais (todos os canvas). Na primeira vez, junta os pinados que antes eram guardados por canvas. */
+function pinadosGlobais(): string[] {
+  try {
+    const g = localStorage.getItem('canvas-pinados')
+    if (g) return JSON.parse(g)
+    const juntos = Object.keys(localStorage).filter((k) => k.startsWith('canvas-vistas'))
+      .flatMap((k) => { try { return (JSON.parse(localStorage.getItem(k) || '{}').pinados ?? []) as string[] } catch { return [] } })
+    const l = [...new Set(juntos)]
+    localStorage.setItem('canvas-pinados', JSON.stringify(l))
+    return l
+  } catch { return [] }
+}
 let listaCanvasGuardada: ResumoCanvas[] = []   // a lista sobrevive à troca de canvas (a mesa remonta)
 /** Cache do estado de cada canvas: trocar de canvas desenha na hora com o que já se sabe e atualiza por trás. */
 const cacheEst = new Map<string, EstadoCanvas>()
