@@ -1031,6 +1031,11 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             const chip = (e.target as HTMLElement).closest<HTMLElement>('.cartao-formato[data-nome]')
             onAbrir(chip ? { raiz: chip.dataset.raiz as Alvo['raiz'], nome: chip.dataset.nome! } : alvoDe(n))
           }}
+          onPaneClick={(e) => {   // clicar num desenho (texto, seta, forma) fora do modo desenho já entra nele, com o desenho selecionado
+            if (desenhando || visao !== 'principal') return
+            const id = controleDesenho.current?.elementoEm(e.clientX, e.clientY)
+            if (id) { controleDesenho.current!.selecionar(id); setDesenhando(true) }
+          }}
           onPaneContextMenu={(e) => abrirMenu(e)}
           onNodeContextMenu={(e, n) => { const sel = rf.getNodes().filter((x) => x.selected); abrirMenu(e, sel.length > 1 && sel.some((x) => x.id === n.id) ? { selecao: sel } : { no: n }) }}
           onSelectionContextMenu={(e, sel) => abrirMenu(e, { selecao: sel })}

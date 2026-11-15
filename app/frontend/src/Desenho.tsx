@@ -29,7 +29,11 @@ export const TECLAS_FERRAMENTA: Record<string, string> = {
 }
 
 /** O que a mesa usa para falar com a camada: empurrar o pan/zoom do canvas e escolher a ferramenta. */
-export type ControleDesenho = { vista: (v: Vista) => void; ferramenta: (t: string) => void; podeSair: () => boolean }
+export type ControleDesenho = {
+  vista: (v: Vista) => void; ferramenta: (t: string) => void; podeSair: () => boolean
+  elementoEm: (x: number, y: number) => string | null   // id do desenho no ponto da tela (ou null)
+  selecionar: (id: string) => void                       // ao entrar no modo desenho, já com este elemento selecionado
+}
 
 export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle }: {
   canvas: string; ativo: boolean; vistaInicial: () => Vista
@@ -59,7 +63,20 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
     if (!a || !modulo) return
     a.updateScene({ appState: { scrollX: v.x / v.zoom, scrollY: v.y / v.zoom, zoom: { value: v.zoom as never } }, captureUpdate: modulo.CaptureUpdateAction.NEVER })
   }
+  // o desenho que está num ponto da tela (pela caixa de cada elemento, com uma folga), do mais de cima para o de baixo
+  const elementoEm = (x: number, y: number): string | null => {
+    const a = api.current, el = caixa.current
+    if (!a || !el) return null
+    const st = a.getAppState(), z = st.zoom.value as number, r = el.getBoundingClientRect()
+    const sx = (x - r.left) / z - st.scrollX, sy = (y - r.top) / z - st.scrollY, folga = 6 / z
+    const achado = [...a.getSceneElements()].reverse().find((e) => !e.isDeleted && sx >= Math.min(e.x, e.x + e.width) - folga && sx <= Math.max(e.x, e.x + e.width) + folga
+      && sy >= Math.min(e.y, e.y + e.height) - folga && sy <= Math.max(e.y, e.y + e.height) + folga)
+    return achado ? achado.id : null
+  }
+  const selecaoPendente = useRef<string | null>(null)
   controle.current = {
+    elementoEm,
+    selecionar: (id) => { selecaoPendente.current = id },
     vista: aplicarVista,
     ferramenta: (t) => { ferramentaPendente.current = t; if (ativo) api.current?.setActiveTool({ type: t as never }) },
     podeSair: () => {
@@ -90,47 +107,50 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
     const t = window.setTimeout(() => {
       api.current?.refresh()
       if (ferramentaPendente.current) { api.current?.setActiveTool({ type: ferramentaPendente.current as never }); ferramentaPendente.current = null }
+      if (selecaoPendente.current) {   // entrou clicando num desenho: ele já vem selecionado
+        api.current?.updateScene({ appState: { selectedElementIds: { [selecaoPendente.current]: true } as never } })
+        selecaoPendente.current = null
+      }
       caixa.current?.querySelector<HTMLElement>('.excalidraw')?.focus()
     }, 80)
     return () => window.clearTimeout(t)
   }, [ativo])
 
-  // No modo desenho, com a seleção (ou a mão) ativa, clicar num card abre a nota como fora do desenho:
-  // o clique passa para o card de baixo quando não há desenho no ponto. Com as outras ferramentas, desenha por cima.
+  // No modo desenho, com a seleção (ou a mão) ativa, o card de baixo continua vivo quando não há desenho no ponto:
+  // arrastar move o card (a camada do desenho sai do caminho durante o gesto) e clicar sem mover abre a nota.
+  // Com as outras ferramentas (retângulo, lápis…), desenha por cima.
   useEffect(() => {
     const el = caixa.current
     if (!ativo || !el) return
-    let alvo: { x: number; y: number; card: HTMLElement } | null = null
-    const cardEm = (x: number, y: number) => document.elementsFromPoint(x, y).find((n) => !el.contains(n) && n.closest('.react-flow__node')) as HTMLElement | undefined
-    const temDesenho = (x: number, y: number) => {
-      const a = api.current
-      if (!a) return false
-      const st = a.getAppState(), z = st.zoom.value as number, r = el.getBoundingClientRect()
-      const sx = (x - r.left) / z - st.scrollX, sy = (y - r.top) / z - st.scrollY, folga = 6 / z
-      return a.getSceneElements().some((e) => !e.isDeleted && sx >= Math.min(e.x, e.x + e.width) - folga && sx <= Math.max(e.x, e.x + e.width) + folga
-        && sy >= Math.min(e.y, e.y + e.height) - folga && sy <= Math.max(e.y, e.y + e.height) + folga)
-    }
+    let gesto: { x: number; y: number } | null = null
+    const noCard = (x: number, y: number) => document.elementsFromPoint(x, y).find((n) => !el.contains(n) && n.closest('.react-flow__node')) as HTMLElement | undefined
     const desce = (e: PointerEvent) => {
-      alvo = null
+      gesto = null
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
       const tipo = api.current?.getAppState().activeTool.type
       if (tipo !== 'selection' && tipo !== 'hand') return
-      const card = cardEm(e.clientX, e.clientY)
-      if (!card || temDesenho(e.clientX, e.clientY)) return
-      alvo = { x: e.clientX, y: e.clientY, card }
-      e.stopPropagation(); e.preventDefault()
+      const alvo = noCard(e.clientX, e.clientY)
+      if (!alvo || elementoEm(e.clientX, e.clientY)) return
+      // sem preventDefault: ele cortaria os eventos de mouse (mousemove/mouseup) que o arraste do card usa
+      e.stopPropagation()
+      gesto = { x: e.clientX, y: e.clientY }
+      el.style.pointerEvents = 'none'   // o resto do gesto (mover, soltar) vai para o card
+      const o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY, button: 0, buttons: 1 }
+      alvo.dispatchEvent(new PointerEvent('pointerdown', { ...o, pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true }))
+      alvo.dispatchEvent(new MouseEvent('mousedown', o))
     }
     const sobe = (e: PointerEvent) => {
-      if (!alvo) return
-      const a = alvo; alvo = null
-      e.stopPropagation()
-      if (Math.hypot(e.clientX - a.x, e.clientY - a.y) > 5) return
-      cardEm(e.clientX, e.clientY)?.click()   // o React Flow abre a nota (o chip de formato abre aquela saída)
+      if (!gesto) return
+      const g = gesto; gesto = null
+      window.setTimeout(() => { el.style.pointerEvents = '' }, 0)
+      if (Math.hypot(e.clientX - g.x, e.clientY - g.y) <= 5) noCard(e.clientX, e.clientY)?.click()   // sem mover: abre a nota
     }
+    const engole = (e: MouseEvent) => { if (gesto) e.stopPropagation() }   // o mousedown de verdade do gesto não chega ao Excalidraw
     el.addEventListener('pointerdown', desce, true)
+    el.addEventListener('mousedown', engole, true)
     window.addEventListener('pointerup', sobe, true)
-    return () => { el.removeEventListener('pointerdown', desce, true); window.removeEventListener('pointerup', sobe, true) }
-  }, [ativo])
+    return () => { el.removeEventListener('pointerdown', desce, true); el.removeEventListener('mousedown', engole, true); window.removeEventListener('pointerup', sobe, true); el.style.pointerEvents = '' }
+  }, [ativo])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Esc com a ferramenta de seleção e nada selecionado sai do modo desenho
   useEffect(() => {
