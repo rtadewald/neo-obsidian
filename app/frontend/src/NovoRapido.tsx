@@ -6,7 +6,7 @@ import { INBOX, listarCanvases, type ResumoCanvas } from './canvasApi'
  *  O que nasce aqui ganha o selo NOVO no card. */
 export type TipoNovo = 'ideia' | 'producao'
 
-const FORMATOS: [string, string][] = [['📱', 'Reels'], ['💰', 'Ad'], ['🏞️', 'Carrossel'], ['📝', 'Feed'], ['📺', 'VSL'], ['🎥', 'YouTube'], ['🗣️', 'Stories'], ['🎙️', 'Live']]
+const FORMATOS: [string, string][] = [['📱', 'Reels'], ['💰', 'Ad'], ['🏞️', 'Carrossel'], ['📺', 'VSL'], ['🎥', 'YouTube'], ['🗣️', 'Stories']]
 
 export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }: {
   tipo: TipoNovo
@@ -16,7 +16,7 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
   onCriado: (canvas: string, msg: string) => void
 }) {
   const [titulo, setTitulo] = useState('')
-  const [formato, setFormato] = useState(() => { try { return localStorage.getItem('novo-formato') || '📱' } catch { return '📱' } })
+  const [formato, setFormato] = useState(() => { try { const f = localStorage.getItem('novo-formato'); return f && FORMATOS.some(([x]) => x === f) ? f : '📱' } catch { return '📱' } })
   const [canvases, setCanvases] = useState<ResumoCanvas[]>([])
   const [canvas, setCanvas] = useState(canvasAtual ?? INBOX)
   const [erro, setErro] = useState('')
