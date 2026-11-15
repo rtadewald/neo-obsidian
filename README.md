@@ -49,6 +49,7 @@ O Neo-Obsidian não substitui o vault: **ele lê e escreve os mesmos arquivos `.
 ## Recursos
 
 - **Canvas por tema** (React Flow): cada nota vive num canvas (Skills, Hacks e Dicas…, pela propriedade `grupo`), com cards de ideia, de produção e de VSL e ligações entre eles. Nota sem canvas fica no 📥 Inbox.
+- **Desenho livre** com o Excalidraw de verdade por baixo dos cards (mesmo pan/zoom): retângulos, setas, texto, lápis, cores e os atalhos dele. Aperte R, O, A, P, T… no canvas para desenhar; Esc sai.
 - **Produtos** (FIA, FID, Dados, PICO) são as tags da nota: dentro do canvas viram filtro e uma bolinha colorida no card.
 - **O que já saiu, some do Inbox.** Uma produção publicada sem canvas vai para a pasta Publicado; num canvas temático ela fica.
 - **Pastas** (Em edição, Agendado, Publicado) abrem uma **tabela** com estatísticas, filtros por formato, ano e canvas, barras por mês e ordenação. Clique numa linha para abrir a copy, e o "voltar" retorna à tabela.

@@ -1,0 +1,135 @@
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import '@excalidraw/excalidraw/index.css'
+import { cabecalhoCanvas } from './canvasApi'
+
+/** Camada de desenho do canvas: o Excalidraw de verdade (ferramentas, atalhos, cores, estilo à mão), por baixo dos
+ *  cards e com o mesmo pan/zoom do React Flow. Fora do modo desenho ele só mostra os desenhos (não pega o mouse);
+ *  no modo desenho ele vem para a frente e o canvas de cards para de responder.
+ *  Coordenadas: o React Flow põe um ponto da cena na tela em `cena * zoom + x`; o Excalidraw em
+ *  `(cena + scrollX) * zoom`. Logo scrollX = x / zoom (os dois ocupam o mesmo retângulo).
+ *  Cada canvas tem o seu desenho em app/dados/canvas/<slug>.desenho.json (GET/PUT /api/canvas/desenho). */
+
+// fontes servidas pelo próprio app (public/fonts, copiadas de node_modules no npm install), sem CDN
+;(window as unknown as { EXCALIDRAW_ASSET_PATH: string }).EXCALIDRAW_ASSET_PATH = '/'
+
+type Modulo = typeof import('@excalidraw/excalidraw')
+type Api = Parameters<NonNullable<React.ComponentProps<Modulo['Excalidraw']>['excalidrawAPI']>>[0]
+type Elementos = Parameters<NonNullable<React.ComponentProps<Modulo['Excalidraw']>['onChange']>>[0]
+type Arquivos = Parameters<NonNullable<React.ComponentProps<Modulo['Excalidraw']>['onChange']>>[2]
+export type Vista = { x: number; y: number; zoom: number }
+
+let modulo: Modulo | null = null
+const Excalidraw = lazy(() => import('@excalidraw/excalidraw').then((m) => { modulo = m; return { default: m.Excalidraw } }))
+
+/** Teclas de ferramenta do Excalidraw: apertar uma delas no canvas entra no modo desenho já com a ferramenta. */
+export const TECLAS_FERRAMENTA: Record<string, string> = {
+  r: 'rectangle', '2': 'rectangle', d: 'diamond', '3': 'diamond', o: 'ellipse', '4': 'ellipse', a: 'arrow', '5': 'arrow',
+  l: 'line', '6': 'line', p: 'freedraw', x: 'freedraw', '7': 'freedraw', t: 'text', '8': 'text', e: 'eraser', '0': 'eraser',
+}
+
+/** O que a mesa usa para falar com a camada: empurrar o pan/zoom do canvas e escolher a ferramenta. */
+export type ControleDesenho = { vista: (v: Vista) => void; ferramenta: (t: string) => void; podeSair: () => boolean }
+
+export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle }: {
+  canvas: string; ativo: boolean; vistaInicial: () => Vista
+  onVista: (v: Vista) => void   // o usuário mexeu no pan/zoom dentro do Excalidraw: o canvas acompanha
+  onSair: () => void
+  controle: React.MutableRefObject<ControleDesenho | null>
+}) {
+  const [dados, setDados] = useState<{ elements: Elementos; files: Arquivos } | null>(null)
+  const api = useRef<Api | null>(null)
+  const ultimaVista = useRef<Vista | null>(null)
+  const assinatura = useRef('')
+  const timer = useRef<number | undefined>(undefined)
+  const caixa = useRef<HTMLDivElement>(null)
+  const ferramentaPendente = useRef<string | null>(null)   // pedida antes do Excalidraw sair do modo leitura
+
+  useEffect(() => {
+    let vivo = true
+    fetch('/api/canvas/desenho', { headers: cabecalhoCanvas() }).then((r) => r.json())
+      .then((d) => { if (vivo) setDados({ elements: d.elements ?? [], files: d.files ?? {} }) })
+      .catch(() => { if (vivo) setDados({ elements: [], files: {} }) })
+    return () => { vivo = false }
+  }, [canvas])
+
+  const aplicarVista = (v: Vista) => {
+    ultimaVista.current = v
+    const a = api.current
+    if (!a || !modulo) return
+    a.updateScene({ appState: { scrollX: v.x / v.zoom, scrollY: v.y / v.zoom, zoom: { value: v.zoom as never } }, captureUpdate: modulo.CaptureUpdateAction.NEVER })
+  }
+  controle.current = {
+    vista: aplicarVista,
+    ferramenta: (t) => { ferramentaPendente.current = t; if (ativo) api.current?.setActiveTool({ type: t as never }) },
+    podeSair: () => {
+      const s = api.current?.getAppState()
+      return !s || (s.activeTool.type === 'selection' && !Object.keys(s.selectedElementIds).length && !s.editingTextElement && !s.newElement)
+    },
+  }
+
+  // grava o desenho (com uma pausa para não gravar a cada traço); a assinatura evita gravar quando só o pan mudou
+  const gravar = (els: Elementos, files: Arquivos) => {
+    const sig = `${els.length}:${els.reduce((s, e) => s + e.version, 0)}:${Object.keys(files).length}`
+    if (sig === assinatura.current) return
+    const primeira = !assinatura.current
+    assinatura.current = sig
+    if (primeira) return   // o primeiro onChange é o próprio carregamento
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      fetch('/api/canvas/desenho', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() },
+        body: JSON.stringify({ elements: els.filter((e) => !e.isDeleted), files }) }).catch(() => {})
+    }, 700)
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  // ao entrar no modo desenho, o foco vai para o Excalidraw (os atalhos dele só valem com foco dentro dele)
+  useEffect(() => {
+    if (!ativo) return
+    // sair do modo leitura volta o Excalidraw para a seleção: a ferramenta pedida (tecla R, O…) entra depois disso
+    const t = window.setTimeout(() => {
+      api.current?.refresh()
+      if (ferramentaPendente.current) { api.current?.setActiveTool({ type: ferramentaPendente.current as never }); ferramentaPendente.current = null }
+      caixa.current?.querySelector<HTMLElement>('.excalidraw')?.focus()
+    }, 80)
+    return () => window.clearTimeout(t)
+  }, [ativo])
+
+  // Esc com a ferramenta de seleção e nada selecionado sai do modo desenho
+  useEffect(() => {
+    if (!ativo) return
+    const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && controle.current?.podeSair()) onSair() }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [ativo, onSair, controle])
+
+  if (!dados) return null
+  const v = vistaInicial()
+  return (
+    <div ref={caixa} className={`desenho ${ativo ? 'is-ativo' : ''}`} aria-hidden={!ativo}>
+      <Suspense fallback={null}>
+        <Excalidraw
+          key={canvas}
+          langCode="pt-BR"
+          theme="light"
+          viewModeEnabled={!ativo}
+          initialData={{ elements: dados.elements, files: dados.files,
+            appState: { viewBackgroundColor: 'transparent', scrollX: v.x / v.zoom, scrollY: v.y / v.zoom, zoom: { value: v.zoom as never } } }}
+          UIOptions={{ canvasActions: { changeViewBackgroundColor: false, clearCanvas: true, loadScene: false, saveToActiveFile: false, toggleTheme: false, export: false, saveAsImage: true } }}
+          excalidrawAPI={(a) => { api.current = a; if (import.meta.env.DEV) (window as unknown as { __desenho: Api }).__desenho = a; if (ultimaVista.current) window.setTimeout(() => aplicarVista(ultimaVista.current!), 0) }}
+          onChange={(els, st, files) => {
+            gravar(els, files)
+            if (!ativo) return
+            // pan/zoom feito dentro do Excalidraw (roda, pinça, ⌘+): o canvas de cards acompanha
+            const z = st.zoom.value as number
+            const nova = { x: st.scrollX * z, y: st.scrollY * z, zoom: z }
+            const u = ultimaVista.current
+            if (!u || Math.abs(u.x - nova.x) > 0.5 || Math.abs(u.y - nova.y) > 0.5 || Math.abs(u.zoom - nova.zoom) > 1e-4) {
+              ultimaVista.current = nova
+              onVista(nova)
+            }
+          }}
+        />
+      </Suspense>
+    </div>
+  )
+}

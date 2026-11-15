@@ -11,3 +11,6 @@ app/frontend/node_modules/
 app/frontend/dist/
 .env
 __pycache__/
+
+# fontes do Excalidraw, copiadas de node_modules no npm install
+app/frontend/public/fonts/

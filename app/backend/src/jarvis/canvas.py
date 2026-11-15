@@ -288,6 +288,41 @@ def _gravar_layout(d: dict, slug: str | None = None):
         os.replace(tmp, arq)
 
 
+# ---------- desenho (Excalidraw) ----------
+# Cada canvas tem a sua camada de desenho: os elementos e os arquivos (imagens) do Excalidraw, num arquivo à parte do
+# layout (`<slug>.desenho.json`), com o mesmo cuidado: temporário próprio e a versão anterior no histórico.
+
+def _arq_desenho(slug: str | None = None) -> Path:
+    return LAYOUTS / f"{canvas_info(slug)['slug']}.desenho.json"
+
+
+def desenho(slug: str | None = None) -> dict:
+    arq = _arq_desenho(slug)
+    try:
+        d = json.loads(arq.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        d = {}
+    except (OSError, ValueError) as e:
+        raise LayoutIlegivel(f"{arq.name} ilegível ({e}); restaure de {HISTORICO.name}/") from e
+    return {"elements": d.get("elements", []), "files": d.get("files", {})}
+
+
+@_travado
+def salvar_desenho(d: dict, slug: str | None = None):
+    LAYOUTS.mkdir(parents=True, exist_ok=True)
+    arq = _arq_desenho(slug)
+    if arq.is_file():
+        HISTORICO.mkdir(exist_ok=True)
+        pref = arq.stem.replace(".", "-")
+        shutil.copy2(arq, HISTORICO / f"{pref}-{datetime.now():%Y%m%d-%H%M%S-%f}.json")
+        for velho in sorted(HISTORICO.glob(f"{pref}-*.json"))[:-100]:
+            velho.unlink(missing_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=LAYOUTS, prefix=".desenho-", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"elements": d.get("elements", []), "files": d.get("files", {})}, ensure_ascii=False))
+    os.replace(tmp, arq)
+
+
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 IMG = re.compile(r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\((https?://[^)\s]+)\)")
 EXT_IMG = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif")
@@ -379,8 +414,11 @@ def posicoes(pos: dict[str, dict]):
 
 @_travado
 def arquivar(id_: str, sim: bool):
+    """Arquivar esconde o card deste canvas. Desarquivar põe em `visiveis` também: senão uma copy publicada no Inbox
+    continuaria escondida pela regra das publicadas."""
     d = _layout()
     d["arquivados"] = [a for a in d["arquivados"] if a != id_] + ([id_] if sim else [])
+    d["visiveis"] = [a for a in d["visiveis"] if a != id_] + ([] if sim else [id_])
     _gravar_layout(d)
 
 

@@ -6,6 +6,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
+import { Desenho, TECLAS_FERRAMENTA, type ControleDesenho } from './Desenho'
 import { ModalTabela, tabelaNova, type EstadoTabela } from './Tabela'
 import { PASTA, type Raiz, type Trecho } from './notas'
 import {
@@ -324,10 +325,21 @@ export function Canvas(p: Props) {
 
 function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, onTrocarCanvas, onCaminho }: Props) {
   const [trocar, setTrocar] = useState(false)   // seletor de canvas no nome da barra
+  const trocarRef = useRef<HTMLSpanElement>(null)
+  // a lista do seletor fecha ao clicar fora dela (inclusive no canvas) ou com Esc
+  useEffect(() => {
+    if (!trocar) return
+    const fora = (e: PointerEvent) => { if (!trocarRef.current?.contains(e.target as HTMLElement)) setTrocar(false) }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setTrocar(false)
+    window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc)
+    return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc) }
+  }, [trocar])
   const [todosCanvas, setTodosCanvas] = useState<ResumoCanvas[]>([])
   const chaveLocal = (k: string) => `${k}#${canvas}`   // cada canvas guarda a sua vista, pinados etc.
   const [est, setEst] = useState<EstadoCanvas | null>(null)
   const [visao, setVisao] = useState<Visao>('principal')
+  const visaoRef = useRef<Visao>('principal')
+  visaoRef.current = visao
   const [filtro, setFiltro] = useState<Filtro>(() => { try { return (localStorage.getItem('canvas-filtro') as Filtro) || 'todos' } catch { return 'todos' } })
   useEffect(() => { try { localStorage.setItem('canvas-filtro', filtro) } catch { /* sem storage */ } }, [filtro])
   // chips liga/desliga, independentes: todos começam ligados e cada clique esconde ou mostra aquele tipo
@@ -389,6 +401,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [aviso, setAviso] = useState<string | null>(null)
   // modal de tabela das pastas; ao abrir uma copy dali ele some e o "voltar" do modal da nota o traz de volta como estava
   const [tabela, setTabela] = useState<EstadoTabela | null>(null)
+  const [verArquivados, setVerArquivados] = useState(false)   // modal com os cards arquivados deste canvas
+  // modo desenho: a camada do Excalidraw vem para a frente (só na vista principal, que é onde os desenhos moram)
+  const [desenhando, setDesenhando] = useState(false)
+  const controleDesenho = useRef<ControleDesenho | null>(null)
+  const sairDoDesenho = useCallback(() => setDesenhando(false), [])
+  useEffect(() => { if (visao !== 'principal') setDesenhando(false) }, [visao])
+  const desenhandoRef = useRef(false)
+  desenhandoRef.current = desenhando
   const caixa = useRef<HTMLDivElement>(null)
   const rf = useReactFlow<No, Edge>()
   const visaoAntes = useRef<Visao | null>(null)
@@ -732,7 +752,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       const alvo = e.target as HTMLElement
       if (alvo.closest('input, textarea, [contenteditable="true"], .modal-fundo, .chat') || document.querySelector('.modal-fundo, .paleta-fundo')) return
       const t = e.clipboardData?.getData('text/plain')?.trim()
-      if (!t || visao !== 'principal') return
+      if (!t || visao !== 'principal' || desenhando) return
       e.preventDefault()
       novaEntrada(t, noMeio())
     }
@@ -744,7 +764,12 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
       if (e.target instanceof Element && e.target.closest('textarea, input, select, .cm-editor') || document.querySelector('.modal-fundo, .paleta-fundo')) return
+      if (desenhandoRef.current) return   // no modo desenho os atalhos são os do Excalidraw
       const k = e.key.toLowerCase()
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && TECLAS_FERRAMENTA[k] && visaoRef.current === 'principal') {
+        e.preventDefault(); controleDesenho.current?.ferramenta(TECLAS_FERRAMENTA[k]); setDesenhando(true)
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && (k === '=' || k === '+')) { e.preventDefault(); rf.zoomIn({ duration: 160 }) }
       else if ((e.metaKey || e.ctrlKey) && (k === '-' || k === '_')) { e.preventDefault(); rf.zoomOut({ duration: 160 }) }
       else if ((e.metaKey || e.ctrlKey) && (k === 'z' || k === 'y')) { e.preventDefault(); desfazer(k === 'y' || e.shiftKey) }
@@ -847,23 +872,25 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
 
   return (
     <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}>
-    <div className="canvas" ref={caixa}>
+    <div className={`canvas ${desenhando ? 'is-desenhando' : ''}`} ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
-        onDoubleClick={(e) => { if (!(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
+        onDoubleClick={(e) => { if (!desenhando && !(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
         // fase de captura: o pan/zoom do React Flow trata o mousedown no canvas e não deixa ele subir até aqui
         onMouseDownCapture={(e) => { if (e.button === 1) meio.current = { x: e.clientX, y: e.clientY } }}
         onAuxClickCapture={(e) => {
-          if (e.button !== 1 || !meio.current || Math.hypot(e.clientX - meio.current.x, e.clientY - meio.current.y) > 5) return
+          if (e.button !== 1 || desenhando || !meio.current || Math.hypot(e.clientX - meio.current.x, e.clientY - meio.current.y) > 5) return
           // botão do meio: num card enquadra o card; dois cliques fora de tudo mostram o canvas todo
           const id = (e.target as Element).closest('.react-flow__node')?.getAttribute('data-id')
           if (id) { e.preventDefault(); enquadrarTudo(350, [id]); return }
           const agora = Date.now()
           if (agora - ultimoMeio.current < 450) { e.preventDefault(); enquadrarTudo(); ultimoMeio.current = 0 } else ultimoMeio.current = agora
         }}>
+        {visao === 'principal' && <Desenho canvas={canvas} ativo={desenhando} controle={controleDesenho} vistaInicial={() => rf.getViewport()}
+          onVista={(v) => rf.setViewport(v)} onSair={sairDoDesenho} />}
         <ReactFlow<No, Edge>
           nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO}
           onNodeDragStart={(_, __, ns) => comecouArraste(ns)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
-          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => fundo.current?.style.setProperty('--z', String(v.zoom))} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
+          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
           onNodeClick={(e, n) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey || (e.target as HTMLElement).closest('a, video')) return
             // chip de formato no card de produção: abre aquela saída direto
@@ -874,14 +901,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           onNodeContextMenu={(e, n) => { const sel = rf.getNodes().filter((x) => x.selected); abrirMenu(e, sel.length > 1 && sel.some((x) => x.id === n.id) ? { selecao: sel } : { no: n }) }}
           onSelectionContextMenu={(e, sel) => abrirMenu(e, { selecao: sel })}
           deleteKeyCode={['Backspace', 'Delete']} selectionKeyCode={null} multiSelectionKeyCode={['Meta', 'Control']}
-          minZoom={0.05} maxZoom={2.5} panOnScroll panOnScrollMode={PanOnScrollMode.Free} panOnScrollSpeed={1} zoomOnPinch zoomOnDoubleClick={false}
+          minZoom={0.1} maxZoom={2.5} panOnScroll panOnScrollMode={PanOnScrollMode.Free} panOnScrollSpeed={1} zoomOnPinch zoomOnDoubleClick={false}
           panOnDrag={[0, 1]} panActivationKeyCode={null} selectionOnDrag={false} selectionMode={SelectionMode.Partial} connectionRadius={36}
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} color="rgba(23,24,27,.2)" />
           <MiniMap pannable zoomable position="bottom-right" className="canvas-mapa" nodeStrokeWidth={0}
             nodeColor={(n) => (n.type === 'ideia' ? '#d4e34a' : n.type === 'grupo' ? '#1d1d1f' : n.type === 'entrada' ? '#c9c3bf' : '#ffffff')} maskColor="rgba(236,233,230,.7)" />
         </ReactFlow>
-        {(selecionando || caixaSel) && !menu && (
+        {(selecionando || caixaSel) && !menu && !desenhando && (
           <div className="capa-selecao" onPointerDown={capaSelecao} onWheel={zoomNaCapa}>
             {caixaSel && <div className="caixa-selecao" style={{ left: caixaSel.x, top: caixaSel.y, width: caixaSel.w, height: caixaSel.h }} />}
           </div>
@@ -918,7 +945,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
           {visao === 'principal' && est?.canvas && onTrocarCanvas ? (
             // o nome do canvas é um seletor: troca de canvas sem voltar à página de controle
-            <span className="canvas-trocar">
+            <span className="canvas-trocar" ref={trocarRef}>
               <button type="button" className={`canvas-nome is-botao ${trocar ? 'is-aberto' : ''}`} onClick={() => { setTrocar((v) => !v); if (!trocar) listarCanvases().then(setTodosCanvas).catch(() => {}) }}
                 title="Trocar de canvas">{est.canvas.icone} {est.canvas.nome}<span className="canvas-trocar-seta">▾</span><em>{nos.length} cards</em></button>
               {trocar && (
@@ -939,12 +966,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             {TIPOS_VER.map((t) => <button key={t.k} className={`canvas-tipo ${tiposVer.includes(t.k) ? 'is-on' : ''}`} aria-pressed={tiposVer.includes(t.k)}
               title={tiposVer.includes(t.k) ? `Esconder ${t.nome.slice(3)}` : `Mostrar ${t.nome.slice(3)}`} onClick={() => alternarTipo(t.k)}>{t.nome}</button>)}
           </div>
-          {(est?.produtos?.length ?? 0) > 0 && <div className="canvas-tipos canvas-produtos" role="group" aria-label="Produtos">
-            {est!.produtos!.map((p) => { const on = !prodFora.includes(p.slug)
-              return <button key={p.slug} className={`canvas-tipo ${on ? 'is-on' : ''}`} aria-pressed={on} title={on ? `Esconder ${p.nome}` : `Mostrar ${p.nome}`} onClick={() => alternarProduto(p.slug)}>
-                <i className="canvas-produto-cor" style={{ background: p.cor }} />{p.nome}</button> })}
-            <button className={`canvas-tipo ${!prodFora.includes(SEM) ? 'is-on' : ''}`} aria-pressed={!prodFora.includes(SEM)} title="Cards sem produto" onClick={() => alternarProduto(SEM)}>Sem</button>
-          </div>}
+          {(est?.produtos?.length ?? 0) > 0 && <FiltroProdutos produtos={est!.produtos!} fora={prodFora} alternar={alternarProduto} todos={() => setProdFora([])} />}
           {visao === 'principal' && <>
             <select className="canvas-filtro" value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} title="O que o canvas mostra">
               {FILTROS.map((f) => <option key={f.k} value={f.k}>{f.nome}{f.k !== 'todos' ? ` (${contagem[f.k]})` : ''}</option>)}
@@ -956,6 +978,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             <button className="btn-icone" title="Aproximar (⌘+)" onClick={() => rf.zoomIn({ duration: 160 })}><Icone n="mais" t={14} /></button>
             <button className="btn-icone" title="Afastar (⌘−)" onClick={() => rf.zoomOut({ duration: 160 })}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg></button>
             <button className="btn-icone" title="Mostrar tudo (duplo clique no vazio)" onClick={() => enquadrarTudo()}><Icone n="expandir" t={13} /></button>
+            <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
+              title={desenhando ? 'Sair do modo desenho (Esc)' : 'Desenhar (Excalidraw): ou aperte R, O, D, A, L, P, T…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
             <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} title={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
               onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
           </div>
@@ -1032,14 +1056,109 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             <hr />
             <Op icone="seta" onClick={() => navigator.clipboard.readText().then((t) => { if (t.trim()) novaEntrada(t.trim(), menu.flow) }).catch(() => avisar('Sem permissão para ler a área de transferência: use ⌘V.'))}>Colar como ideia <kbd>⌘V</kbd></Op>
             <Op icone="atualizar" onClick={() => enquadrarTudo()}>Ver tudo <kbd>2× clique</kbd></Op>
+            <hr />
+            <Op icone="olho" onClick={() => setVerArquivados(true)}>Arquivados{est?.arquivados.length ? <kbd>{arquivadosDoCanvas(est).length}</kbd> : null}</Op>
           </>}
         </MenuCanvas>
       )}
 
+      {verArquivados && est && <ModalArquivados est={est} onFechar={() => setVerArquivados(false)}
+        onAbrir={(n) => { setVerArquivados(false); onAbrir(alvoDe(n), { rotulo: 'Arquivados', fn: () => setVerArquivados(true) }) }}
+        onDesarquivar={(ids) => tentar(async () => { for (const id of ids) await post('arquivar', { id, sim: false }) },
+          ids.length === 1 ? 'De volta ao canvas' : `${ids.length} cards de volta ao canvas`)} />}
       {pergunta && <Perguntar p={pergunta} onFechar={() => setPergunta(null)} />}
       {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
     </div>
     </ChatUI.Provider></ProdutosUI.Provider>
+  )
+}
+
+/** Os cards arquivados à mão neste canvas (menu → Arquivar), montados como apareceriam se não estivessem. */
+function arquivadosDoCanvas(est: EstadoCanvas): No[] {
+  const arq = new Set(est.arquivados)
+  return montar({ ...est, arquivados: [], visiveis: est.arquivados }, 'principal', 'todos').nos.filter((n) => arq.has(n.id))
+}
+
+/** Modal dos arquivados (botão direito no vazio → Arquivados): abrir a nota ou trazer o card de volta ao canvas. */
+function ModalArquivados({ est, onFechar, onAbrir, onDesarquivar }: { est: EstadoCanvas; onFechar: () => void; onAbrir: (n: No) => void; onDesarquivar: (ids: string[]) => Promise<void> }) {
+  const [busca, setBusca] = useState('')
+  useEffect(() => { const esc = (e: KeyboardEvent) => e.key === 'Escape' && onFechar(); window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc) }, [onFechar])
+  const todos = useMemo(() => arquivadosDoCanvas(est), [est])
+  const q = busca.trim().toLowerCase()
+  const linhas = todos.filter((n) => !q || nomeDoId(n.id).toLowerCase().includes(q))
+  const notas = (n: No): Producao[] => n.type === 'grupo' ? n.data.saidas : n.type === 'producao' ? [n.data.prod] : n.type === 'ideia' ? n.data.saidas : []
+  const icone = (n: No) => n.type === 'ideia' ? '💡' : n.type === 'grupo' ? ICONE_GRUPO : n.type === 'producao' ? (n.data.prod.formato === VSL ? VSL : ICONE_GRUPO) : '🔗'
+  const titulo = (n: No) => nomeDoId(n.id).replace(/^(🎬|💡)\s*/, '').replace(/^[^\p{L}\p{N}]+/u, '')
+  const corpo = (
+    <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
+      <div className="modal-nota modal-tabela modal-arquivados glass glass--light" role="dialog" aria-label="Arquivados">
+        <header className="modal-tabs">
+          <nav><span className="modal-tab is-ativa"><Icone n="olho" t={14} /><span>Arquivados · {est.canvas?.icone} {est.canvas?.nome}</span><em className="tabela-n">{todos.length}</em></span></nav>
+          <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
+        </header>
+        <section className="tabela-filtros">
+          <label className="tabela-busca"><Icone n="busca" t={13} /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar arquivado" autoFocus /></label>
+          {linhas.length > 1 && <button className="tabela-acao" onClick={() => onDesarquivar(linhas.map((n) => n.id))}>Desarquivar {q ? 'estes' : 'todos'} ({linhas.length})</button>}
+        </section>
+        <div className="tabela-rolo">
+          <table className="tabela">
+            <thead><tr><th className="col-formato" /><th>Card</th><th>Saídas</th><th>Status</th><th /></tr></thead>
+            <tbody>
+              {linhas.map((n) => {
+                const ns = notas(n)
+                const st = [...new Set(ns.map((x) => x.status))]
+                return (
+                  <tr key={n.id} onClick={() => onAbrir(n)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onAbrir(n)}>
+                    <td className="col-formato">{icone(n)}</td>
+                    <td className="col-nome"><b>{titulo(n)}</b></td>
+                    <td className="col-data">{ns.length ? ns.map((x) => x.formato).join(' ') : <span className="mudo">—</span>}</td>
+                    <td className="col-data">{st.map((k) => <span key={k} className="arquivados-st"><i className={`ponto is-${k}`} />{STATUS.find((x) => x.k === k)?.nome}</span>)}</td>
+                    <td className="col-acao"><button className="tabela-acao" onClick={(e) => { e.stopPropagation(); onDesarquivar([n.id]) }}>Desarquivar</button></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {!linhas.length && <p className="tabela-vazia">{todos.length ? 'Nenhum arquivado com essa busca.' : 'Nada arquivado neste canvas.'}</p>}
+        </div>
+      </div>
+    </div>
+  )
+  const alvo = document.querySelector('section.pagina')
+  return alvo ? createPortal(corpo, alvo) : corpo
+}
+
+/** Filtro de produto da barra: um dropdown com caixas de marcar (cada produto e "Sem produto"); todos marcados = sem filtro. */
+function FiltroProdutos({ produtos, fora, alternar, todos }: { produtos: Produto[]; fora: string[]; alternar: (k: string) => void; todos: () => void }) {
+  const [aberto, setAberto] = useState(false)
+  const raiz = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!aberto) return
+    const fora_ = (e: PointerEvent) => { if (!raiz.current?.contains(e.target as HTMLElement)) setAberto(false) }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setAberto(false)
+    window.addEventListener('pointerdown', fora_, true); window.addEventListener('keydown', esc)
+    return () => { window.removeEventListener('pointerdown', fora_, true); window.removeEventListener('keydown', esc) }
+  }, [aberto])
+  const itens = [...produtos.map((p) => ({ k: p.slug, nome: p.nome, icone: p.icone, cor: p.cor })), { k: SEM, nome: 'Sem produto', icone: '', cor: '' }]
+  const marcados = itens.filter((i) => !fora.includes(i.k))
+  const rotulo = marcados.length === itens.length ? 'Todos os produtos' : marcados.length === 0 ? 'Nenhum produto'
+    : marcados.length <= 2 ? marcados.map((i) => i.nome).join(', ') : `${marcados.length} produtos`
+  return (
+    <span className="canvas-trocar filtro-produtos" ref={raiz}>
+      <button type="button" className={`canvas-filtro filtro-produtos-botao ${aberto ? 'is-aberto' : ''}`} onClick={() => setAberto((v) => !v)} aria-haspopup="true" aria-expanded={aberto} title="Filtrar por produto">
+        {marcados.length < itens.length && <span className="filtro-produtos-cores">{marcados.filter((i) => i.cor).map((i) => <i key={i.k} style={{ background: i.cor }} />)}</span>}
+        {rotulo}
+      </button>
+      {aberto && (
+        <div className="canvas-trocar-lista glass glass--light" role="menu">
+          {itens.map((i) => { const on = !fora.includes(i.k)
+            return <button key={i.k} type="button" role="menuitemcheckbox" aria-checked={on} className="menu-check" onClick={() => alternar(i.k)}>
+              <i className={`menu-caixinha ${on ? 'is-on' : ''}`} style={on && i.cor ? { background: i.cor } : undefined}>{on ? '✓' : ''}</i>
+              {i.icone} {i.nome}</button> })}
+          {fora.length > 0 && <><hr /><button type="button" role="menuitem" onClick={todos}>Mostrar todos</button></>}
+        </div>
+      )}
+    </span>
   )
 }
 

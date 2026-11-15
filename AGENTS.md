@@ -157,7 +157,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   onde saem as pastas globais. Cada canvas tem o seu layout em `app/dados/canvas/<slug>.json`.
 - **Produto = as tags da nota** (FIA `🤖fia`, FID `🖼️fid`, Dados `📊dados`, PICO `💰bf26`/`arquivo/pico`), listados em
   `app/dados/produtos.json` (`{slug, nome, icone, tags, cor}`). **Produto não é lugar**: dentro do canvas é só um filtro
-  (chips na barra, incluindo "Sem") e uma bolinha da cor dele no card. Produtos diferentes convivem no mesmo canvas, e
+  (dropdown "Todos os produtos" na barra, com caixas de marcar e "Sem produto") e uma bolinha da cor dele no card. Produtos diferentes convivem no mesmo canvas, e
   uma nota pode ser de vários produtos.
 - O app manda o canvas atual no cabeçalho `X-Canvas` (`canvasApi.ts`); o middleware de `main.py` põe em
   `canvas._atual` (o que não existir vira `inbox`). Nota criada dentro de um canvas temático já nasce com o `grupo:`
@@ -214,10 +214,29 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 - **Copy publicada fica no canvas temático dela**; no **Inbox** ela conta como arquivada (vai para a pasta Publicado),
   a não ser que esteja em `visiveis` (trazida por ⌘↵ ou Mover para). Ideia aparece se não tem saída ou se alguma
   saída está viva.
-- Filtros na barra: tipos (💡 🎬 📺), produtos (cada um e "Sem") e o seletor Todos, Backlog, Em edição, Agendado.
+- Filtros na barra: tipos (💡 🎬 📺), produtos (dropdown com caixas de marcar) e o seletor Todos, Backlog, Em edição, Agendado.
 - Vistas (`Visao` em `Canvas.tsx`): `principal`, `foco:<id>` (um card e
   tudo que está ligado a ele), além de `edicao`, `agendado` e `pub-<ano>`. A barra lateral guarda as vistas pinadas e
   o histórico.
+
+### Desenho livre (Excalidraw)
+
+- A vista principal de cada canvas tem uma camada de desenho: o **Excalidraw de verdade** (`@excalidraw/excalidraw`,
+  `Desenho.tsx`), com as ferramentas, atalhos, cores, estilos e o traço à mão dele, em PT-BR.
+- Fica **por baixo dos cards**, com o mesmo pan/zoom do React Flow: o React Flow põe um ponto na tela em
+  `cena * zoom + x`; o Excalidraw em `(cena + scrollX) * zoom`; então `scrollX = x / zoom` (os dois ocupam o mesmo
+  retângulo; a camada termina onde começa o chat). `onMove` do React Flow empurra a vista para o Excalidraw; no modo
+  desenho, o pan/zoom feito dentro do Excalidraw volta para o React Flow (`onVista`).
+- **Modo desenho**: botão de lápis na barra do canvas, ou qualquer tecla de ferramenta do Excalidraw no canvas (R, D, O,
+  A, L, P/X, T, E e 2–8, 0), que já entra com a ferramenta. A camada vem para a frente, os atalhos do canvas (⌘A, ⌘Z,
+  colar, ⌘ + arrastar) ficam com o Excalidraw e as pastas do rodapé somem. **Esc** com a seleção e nada selecionado sai.
+  Fora do modo desenho a camada só mostra os desenhos e não pega o mouse.
+- Grava em `app/dados/canvas/<slug>.desenho.json` (`GET/PUT /api/canvas/desenho`, elementos e imagens), 700 ms depois
+  do último traço, com temporário próprio e a versão anterior em `canvas-historico/`.
+- As fontes do Excalidraw são servidas pelo app (`public/fonts`, copiadas de `node_modules` no `postinstall`, fora do
+  git; `window.EXCALIDRAW_ASSET_PATH = "/"`): nada vem de CDN.
+- Os desenhos não andam junto com os cards (são camadas separadas). Nas outras vistas (pastas, canvas próprio de um
+  card) a camada não aparece.
 
 ### Gestos e o que cada um grava
 
@@ -232,7 +251,7 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 | Botão direito → Mover para › | `grupo:` na ideia e nas copies dela (`POST /api/canvas/mover`) |
 | Botão direito → Produto › | tag do produto nas copies (`POST /api/canvas/produto`) |
 | `Delete` numa linha | desfaz a ligação (tira `fontes:` ou `ideia:`); cards não se apagam pelo canvas |
-| Menu do card → Arquivar | só layout (`arquivados`) |
+| Menu do card → Arquivar | só layout (`arquivados`). Botão direito no vazio → **Arquivados** abre um modal com os arquivados do canvas (abrir a nota, Desarquivar um ou todos; desarquivar põe em `visiveis`) |
 | Menu → Mandar para a lixeira | `.trash/` do vault |
 | `⌘Z` / `⌘⇧Z` | desfaz/refaz arrastar cards (só posição) |
 
@@ -346,6 +365,7 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 | `POST /api/canvas/ligar` · `agrupar` · `fonte` | `ideia:` numa copy · mesmo `ideia:` em várias · `fontes:` numa ideia |
 | `POST /api/canvas/mover` · `produto` · `importar` | levar cards para outro canvas (`grupo:`) · tag de produto · ⌘↵ da busca |
 | `PUT /api/canvas/posicoes` · `POST /api/canvas/arquivar` | layout |
+| `GET/PUT /api/canvas/desenho` | a camada de desenho (Excalidraw) do canvas do `X-Canvas` |
 | `GET/PUT /api/notas/{raiz}/{nome}` | ler · salvar (com `mtime`; conflito se mudou por fora) |
 | `POST /api/notas/{raiz}/{nome}/acao` | `mover` · `status` · `renomear` · `lixeira` (leva a posição do canvas junto) |
 | `POST /api/notas/{raiz}/{nome}/agenda` · `GET /api/notas/agenda` | `scheduled` · calendário editorial |
@@ -371,6 +391,7 @@ app/backend/src/jarvis/
   metricool.py · anuncios.py · planejamento.py · youtube.py · videos_x.py · auth.py
 app/frontend/src/
   App.tsx                     navbar, breadcrumb, páginas, modal, busca, chat
+  Desenho.tsx                 camada de desenho (Excalidraw) sincronizada com o canvas
   Canvas.tsx                  canvas, cards, filtros, pastas, menus, gestos (função montar = quem aparece)
   Tabela.tsx · ModalNota.tsx · Paleta.tsx · Chat.tsx · Radar.tsx · CalendarioEditorial.tsx · Calendario.tsx
   Editor.tsx · livePreview.ts · propriedades.ts   o editor no jeito do Obsidian

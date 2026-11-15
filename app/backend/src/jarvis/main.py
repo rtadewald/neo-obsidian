@@ -422,6 +422,18 @@ def canvas_winner(corpo: Winner):
     return {"mudou": _erros(lambda: canvas.marcar_winner(corpo.notas, corpo.sim))}
 
 
+@app.get("/api/canvas/desenho")
+def canvas_desenho():
+    """A camada de desenho (Excalidraw) do canvas do X-Canvas: elementos e arquivos."""
+    return _erros(canvas.desenho)
+
+
+@app.put("/api/canvas/desenho")
+def canvas_salvar_desenho(corpo: dict):
+    _erros(lambda: canvas.salvar_desenho(corpo))
+    return {"ok": True}
+
+
 @app.put("/api/canvas/posicoes")
 def canvas_posicoes(corpo: dict[str, Pos]):
     canvas.posicoes({k: v.model_dump() for k, v in corpo.items()})
