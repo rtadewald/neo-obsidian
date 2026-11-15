@@ -312,7 +312,7 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
 
 type Props = {
   onAbrir: (a: Alvo, voltar?: Voltar) => void
-  mostrar?: { alvo: Alvo; n: number }   // "Mostrar no canvas" do modal: enquadra e seleciona o card
+  mostrar?: { alvo: Alvo; n: number; quieto?: boolean }   // "Mostrar no canvas" do modal (ou ⌘O): enquadra e seleciona o card; quieto = sem aviso se não achar
   onTrecho?: (t: Trecho, pedido?: string) => void
   onPedido?: (texto: string) => void
   versao?: number
@@ -466,12 +466,11 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   recarregarRef.current = recarregar
   useEffect(() => { recarregar() }, [recarregar, versao])
   // Mostrar no canvas: volta ao principal sem filtro, espera o card ter tamanho, enquadra e seleciona
-  const mostrarFeito = useRef(0)
   useEffect(() => {
-    if (!mostrar || !est || mostrarFeito.current === mostrar.n) return
-    mostrarFeito.current = mostrar.n
+    if (!mostrar || !est || mostrarFeito === mostrar.n) return
+    mostrarFeito = mostrar.n
     const id = cardNoCanvas(est, mostrar.alvo)
-    if (!id) { avisar('Essa nota está oculta neste canvas (arquivada, de outro canvas ou publicada no Inbox).'); return }
+    if (!id) { if (!mostrar.quieto) avisar('Essa nota está oculta neste canvas (arquivada, de outro canvas ou publicada no Inbox).'); return }
     if (visao !== 'principal') setVisao('principal')
     if (filtro !== 'todos') setFiltro('todos')
     const ir = (k = 0) => {
@@ -1330,6 +1329,8 @@ function pinadosGlobais(): string[] {
     return l
   } catch { return [] }
 }
+/** O último "Mostrar no canvas" já feito: global, para trocar de canvas depois não repetir o pedido antigo. */
+let mostrarFeito = 0
 let listaCanvasGuardada: ResumoCanvas[] = []   // a lista sobrevive à troca de canvas (a mesa remonta)
 /** Cache do estado de cada canvas: trocar de canvas desenha na hora com o que já se sabe e atualiza por trás. */
 const cacheEst = new Map<string, EstadoCanvas>()

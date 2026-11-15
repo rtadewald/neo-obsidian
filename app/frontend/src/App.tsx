@@ -46,19 +46,30 @@ export default function App() {
   const [modal, setModal] = useState<Alvo | null>(null)
   onde.nota = modal   // o chat manda isso ao Jarvis (ver canvasApi.onde)
   const [voltar, setVoltar] = useState<Voltar | null>(null)
-  const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
+  const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number; quieto?: boolean }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
+  // abrir uma nota pela ⌘P/⌘O: vai para o canvas dela (o aberto, se ela também vive nele; senão o primeiro ativo),
+  // abre a nota e, por trás, enquadra e seleciona o card no canvas. Nota sem canvas ativo: só abre, onde você está.
   const abrirNoCanvasDela = async (raiz: Raiz, nome: string) => {
+    let destino: string | null = null
     try {
       const [tudo, lista] = await Promise.all([carregarTudo(), listarCanvases()])
-      const nota = [...tudo.ideias, ...tudo.producoes, ...tudo.entradas].find((x) => x.nome === nome) as { canvas?: string | null } | undefined
-      const c = nota?.canvas ? lista.find((k) => k.nome === nota.canvas && !k.arquivado && k.slug !== INBOX) : undefined
-      if (c && c.slug !== canvasSlug) { usarCanvas(c.slug); setCanvasSlug(c.slug); setPagina('Canvas') }
+      const nota = [...tudo.ideias, ...tudo.producoes, ...tudo.entradas].find((x) => x.nome === nome) as { canvases?: string[]; canvas?: string | null } | undefined
+      const ativos = lista.filter((k) => !k.arquivado && k.slug !== INBOX)
+      const nomes = nota?.canvases ?? (nota?.canvas ? [nota.canvas] : [])
+      const aqui = ativos.find((k) => k.slug === canvasSlug && nomes.includes(k.nome))
+      const c = aqui ?? ativos.find((k) => nomes.includes(k.nome))
+      if (c) {
+        destino = c.slug
+        if (c.slug !== canvasSlug) { usarCanvas(c.slug); setCanvasSlug(c.slug) }
+        setPagina('Canvas')
+      }
     } catch { /* sem a lista, abre no canvas atual */ }
     setModal({ raiz, nome })
+    if (destino) setMostrar((m) => ({ alvo: { raiz, nome }, n: (m?.n ?? 0) + 1, quieto: true }))
   }
   const [caminhoCanvas, setCaminhoCanvas] = useState<Passo[]>([])   // o que o canvas aberto conta ao breadcrumb
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
