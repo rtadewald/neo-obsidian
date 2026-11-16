@@ -12,12 +12,13 @@ import { Icone } from './Icone'
 import { Radar } from './Radar'
 import { Skills } from './Skills'
 import { NovoRapido, type TipoNovo } from './NovoRapido'
+import { PaletaCanvas } from './PaletaCanvas'
 import { Paleta } from './Paleta'
 import type { Raiz, Trecho } from './notas'
 import type { Sinal } from './api'
 
 // navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
-// ⌘P busca notas e abre no modal.
+// ⌘O busca notas e abre no modal; ⌘P navega entre os canvas.
 const GRUPOS = [['Canvas', 'Calendário', 'Skills'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
@@ -44,10 +45,11 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
   // modal de nota (ideia + saídas em tabs): canvas, calendário e ⌘P abrem aqui
   const [modal, setModal] = useState<Alvo | null>(null)
-  onde.nota = modal   // o chat manda isso ao Jarvis (ver canvasApi.onde)
+  if (!modal) onde.nota = null   // com a nota aberta, o ModalNota informa a aba ativa (o chat manda isso ao Jarvis)
   const [voltar, setVoltar] = useState<Voltar | null>(null)
-  const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number; quieto?: boolean }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
+  const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number; quieto?: boolean; esperar?: boolean; ate?: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
+  const [paletaCanvas, setPaletaCanvas] = useState(false)   // ⌘P: navegar entre os canvas
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
@@ -145,23 +147,29 @@ export default function App() {
   // o chat ocupa a altura toda, do topo ao pé da tela
   const corpo = useRef<HTMLElement>(null)
 
-  // ⌘P: busca rápida de notas, que abre a nota no modal
+  // ⌘O: busca rápida de notas, que abre a nota no modal; ⌘P: ir para um canvas
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && ['p', 'o'].includes(e.key.toLowerCase())) {   // ⌘P ou ⌘O: busca de notas
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {   // ⌘O: busca de notas
         e.preventDefault()
-        setPaleta(true)
+        setPaletaCanvas(false); setPaleta(true)
       }
-      // ⌥I nova ideia, ⌥N nova criação (no canvas aberto; fora dele, com seletor de canvas). Pela tecla física (e.code):
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {   // ⌘P: ir para um canvas (arquivados mais abaixo)
+        e.preventDefault()
+        setPaleta(false); setPaletaCanvas(true)
+      }
+      // nova ideia / nova criação (no canvas aberto; fora dele, com seletor de canvas). ⌥N pela tecla física (e.code):
       // no Mac o ⌥N vira o til. ⌘⇧I/⌘⇧N também valem onde o navegador deixa (o Chrome reserva o ⌘⇧N para a janela anônima).
-      const opcao = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (e.code === 'KeyI' || e.code === 'KeyN')
+      // ⌘I nova ideia (com uma nota aberta o ⌘I segue mandando o trecho ao Jarvis), ⌥N nova criação
+      const cmdI = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'i' || e.code === 'KeyI')
+      const opcao = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN'
       const comando = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())
-      if (opcao || comando) {
+      if (cmdI || opcao || comando) {
         const t = e.target as HTMLElement | null
         if (document.querySelector('.modal-fundo .modal-nota, .paleta-fundo')) return
-        if (opcao && t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor')) return   // ⌥ dentro de um campo escreve o caractere
+        if ((opcao || cmdI) && t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor')) return   // dentro de um campo, a tecla é do campo
         e.preventDefault(); e.stopPropagation()
-        setNovo((opcao ? e.code === 'KeyI' : e.key.toLowerCase() === 'i') ? 'ideia' : 'producao')
+        setNovo(cmdI || (comando && e.key.toLowerCase() === 'i') ? 'ideia' : 'producao')
         return
       }
       // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
@@ -247,8 +255,18 @@ export default function App() {
       </main>
 
       {novo && <NovoRapido tipo={novo} canvasAtual={canvasSlug} comSeletor={pagina !== 'Canvas' || !canvasSlug} onFechar={() => setNovo(null)}
-        onCriado={(c, msg) => { setNovo(null); if (pagina === 'Canvas' && canvasSlug === c) setMudou((n) => n + 1); setAvisoApp(msg); window.setTimeout(() => setAvisoApp((a) => (a === msg ? null : a)), 2600) }} />}
+        onCriado={(c, msg, nota) => {   // vai para o canvas escolhido, abre a nota nova e, por trás, enquadra o card dela
+          setNovo(null)
+          const alvo = { raiz: nota.raiz, nome: nota.nome } as Alvo
+          if (canvasSlug !== c) { usarCanvas(c); setCanvasSlug(c) }
+          setPagina('Canvas'); setMudou((n) => n + 1)
+          setModal(alvo); setVoltar(null)
+          setMostrar((m) => ({ alvo, n: (m?.n ?? 0) + 1, quieto: true, esperar: true, ate: Date.now() + 8000 }))
+          setAvisoApp(msg); window.setTimeout(() => setAvisoApp((a) => (a === msg ? null : a)), 2600)
+        }} />}
       {avisoApp && <div className="ideias-aviso" role="status">{avisoApp}</div>}
+      {paletaCanvas && <PaletaCanvas atual={canvasSlug} onFechar={() => setPaletaCanvas(false)}
+        onIr={(slug) => { setModal(null); usarCanvas(slug); setCanvasSlug(slug); setPagina('Canvas') }} />}
       {paleta && <Paleta onFechar={() => setPaleta(false)}
         onAbrir={(raiz, nome) => { setPaleta(false); abrirNoCanvasDela(raiz, nome) }}
         onImportar={canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card

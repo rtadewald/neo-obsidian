@@ -4,7 +4,7 @@ import { ROTULO, type Raiz } from './notas'
 
 const chave = (r: string, n: string) => `${r}/${n}`
 
-/* ---------- busca rápida (⌘P) ---------- */
+/* ---------- busca rápida de notas (⌘O) ---------- */
 
 /** raiz 'grupo': 💡 ideia que existe só como grupo de copies; abre na versão principal (`abrir`). */
 type Entrada = { nome: string; raiz: Raiz | 'grupo'; mtime: number; abrir?: { raiz: Raiz; nome: string }; versoes?: number }
@@ -56,15 +56,15 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
 
   const res = useMemo(() => {
     const peso: Record<Raiz | 'grupo', number> = { ideias: 25, grupo: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
-    if (!q.trim()) {   // busca vazia: as últimas abertas primeiro, depois as editadas mais recentemente
+    if (!q.trim()) {   // busca vazia: as últimas abertas primeiro, depois todo o resto de 1 Copies (publicados inclusive), das editadas mais recentemente
       const porChave = new Map(idx.map((e) => [chave(e.raiz, e.nome), e]))
       const recentes = lerRecentes().map((k) => porChave.get(k)).filter((e): e is Entrada => !!e)
       const vistas = new Set(recentes.map((e) => chave(e.raiz, e.nome)))
-      const resto = [...idx].filter((e) => e.raiz !== 'publicados' && !vistas.has(chave(e.raiz, e.nome))).sort((a, b) => b.mtime - a.mtime)
-      return [...recentes, ...resto].slice(0, 30).map((e) => ({ e, marcas: [] as number[] }))
+      const resto = [...idx].filter((e) => !vistas.has(chave(e.raiz, e.nome))).sort((a, b) => b.mtime - a.mtime)
+      return [...recentes, ...resto].map((e) => ({ e, marcas: [] as number[] }))
     }
     return idx.map((e) => ({ e, m: casar(q.trim(), e.nome) })).filter((x) => x.m)
-      .sort((a, b) => (b.m!.p + peso[b.e.raiz]) - (a.m!.p + peso[a.e.raiz])).slice(0, 40).map((x) => ({ e: x.e, marcas: x.m!.marcas }))
+      .sort((a, b) => (b.m!.p + peso[b.e.raiz]) - (a.m!.p + peso[a.e.raiz])).map((x) => ({ e: x.e, marcas: x.m!.marcas }))
   }, [q, idx])
 
   const abrirEntrada = (e: Entrada) => (e.abrir ? onAbrir(e.abrir.raiz, e.abrir.nome) : onAbrir(e.raiz as Raiz, e.nome))
@@ -104,7 +104,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
             <button key={chave(e.raiz, e.nome)} role="option" aria-selected={i === sel} className={i === sel ? 'is-sel' : ''}
               onMouseMove={() => setSel(i)} onClick={() => abrirEntrada(e)}>
               <span className="paleta-nome">{realce(e.nome, marcas)}</span>
-              <span className="paleta-pasta">{e.raiz === 'grupo' ? `Ideia · ${e.versoes} versões` : ROTULO[e.raiz]}</span>
+              <span className="paleta-pasta">{e.raiz === 'grupo' ? `Ideia · ${e.versoes} ${e.versoes === 1 ? "versão" : "versões"}` : ROTULO[e.raiz]}</span>
             </button>
           ))}
           {criar && (

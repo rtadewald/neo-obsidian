@@ -417,7 +417,7 @@ def _todas() -> dict:
             palavras = len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo))))
             producoes.append({"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome), "scheduled": sched, "datas": notas._datas(t),
                               "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
-                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"),
+                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "origem": _alvo(_valor(fm, "origem")), "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"),
                               "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
                               "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"), **_midia(t)})
     # `grupo:` pode ter vários canvas (a nota vive em todos). `canvases` = os válidos; `canvas` = o primeiro (ou None)
@@ -636,7 +636,32 @@ def ligar_producao(raiz: str, nome: str, ideia: str | None):
     if not p or not p.is_file():
         raise FileNotFoundError(nome)
     t = _ler(p, None)
-    notas._escrever(p, _definir(t, "ideia", f"[[{ideia}]]" if ideia else None))
+    if ideia:
+        notas._escrever(p, _definir(t, "ideia", f"[[{ideia}]]"))
+    else:   # desligar deixa a chave vazia (`ideia:`), como no T-Copy.md, em vez de apagá-la
+        notas._escrever(p, _esvaziar(t, "ideia"))
+
+
+def _esvaziar(texto: str, chave: str) -> str:
+    """A propriedade fica, sem valor (`chave:`); se não existia, é criada vazia."""
+    if not re.search(rf"^{re.escape(chave)}:", _fm(texto), re.M):
+        return _definir(texto, chave, None).replace("\n---\n", f"\n{chave}:\n---\n", 1)
+    m = FM.match(texto)
+    fm = re.sub(rf"^{re.escape(chave)}:.*$", f"{chave}:", m.group(1), count=1, flags=re.M)
+    return "---\n" + fm + "\n---\n" + texto[m.end():]
+
+
+def ligar_origem(raiz: str, nome: str, origem: str | None):
+    """Copy que nasceu de outra (ex.: a VSL do carrinho a partir da VSL da Black): `origem: "[[copy]]"`. No canvas vira
+    uma seta da copy de origem até ela. None tira a propriedade."""
+    if raiz not in notas.PASTAS:
+        raise ValueError("só copies de 1 Priorizar ou 2 Publicados")
+    p = notas._caminho(raiz, nome)
+    if not p or not p.is_file():
+        raise FileNotFoundError(nome)
+    if origem == nome:
+        raise ValueError("a copy não pode ser origem dela mesma")
+    notas._escrever(p, _definir(_ler(p, None), "origem", f"[[{origem}]]" if origem else None))
 
 
 def agrupar(titulo: str, producoes: list[dict], pos: dict | None = None) -> dict:

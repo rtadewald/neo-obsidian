@@ -1610,3 +1610,33 @@ body.redimensionando, body.redimensionando * { user-select: none !important; }
 .canvas-lista .trilho-item[draggable="true"] { cursor: grab; }
 .canvas-lista .trilho-item.is-arrastando { opacity: .35; }
 .canvas-lista .trilho-item.is-alvo .trilho-abrir { box-shadow: inset 0 0 0 1.5px #8fd61f; }
+
+/* ligação com o cursor em cima: × no meio desfaz a ligação */
+.aresta-x { position: absolute; pointer-events: all; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: #1d1d1f; color: #fff;
+  font-size: 15px; line-height: 22px; text-align: center; cursor: pointer; box-shadow: 0 4px 12px -4px rgba(0, 0, 0, .4); z-index: 1001; }
+.aresta-x:hover { background: #c4372b; }
+.react-flow__edge path.aresta-hover { stroke: transparent !important; stroke-width: 22px !important; stroke-dasharray: none !important; pointer-events: stroke; }
+/* copy que nasceu de outra (origem:) */
+.aresta-origem path { stroke: #7a5af5 !important; stroke-width: 1.6 !important; stroke-dasharray: 2 4; }
+.aresta-origem.selected path { stroke: #1d1d1f !important; stroke-width: 2.2 !important; }
+/* modal: navegação pelas ligações de copy (origem → filhas) */
+.modal-volta--origem { background: rgba(122, 90, 245, .1); }
+.modal-volta--filha { background: rgba(122, 90, 245, .1); }
+/* enviar vira parar enquanto o Jarvis responde */
+.btn-enviar.is-parar { background: #1d1d1f; color: #fff; opacity: 1; cursor: pointer; animation: parar-pulso 1.6s ease-in-out infinite; }
+.btn-enviar.is-parar:hover { background: #c4372b; animation: none; }
+@keyframes parar-pulso { 50% { box-shadow: 0 0 0 5px rgba(212, 227, 74, .35); } }
+/* lista da esquerda: ícone discreto dos canvas arquivados (abre a lista à direita) */
+.canvas-arquivo { display: grid; place-items: center; width: 30px; height: 26px; margin: 2px auto 0; border: 0; border-radius: 8px; background: none; color: var(--mute); opacity: .55; cursor: pointer; }
+.canvas-arquivo:hover, .canvas-arquivo.is-on { opacity: 1; background: rgba(23, 24, 27, .06); color: var(--ink); }
+.canvas-arquivo-menu { position: fixed; z-index: 120; min-width: 200px; }
+.canvas-arquivo-menu kbd { margin-left: auto; }
+/* ⌘P: navegar entre canvas */
+.paleta-canvas-ic { width: 22px; text-align: center; font-size: 16px; }
+.paleta-secao { margin: 10px 12px 4px; padding-top: 8px; border-top: 1px solid rgba(23, 24, 27, .08); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+.paleta-lista button.is-arquivado:not(.is-sel) { opacity: .7; }
+/* modal: as copies que nasceram desta, numa linha logo abaixo das abas */
+.modal-filhas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px 8px 16px; border-bottom: 1px solid rgba(23, 24, 27, .08); }
+/* blocos de código das respostas: quebram a linha (nada de rolar para o lado) */
+.md-pre { overflow-x: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md-pre code { white-space: inherit; }

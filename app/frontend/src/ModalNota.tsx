@@ -8,7 +8,7 @@ import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
 import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
-import { STATUS, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao } from './canvasApi'
+import { STATUS, onde, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao } from './canvasApi'
 
 /** Modal estilo Notion: uma ideia e as saídas dela, uma por tab. Abre do canvas, do calendário e do ⌘P. */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
@@ -34,6 +34,8 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
 }) {
   const [est, setEst] = useState<EstadoCanvas | null>(null)
   const [ativa, setAtiva] = useState<Alvo>(alvo)
+  onde.nota = ativa   // o Jarvis recebe, em toda mensagem, a aba que está aberta (não só a nota com que o modal abriu)
+  useEffect(() => () => { onde.nota = null }, [])
   const [mais, setMais] = useState(false)
   const [posMais, setPosMais] = useState({ left: 0, top: 0 })
   useEffect(() => {
@@ -64,7 +66,10 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     const saidas = nomeIdeia ? est.producoes.filter((p) => p.ideia === nomeIdeia).sort(porFormato) : prod ? [prod] : []
     const entradas = ideia ? est.entradas.filter((e) => ideia.fontes.includes(e.nome)) : []
     const usadaEm = ativa.raiz === 'entradas' ? est.ideias.filter((i) => i.fontes.includes(ativa.nome)) : []
-    return { ideia, chave: nomeIdeia, saidas, entradas, usadaEm, prod }
+    // ligações de copy para copy (`origem:`): a copy de onde esta nasceu e as que nasceram dela
+    const origem = prod?.origem ? est.producoes.find((p) => p.nome === prod.origem) ?? null : null
+    const filhas = prod ? est.producoes.filter((p) => p.origem === prod.nome) : []
+    return { ideia, chave: nomeIdeia, saidas, entradas, usadaEm, prod, origem, filhas }
   }, [est, ativa])
 
   useEffect(() => {
@@ -179,16 +184,32 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     else window.location.href = `obsidian://open?vault=${encodeURIComponent('Obsidian Notes')}&file=${encodeURIComponent(nome)}`
   }
 
-  // Jarvis aberto (⌘J) com a nota aberta: o fundo escurecido cobre tudo e a nota se centraliza no espaço à esquerda do chat
-  // (encostada no chat, com o topo e a base alinhados aos dele)
+  // Jarvis aberto (⌘J) com a nota aberta: a nota e o chat, lado a lado, ficam centralizados juntos na tela
+  // (topo e base alinhados aos do chat). O chat sai do canto direito com um translate; sem espaço, volta ao canto e a nota encolhe.
   const [chatBox, setChatBox] = useState<{ dir: number; topo: number; base: number } | null>(null)
+  const tamRef = useRef(tam)
+  tamRef.current = tam
+  const medirRef = useRef<() => void>(() => {})
   useEffect(() => {
+    let chat: HTMLElement | null = null, desloc = 0
+    const soltar = () => { if (chat) chat.style.translate = ''; chat = null; desloc = 0 }
     const medir = () => {
-      const c = document.querySelector('.corpo > .chat:not(.chat--fechado)')
+      const c = document.querySelector<HTMLElement>('.corpo > .chat:not(.chat--fechado)')
+      if (c !== chat) { soltar(); chat = c }
       if (!c) { setChatBox(null); return }
       const r = c.getBoundingClientRect()
-      setChatBox({ dir: Math.max(0, window.innerWidth - r.left + 12), topo: r.top, base: Math.max(0, window.innerHeight - r.bottom) })
+      const vw = window.innerWidth, gap = 12
+      const dirNatural = r.right + desloc                 // onde o chat fica sem o translate
+      const margem = Math.max(0, vw - dirNatural)
+      const nota = Math.min(tamRef.current?.w ?? vw * 0.7, vw)
+      const total = nota + gap + r.width
+      const esq = (vw - total) / 2
+      const novo = esq >= margem ? Math.round(dirNatural - (esq + total)) : 0
+      const chatEsq = r.left + desloc - novo              // borda esquerda do chat já deslocado
+      if (novo !== desloc) { desloc = novo; c.style.translate = novo ? `${-novo}px 0` : '' }
+      setChatBox({ dir: Math.max(0, vw - chatEsq + gap), topo: r.top, base: Math.max(0, window.innerHeight - r.bottom) })
     }
+    medirRef.current = medir
     medir()
     const corpo = document.querySelector('.corpo')
     const mo = new MutationObserver(medir)
@@ -196,8 +217,12 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     const ro = new ResizeObserver(medir)
     if (corpo) ro.observe(corpo)
     window.addEventListener('resize', medir)
-    return () => { mo.disconnect(); ro.disconnect(); window.removeEventListener('resize', medir) }
+    // o chat anima a largura ao abrir: mede de novo quando a animação dele acaba
+    const fimAnim = (e: TransitionEvent) => { if ((e.target as HTMLElement).matches?.('.corpo, .corpo > .chat')) medir() }
+    document.addEventListener('transitionend', fimAnim)
+    return () => { mo.disconnect(); ro.disconnect(); window.removeEventListener('resize', medir); document.removeEventListener('transitionend', fimAnim); soltar() }
   }, [])
+  useEffect(() => { medirRef.current() }, [tam])
 
   const tabs: { alvo: Alvo; rotulo: string; prod?: Producao }[] = grupo
     ? [
@@ -228,6 +253,11 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
               <Icone n="seta" t={12} /> 💡 {grupo.ideia.nome.replace(/^💡\s*/, '')}
             </button>
           )}
+          {grupo?.origem && (
+            <button className="modal-volta modal-volta--origem" onClick={() => setAtiva({ raiz: grupo.origem!.raiz as Raiz, nome: grupo.origem!.nome })} title={`Copy de origem: ${grupo.origem.nome}`}>
+              <Icone n="seta" t={12} /> {grupo.origem.nome}
+            </button>
+          )}
           <nav role="tablist">
             {tabs.map((t) => (
               <button key={`${t.alvo.raiz}/${t.alvo.nome}`} role="tab" aria-selected={t.alvo.nome === ativa.nome && t.alvo.raiz === ativa.raiz}
@@ -253,6 +283,16 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
           <button className="btn-icone modal-lixeira" onClick={() => setApagar(true)} aria-label="Deletar nota" title="Deletar esta nota (⌘⌫)"><Icone n="lixeira" t={15} /></button>
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
+        {/* copies que nasceram desta (`origem:` apontando para ela): numa linha abaixo das abas, só quando houver */}
+        {grupo && grupo.filhas.length > 0 && (
+          <div className="modal-filhas">
+            {grupo.filhas.map((f) => (
+              <button key={`${f.raiz}/${f.nome}`} className="modal-volta modal-volta--filha" onClick={() => setAtiva({ raiz: f.raiz as Raiz, nome: f.nome })} title={`Nasceu desta: ${f.nome}`}>
+                <span className="modal-volta-seta">↳</span> {f.nome}
+              </button>
+            ))}
+          </div>
+        )}
 
         {grupo?.ideia && ativa.raiz === 'ideias' && grupo.entradas.length > 0 && (
           <div className="modal-entradas">
@@ -325,6 +365,16 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
   // o sumário da direita pode sair (vale para todas as notas e para a página Skills; fica guardado)
   const [semSumario, setSemSumario] = useState(() => { try { return localStorage.getItem('sumario-oculto') === '1' } catch { return false } })
   const alternarSumario = () => setSemSumario((v) => { try { localStorage.setItem('sumario-oculto', v ? '0' : '1') } catch { /* sem storage */ } return !v })
+  // ⌘] mostra/oculta o sumário (vale também com o cursor no editor)
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || !(e.key === ']' || e.code === 'BracketRight')) return
+      e.preventDefault(); e.stopPropagation()
+      alternarSumario()
+    }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const view = useRef<EditorView | null>(null)
   const timer = useRef<number | undefined>(undefined)
   const ref = useRef({ nota, texto, estado })
@@ -441,7 +491,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
             title="Manda esta nota para o chat (⌘I manda só o trecho selecionado)"><span className="orb orb--msg" /> Perguntar ao Jarvis</button>
         )}
         <button className={`btn-icone ${semSumario ? '' : 'is-on'}`} onClick={alternarSumario} aria-pressed={!semSumario}
-          title={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
+          title={semSumario ? 'Mostrar o sumário (⌘])' : 'Esconder o sumário (⌘])'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
           <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2.5" /><path d="M12.5 3.5v13M14.6 7.2h-.1M14.6 10h-.1" /></svg></button>
         {fixo
           ? <a className="btn-icone" href={obsidian(alvo.raiz, alvo.nome)} title="Abrir no Obsidian"><Icone n="seta" t={14} /></a>

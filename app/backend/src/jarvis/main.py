@@ -147,12 +147,13 @@ class Mensagem(BaseModel):
     sinal: int | None = None
     canvas: str = ""      # slug do canvas aberto: o padrão das ferramentas do Jarvis
     onde: str = ""        # onde o Rodrigo está no app (tela, canvas, filtros, nota aberta): vai para o contexto do agente
+    nota: dict | None = None   # {raiz, nome}: a nota aberta no modal; vira uma linha no começo da mensagem
 
 
 @app.post("/api/chat")
 async def chat(m: Mensagem):
     async def eventos():
-        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.onde, m.canvas):
+        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.onde, m.canvas, m.nota):
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
     return StreamingResponse(eventos(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -628,6 +629,17 @@ class Ligar(BaseModel):
 @app.post("/api/canvas/ligar")
 def canvas_ligar(corpo: Ligar):
     _erros(lambda: canvas.ligar_producao(corpo.producao.raiz, corpo.producao.nome, corpo.ideia))
+    return {"ok": True}
+
+
+class Origem(BaseModel):
+    producao: Ref
+    origem: str | None = None
+
+
+@app.post("/api/canvas/origem")
+def canvas_origem(corpo: Origem):
+    _erros(lambda: canvas.ligar_origem(corpo.producao.raiz, corpo.producao.nome, corpo.origem))
     return {"ok": True}
 
 

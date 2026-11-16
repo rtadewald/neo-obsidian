@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
 import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
@@ -8,7 +8,7 @@ import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, typ
 
 export type Coluna = 'formato' | 'nome' | 'data' | 'ideia' | 'grupo' | 'palavras' | 'mtime'
 /** 'winner': as copies com 🔥 (de qualquer status), com todas as datas em que foram postadas. */
-export type Pasta = StatusProd | 'winner' | 'ideias'   // ideias: as 💡 do canvas aberto
+export type Pasta = StatusProd | 'winner' | 'ideias' | 'pinados'   // ideias: as 💡 do canvas aberto; pinados: os cards pinados de todos os canvas
 export type EstadoTabela = {
   pasta: Pasta; busca: string; formatos: string[]; ano: string; mes: string; grupo: string
   ordem: { col: Coluna; asc: boolean }
@@ -29,8 +29,9 @@ const INBOX_NOME = '📥 Inbox'
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', ideia: 'Produção', grupo: 'Canvas', palavras: 'Palavras', mtime: 'Editada' }
 
-export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear, canvasNome }: {
+export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear, canvasNome, pinados = [] }: {
   canvasNome?: string   // o canvas aberto: a aba Ideias mostra só as dele
+  pinados?: string[]    // ids dos cards pinados (i:/g:/e:/p:), de todos os canvas
   est: EstadoCanvas; t: EstadoTabela; onMudar: (t: EstadoTabela) => void; onFechar: () => void
   onAbrir: (a: Alvo) => void; onCanvas: (pasta: StatusProd, ano: string) => void
   onApagar?: (alvos: Alvo[]) => Promise<void>   // seleção múltipla → lixeira do vault
@@ -60,14 +61,28 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   }, [onFechar])
 
   // as 💡 ideias do canvas aberto viram linhas como as das copies (formato 💡, "produção" = quantas versões têm)
+  const linhaIdeia = useCallback((i: EstadoCanvas['ideias'][number]): Producao => {
+    const n = est.producoes.filter((p) => p.ideia === i.nome).length
+    return { nome: i.nome, raiz: 'ideias' as Producao['raiz'], status: 'ideia', scheduled: null, ano: '', formato: '💡', ideia: n ? `${n} ${n === 1 ? 'versão' : 'versões'}` : null,
+      previa: i.previa, mtime: i.mtime, criado: i.mtime, canvas: i.canvas, canvases: i.canvases, tags: i.tags, links: i.links ?? [], imagem: i.imagem ?? null, copia: i.copia ?? null } as Producao
+  }, [est])
   const ideiasDoCanvas = useMemo(() => est.ideias
     .filter((i) => !canvasNome || (i.canvases ?? (i.canvas ? [i.canvas] : [])).includes(canvasNome))
-    .map((i): Producao => {
-      const n = est.producoes.filter((p) => p.ideia === i.nome).length
-      return { nome: i.nome, raiz: 'ideias' as Producao['raiz'], status: 'ideia', scheduled: null, ano: '', formato: '💡', ideia: n ? `${n} ${n === 1 ? 'versão' : 'versões'}` : null,
-        previa: i.previa, mtime: i.mtime, criado: i.mtime, canvas: i.canvas, canvases: i.canvases, tags: i.tags, links: i.links ?? [], imagem: i.imagem ?? null, copia: i.copia ?? null } as Producao
-    }), [est, canvasNome])
-  const daPasta = useMemo(() => (t.pasta === 'ideias' ? ideiasDoCanvas : est.producoes.filter((p) => (t.pasta === 'winner' ? !!p.winner : p.status === t.pasta))), [est, t.pasta, ideiasDoCanvas])
+    .map(linhaIdeia), [est, canvasNome, linhaIdeia])
+  // os pinados viram linhas: a 💡 ideia, cada copy de uma produção 🎬 e as copies soltas (entradas ficam de fora)
+  const linhasPinadas = useMemo(() => {
+    const vistos = new Set<string>(), out: Producao[] = []
+    const add = (p: Producao) => { const k = `${p.raiz}/${p.nome}`; if (!vistos.has(k)) { vistos.add(k); out.push(p) } }
+    for (const id of pinados) {
+      const r = id.slice(2)
+      if (id.startsWith('i:')) est.ideias.filter((i) => i.nome === r).map(linhaIdeia).forEach(add)
+      else if (id.startsWith('g:')) est.producoes.filter((p) => p.ideia === r).forEach(add)
+      else if (id.startsWith('p:')) est.producoes.filter((p) => `${p.raiz}/${p.nome}` === r).forEach(add)
+    }
+    return out
+  }, [est, pinados, linhaIdeia])
+  const daPasta = useMemo(() => (t.pasta === 'ideias' ? ideiasDoCanvas : t.pasta === 'pinados' ? linhasPinadas
+    : est.producoes.filter((p) => (t.pasta === 'winner' ? !!p.winner : p.status === t.pasta))), [est, t.pasta, ideiasDoCanvas, linhasPinadas])
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   const grupos = useMemo(() => [...new Set(daPasta.map((p) => p.canvas || INBOX_NOME))].sort(), [daPasta])
   // filtros que valem antes dos chips de formato e das barras de mês (para os números deles não sumirem ao clicar)
@@ -130,8 +145,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
             <button role="tab" aria-selected={t.pasta === 'winner'} className={`modal-tab ${t.pasta === 'winner' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('winner'))}>
               <span className="tabela-fogo">🔥</span><span>Winners</span><em className="tabela-n">{est.producoes.filter((p) => p.winner).length}</em>
             </button>
+            <button role="tab" aria-selected={t.pasta === 'pinados'} className={`modal-tab ${t.pasta === 'pinados' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('pinados'))} title="Os cards pinados, de todos os canvas">
+              <span className="tabela-fogo">📌</span><span>Pinados</span><em className="tabela-n">{linhasPinadas.length}</em>
+            </button>
           </nav>
-          {t.pasta !== 'ideia' && t.pasta !== 'winner' && t.pasta !== 'ideias' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
+          {t.pasta !== 'ideia' && t.pasta !== 'winner' && t.pasta !== 'ideias' && t.pasta !== 'pinados' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
 

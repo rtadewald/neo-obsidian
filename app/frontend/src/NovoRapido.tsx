@@ -11,13 +11,19 @@ const FORMATOS: [string, string][] = [['📱', 'Reels'], ['💰', 'Ad'], ['🏞�
 const ICONE: Record<string, string> = { '🏞️': '📝' }
 const icone = (f: string) => ICONE[f] ?? f
 
-export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }: {
+export type Criado = { raiz: string; nome: string; tipo: TipoNovo; formato?: string }
+
+export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFechar, onCriado, alternar, ligar, pos }: {
   tipo: TipoNovo
   canvasAtual: string | null          // o canvas aberto (ou o último), usado direto ou como padrão do seletor
   comSeletor: boolean                 // fora de um canvas: mostra o seletor
   onFechar: () => void
-  onCriado: (canvas: string, msg: string) => void
+  onCriado: (canvas: string, msg: string, nota: Criado) => void
+  alternar?: boolean                  // mostra a escolha 💡 Ideia | 🎬 Copy (flecha solta no vazio)
+  ligar?: { ideia?: string; fonte?: string; de?: string }   // a copy nasce na ideia; a ideia nasce com a entrada como fonte
+  pos?: { x: number; y: number }      // onde o card da ideia nasce no canvas
 }) {
+  const [tipo, setTipo] = useState<TipoNovo>(tipoInicial)
   const [titulo, setTitulo] = useState('')
   const [formato, setFormato] = useState(() => { try { const f = localStorage.getItem('novo-formato'); return f && FORMATOS.some(([x]) => x === f) ? f : '📱' } catch { return '📱' } })
   const [canvases, setCanvases] = useState<ResumoCanvas[]>([])
@@ -43,12 +49,17 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
     const cab = { 'Content-Type': 'application/json', 'X-Canvas': canvas }
     try {
       const r = tipo === 'ideia'
-        ? await fetch('/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t }) })
-        : await fetch('/api/notas/priorizar', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: `${formato} ${t}` }) })
+        ? await fetch('/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, ...(pos ? { pos } : {}) }) })
+        : ligar?.ideia
+          ? await fetch('/api/canvas/saida', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: ligar.ideia, formato, titulo: `${formato} ${t}` }) })
+          : await fetch('/api/notas/priorizar', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: `${formato} ${t}` }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : d.detail || 'Não consegui criar.')
+      if (tipo === 'ideia' && ligar?.fonte)   // a entrada de onde a flecha saiu vira fonte da ideia nova
+        await fetch('/api/canvas/fonte', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: d.nome, entrada: ligar.fonte }) }).catch(() => {})
       const nomeCanvas = canvases.find((c) => c.slug === canvas)?.nome
-      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`)
+      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`,
+        { raiz: d.raiz, nome: d.nome, tipo, formato: tipo === 'producao' ? formato : undefined })
     } catch (x) { setErro((x as Error).message); setIndo(false) }
   }
 
@@ -56,9 +67,17 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
     <div className="paleta-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
       <form className="paleta novo-rapido glass glass--light" role="dialog" aria-label={tipo === 'ideia' ? 'Nova ideia' : 'Nova criação'} onSubmit={criar}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onFechar() } }}>
+        {alternar && (
+          <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Criar">
+            {ligar?.de && <span className="novo-rapido-rotulo">de {ligar.de}</span>}
+            {([['ideia', '💡 Ideia'], ['producao', '🎬 Copy']] as const).map(([k, nome]) => (
+              <button key={k} type="button" role="radio" aria-checked={k === tipo} className={k === tipo ? 'is-on' : ''} onClick={() => setTipo(k)}>{nome}</button>
+            ))}
+          </div>
+        )}
         <label className="paleta-campo">
           <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : icone(formato)}</span>
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nova ideia…' : 'Nova criação…'} />
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nova ideia…' : ligar?.ideia ? 'Nova copy desta ideia…' : 'Nova criação…'} />
         </label>
         {tipo === 'producao' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
@@ -77,7 +96,7 @@ export function NovoRapido({ tipo, canvasAtual, comSeletor, onFechar, onCriado }
           </div>
         )}
         {erro && <p className="novo-rapido-erro">{erro}</p>}
-        <footer className="paleta-pe"><span><kbd>↵</kbd> criar</span><span><kbd>esc</kbd> fechar</span></footer>
+        <footer className="paleta-pe"><span><kbd>↵</kbd> criar e abrir</span><span><kbd>esc</kbd> fechar</span></footer>
       </form>
     </div>
   )

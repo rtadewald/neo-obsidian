@@ -1,4 +1,4 @@
-import { canvasAberto, descreverOnde } from './canvasApi'
+import { canvasAberto, descreverOnde, onde } from './canvasApi'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Markdown } from './Markdown'
 import type { Trecho } from './notas'
@@ -167,6 +167,14 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
   useEffect(() => { if (trecho || foco) campo.current?.focus() }, [trecho, foco])
   useEffect(() => { if (pedido?.n) enviar(undefined, pedido.texto) }, [pedido?.n])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // parar: o botão de enviar vira ⏹ enquanto o Jarvis responde (como no Claude Code); Esc no campo também para
+  const controle = useRef<AbortController | null>(null)
+  function parar() {
+    if (!controle.current) return
+    setFila([])   // parar cancela também o que estava na fila
+    controle.current.abort()
+  }
+
   async function enviar(e?: React.FormEvent, direto?: string) {
     e?.preventDefault()
     if (direto === undefined) voz.current?.stop()   // enviar encerra o ditado
@@ -187,17 +195,21 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     setOcupado(true)
     setMsgs((m) => [...m, { papel: 'usuario', texto: t }, { papel: 'jarvis', texto: '', ferramentas: [] }])
     const mexe = (f: (u: Msg) => Msg) => setMsgs((m) => [...m.slice(0, -1), f(m[m.length - 1])])
+    const ctl = new AbortController()
+    controle.current = ctl
     try {
-      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, onde: descreverOnde(), canvas: canvasAberto() }, (ev) => {
+      await conversar({ conversa, texto: t, sinal: foco?.id ?? null, onde: descreverOnde(), canvas: canvasAberto(), nota: onde.nota }, (ev) => {
         if (ev.t === 'texto') mexe((u) => ({ ...u, texto: u.texto + ev.v }))
         else if (ev.t === 'ferramenta') mexe((u) => ({ ...u, ferramentas: [...(u.ferramentas ?? []), `${VERBO[ev.nome] ?? ev.nome} ${ev.alvo}`.trim()] }))
         else if (ev.t === 'erro') mexe((u) => ({ ...u, erro: ev.v }))
         else if (ev.t === 'mudou') cb.current.onFim?.()   // o canvas recarrega a cada mudança, sem esperar a resposta
         else if (ev.t === 'tela') cb.current.onTela?.(ev)
-      })
+      }, ctl.signal)
     } catch (err) {
-      mexe((u) => ({ ...u, erro: String(err) }))
+      if (ctl.signal.aborted) mexe((u) => ({ ...u, texto: `${u.texto}${u.texto ? '\n\n' : ''}⏹ Parado.` }))
+      else mexe((u) => ({ ...u, erro: String(err) }))
     } finally {
+      controle.current = null
       processando.current = false
       setOcupado(false)
       cb.current.onFim?.()
@@ -318,7 +330,7 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
             else if (e.key === 'd' && e.metaKey && e.shiftKey && temVoz) { e.preventDefault(); ditar() }   // ⌘⇧D liga/desliga o ditado
-            else if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur() }   // Esc sai do chat (volta aos atalhos da página)
+            else if (e.key === 'Escape') { e.preventDefault(); if (ocupado) parar(); else e.currentTarget.blur() }   // Esc para a resposta; parado, sai do chat
           }}
         />
         {temVoz && (
@@ -327,7 +339,10 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
             <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3" /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" /></svg>
           </button>
         )}
-        <button className="btn-enviar" type="submit" disabled={!texto.trim() && !imagens.length} aria-label={ocupado ? 'Colocar na fila' : 'Enviar'} title={ocupado ? 'O Jarvis está ocupado: entra na fila' : 'Enviar'}><Icone n="enviar" t={16} /></button>
+        {ocupado && !texto.trim() && !imagens.length
+          ? <button className="btn-enviar is-parar" type="button" onClick={parar} aria-label="Parar a resposta" title="Parar a resposta (Esc)">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor" /></svg></button>
+          : <button className="btn-enviar" type="submit" disabled={!texto.trim() && !imagens.length} aria-label={ocupado ? 'Colocar na fila' : 'Enviar'} title={ocupado ? 'O Jarvis está ocupado: entra na fila' : 'Enviar'}><Icone n="enviar" t={16} /></button>}
       </form>
     </aside>
   )

@@ -1,13 +1,14 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Background, BackgroundVariant, Handle, MarkerType, MiniMap, PanOnScrollMode, Position, ConnectionMode, ReactFlow, ReactFlowProvider, SelectionMode, useEdgesState, useNodesInitialized, useNodesState, useReactFlow,
-  type Connection, type Edge, type Node, type NodeProps, type OnBeforeDelete,
+  Background, BackgroundVariant, BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, MarkerType, MiniMap, PanOnScrollMode, Position, ConnectionMode, ReactFlow, ReactFlowProvider, SelectionMode, useEdgesState, useNodesInitialized, useNodesState, useReactFlow,
+  type Connection, type Edge, type EdgeProps, type Node, type NodeProps, type OnBeforeDelete,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { createPortal } from 'react-dom'
 import { Icone, IconeCanvas } from './Icone'
 import { Desenho, TECLAS_FERRAMENTA, type ControleDesenho } from './Desenho'
 import { MenuDoCanvas } from './Canvases'
+import { NovoRapido, type Criado } from './NovoRapido'
 import { ModalTabela, tabelaNova, type EstadoTabela } from './Tabela'
 import { PASTA, type Raiz, type Trecho } from './notas'
 import {
@@ -120,6 +121,27 @@ const CardIdeia = memo(({ id, data, selected }: NodeProps<Node<DadosIdeia, 'idei
 
 /** Selo NOVO: a mesa passa a ação de marcar como visto por contexto. */
 const VistoUI = createContext<((nomes: string[]) => void) | null>(null)
+const DesligarUI = createContext<((e: Edge) => void) | null>(null)   // o × da ligação (hover) desfaz a ligação
+
+/** Ligação do canvas: com o cursor em cima, aparece um × no meio que desfaz a ligação. */
+const ArestaApagavel = memo((p: EdgeProps) => {
+  const desligar = useContext(DesligarUI)
+  const [sobre, setSobre] = useState(false)
+  const [d, lx, ly] = getBezierPath(p)
+  const tirar = useRef<number | null>(null)
+  const entrar = () => { if (tirar.current) window.clearTimeout(tirar.current); setSobre(true) }
+  const sair = () => { tirar.current = window.setTimeout(() => setSobre(false), 220) }
+  return <>
+    <BaseEdge id={p.id} path={d} markerEnd={p.markerEnd} style={p.style} interactionWidth={22} />
+    <path className="aresta-hover" d={d} fill="none" stroke="transparent" strokeWidth={22} onMouseEnter={entrar} onMouseLeave={sair} />
+    {desligar && sobre && <EdgeLabelRenderer>
+      <button type="button" className="aresta-x nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
+        onMouseEnter={entrar} onMouseLeave={sair} title="Desfazer a ligação"
+        onClick={(e) => { e.stopPropagation(); setSobre(false); desligar({ id: p.id, source: p.source, target: p.target, data: p.data }) }}>×</button>
+    </EdgeLabelRenderer>}
+  </>
+})
+const TIPOS_ARESTA = { default: ArestaApagavel }
 
 /** Produtos (FIA, FID…): a lista vem da mesa por contexto. A bolinha de cor saiu do card; o produto continua como filtro. */
 const ProdutosUI = createContext<Produto[]>([])
@@ -165,7 +187,7 @@ function CartaoProducao({ id, titulo, saidas, destaque, selected, novo }: { id: 
 }
 
 const CardGrupo = memo(({ id, data, selected }: NodeProps<Node<DadosGrupo, 'grupo'>>) =>
-  <CartaoProducao id={id} titulo={data.ideia.nome.replace(/^💡\s*/, '')} saidas={data.saidas} destaque={data.destaque} selected={selected} />)
+  <CartaoProducao id={id} titulo={(data.saidas.length === 1 ? data.saidas[0].nome.replace(/^[^\p{L}\p{N}]+/u, '') : '') || data.ideia.nome.replace(/^💡\s*/, '')} saidas={data.saidas} destaque={data.destaque} selected={selected} />)
 
 const CardEntrada = memo(({ data, selected }: NodeProps<Node<DadosEntrada, 'entrada'>>) => {
   const e = data.entrada
@@ -262,7 +284,7 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
   }
   for (const e of est.entradas) if (entra(`e:${e.nome}`, v === 'principal' && filtro === 'todos')) add(`e:${e.nome}`, { type: 'entrada', data: { entrada: e } }, -e.mtime)
   for (const p of est.producoes) {
-    if (p.ideia && saidasDe.has(p.ideia)) continue   // está dentro do card da produção
+    if (p.ideia && p.formato !== VSL && saidasDe.has(p.ideia)) continue   // está dentro do card da produção (a VSL nunca: tem card próprio)
     const id = `p:${p.raiz}/${p.nome}`
     if (entra(id, casa(p))) add(id, { type: 'producao', data: { prod: p, novo: novas.has(p.nome) } }, -(p.scheduled ? Date.parse(p.scheduled) / 1000 : p.mtime))
   }
@@ -300,7 +322,21 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
   const arestas: Edge[] = []
   for (const n of nos) if (n.type === 'grupo' && onde.has(`i:${n.data.ideia.nome}`)) arestas.push(seta(`i:${n.data.ideia.nome}`, n.id, 'aresta-saida', '#8f8a83', { deletable: false }))
   // VSL da mesma ideia: linha da ideia (ou da produção, se não houver nota 💡) até o card da VSL
-  for (const n of nos) if (n.type === 'producao' && n.data.prod.formato === VSL && n.data.prod.ideia) {
+  // copy que nasceu de outra (`origem:`): seta da copy de origem até ela (o card de cada uma: solto ou o da produção)
+  const cardDe = (nome: string) => {
+    const p = est.producoes.find((x) => x.nome === nome)
+    if (!p) return null
+    const k = p.ideia && p.formato !== VSL && saidasDe.has(p.ideia) ? `g:${p.ideia}` : `p:${p.raiz}/${p.nome}`
+    return onde.has(k) ? k : null
+  }
+  const comOrigem = new Set<string>()
+  for (const p of est.producoes) if (p.origem) {
+    const de = cardDe(p.origem), para = cardDe(p.nome)
+    if (!de || !para || de === para) continue
+    comOrigem.add(para)
+    arestas.push(seta(de, para, 'aresta-origem', '#7a5af5', { data: { origem: { raiz: p.raiz, nome: p.nome } } }))
+  }
+  for (const n of nos) if (n.type === 'producao' && n.data.prod.formato === VSL && n.data.prod.ideia && !comOrigem.has(n.id)) {
     const de = [`i:${n.data.prod.ideia}`, `g:${n.data.prod.ideia}`].find((k) => onde.has(k))
     if (de) arestas.push(seta(de, n.id, 'aresta-saida', '#8f8a83', { deletable: false }))
   }
@@ -312,7 +348,7 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
 
 type Props = {
   onAbrir: (a: Alvo, voltar?: Voltar) => void
-  mostrar?: { alvo: Alvo; n: number; quieto?: boolean }   // "Mostrar no canvas" do modal (ou ⌘O): enquadra e seleciona o card; quieto = sem aviso se não achar
+  mostrar?: { alvo: Alvo; n: number; quieto?: boolean; esperar?: boolean; ate?: number }   // esperar = nota recém-criada (o card chega na próxima recarga). "Mostrar no canvas" do modal (ou ⌘O): enquadra e seleciona o card; quieto = sem aviso se não achar
   onTrecho?: (t: Trecho, pedido?: string) => void
   onPedido?: (texto: string) => void
   versao?: number
@@ -457,6 +493,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [aviso, setAviso] = useState<string | null>(null)
   // modal de tabela das pastas; ao abrir uma copy dali ele some e o "voltar" do modal da nota o traz de volta como estava
   const [tabela, setTabela] = useState<EstadoTabela | null>(null)
+  const [arqAberto, setArqAberto] = useState<{ left: number; top: number } | null>(null)   // dropdown dos canvas arquivados (lista da esquerda)
+  const fecharArq = useRef<number | null>(null)
   const [verArquivados, setVerArquivados] = useState(false)   // modal com os cards arquivados deste canvas
   // modo desenho: a camada do Excalidraw vem para a frente (só na vista principal, que é onde os desenhos moram)
   const [desenhando, setDesenhando] = useState(false)
@@ -485,8 +523,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   // Mostrar no canvas: volta ao principal sem filtro, espera o card ter tamanho, enquadra e seleciona
   useEffect(() => {
     if (!mostrar || !est || mostrarFeito === mostrar.n) return
-    mostrarFeito = mostrar.n
     const id = cardNoCanvas(est, mostrar.alvo)
+    if (!id && mostrar.esperar && (mostrar.ate ?? 0) > Date.now()) return   // nota recém-criada: espera a recarga que traz o card
+    mostrarFeito = mostrar.n
     if (!id) { if (!mostrar.quieto) avisar('Essa nota está oculta neste canvas (arquivada, de outro canvas ou publicada no Inbox).'); return }
     if (visao !== 'principal') setVisao('principal')
     if (filtro !== 'todos') setFiltro('todos')
@@ -719,14 +758,25 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   }
   const alvoDeRef = useRef(alvoDe)
   alvoDeRef.current = alvoDe
-  const existe = useCallback((id: string) => {
-    if (!est) return false
-    const r = id.slice(2)
-    if (id.startsWith('i:')) return est.ideias.some((i) => i.nome === r)
-    if (id.startsWith('g:')) return est.producoes.some((p) => p.ideia === r)
-    if (id.startsWith('e:')) return est.entradas.some((e) => e.nome === r)
-    return est.producoes.some((p) => `${p.raiz}/${p.nome}` === r)
-  }, [est])
+  const existe = useCallback((id: string) => !!est && notasDoId(est, id).length > 0, [est])
+  // pinados globais (botão da barra de baixo, ligado por padrão): a lista da esquerda mostra os pinados de todos os canvas
+  const [pinGlobal, setPinGlobal] = useState(() => { try { return localStorage.getItem('canvas-pinados-globais') !== 'nao' } catch { return true } })
+  useEffect(() => { try { localStorage.setItem('canvas-pinados-globais', pinGlobal ? 'sim' : 'nao') } catch { /* sem storage */ } }, [pinGlobal])
+  /** O canvas onde vive um card que não está neste (o primeiro ativo; sem nenhum, o Inbox). */
+  const canvasDoCard = (id: string): ResumoCanvas | null => {
+    if (!estTudo) return null
+    const nomes = notasDoId(estTudo, id).flatMap((x) => (x as { canvases?: string[] }).canvases ?? [])
+    if (!notasDoId(estTudo, id).length) return null
+    const ativos = todosCanvas.filter((c) => !c.arquivado && c.slug !== INBOX)
+    return ativos.find((c) => nomes.includes(c.nome)) ?? (nomes.length ? null : todosCanvas.find((c) => c.slug === INBOX) ?? null)
+  }
+  // chegou aqui vindo de um pinado de outro canvas: vai até o card assim que ele existir
+  useEffect(() => {
+    if (!cardPendente || !est || !existe(cardPendente)) return
+    const id = cardPendente
+    cardPendente = null
+    irAoCard(id)
+  }, [est])  // eslint-disable-line react-hooks/exhaustive-deps
   // a vista guardada pode ser de um card que não existe mais: volta ao principal
   useEffect(() => { if (est && visao.startsWith('foco:') && !existe(visao.slice(5))) setVisao('principal') }, [est])  // eslint-disable-line react-hooks/exhaustive-deps
   const lixeira = async (a: Alvo) => {
@@ -780,24 +830,54 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     if (ide && ent) return tentar(() => post('fonte', { ideia: (ide as Node<DadosIdeia>).data.ideia.nome, entrada: (ent as Node<DadosEntrada>).data.entrada.nome }), 'Entrada ligada à ideia')
     if (ide && de('ideia') && de('grupo')) return avisar('Essa produção já é dessa ideia.')
     if (ide && outro(ide).type === 'producao') return tentar(() => post('ligar', { producao: ref(outro(ide)), ideia: (ide as Node<DadosIdeia>).data.ideia.nome }), 'Nota ligada à ideia')
-    if (a.type === 'producao' && b.type === 'producao') {
-      // duas notas: se uma já tem ideia, a outra entra nela; senão, nasce uma ideia nova para as duas
-      const ja = [a, b].find((x) => (x as Node<DadosProd>).data.prod.ideia) as Node<DadosProd> | undefined
-      if (ja) return tentar(() => post('ligar', { producao: ref(outro(ja as No)), ideia: ja.data.prod.ideia }), `Entrou em ${ja.data.prod.ideia}`)
-      return perguntar({ titulo: 'Agrupar numa produção 🎬', dica: 'Nome da produção', inicial: b.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, ''), ok: (t) => tentar(
-        () => post('agrupar', { titulo: t, pos: { x: a.position.x - LARG - 80, y: a.position.y }, producoes: [ref(a), ref(b)] }), 'Produção criada') })
-    }
+    if (a.type === 'producao' && b.type === 'producao')   // copy → copy: a de onde a flecha saiu é a origem da outra
+      return tentar(() => post('origem', { producao: ref(b), origem: a.data.prod.nome }), `${b.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '')} nasceu de ${a.data.prod.nome.replace(/^[^\p{L}\p{N}]+/u, '')}`)
     if (ent && outro(ent).type === 'producao') return avisar('Ligue a entrada a uma 💡 ideia; a nota liga na ideia.')
     avisar('Essa ligação não tem sentido aqui.')
   }, [avisar, rf])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // flecha puxada de um card e solta no vazio: abre a criação rápida ali (copy da ideia, ou ideia com a entrada como fonte)
+  const [daLinha, setDaLinha] = useState<{ tipo: 'ideia' | 'producao'; ligar: { ideia?: string; fonte?: string; de: string }; pos: { x: number; y: number }; copia?: { alvo: { raiz: string; nome: string }; pos: { x: number; y: number } } } | null>(null)
+  const soltouLinha = useCallback((e: MouseEvent | TouchEvent, s: { isValid: boolean | null; fromNode: { id: string } | null; toNode: { id: string } | null }) => {
+    if (s.isValid || s.toNode || !s.fromNode || visaoRef.current !== 'principal') return
+    const no = rf.getNode(s.fromNode.id) as No | undefined
+    if (!no) return
+    const p = 'changedTouches' in e ? e.changedTouches[0] : e
+    const f = rf.screenToFlowPosition({ x: p.clientX, y: p.clientY })
+    const pos = { x: Math.round(f.x - LARG / 2), y: Math.round(f.y - 40) }
+    const curto = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
+    if (no.type === 'entrada') return setDaLinha({ tipo: 'ideia', ligar: { fonte: no.data.entrada.nome, de: curto(no.data.entrada.nome) }, pos })
+    const ideia = no.type === 'producao' ? no.data.prod.ideia ?? undefined : no.data.ideia.nome
+    // copy solta (sem ideia): a nova nasce junto com ela, as duas viram uma produção 🎬
+    const copia = no.type === 'producao' ? { alvo: { raiz: no.data.prod.raiz, nome: no.data.prod.nome }, pos: no.position } : undefined
+    setDaLinha({ tipo: 'producao', ligar: { ideia, de: curto(ideia ?? (no.type === 'producao' ? no.data.prod.nome : '')) }, pos, copia })
+  }, [rf])
+  const criadoDaLinha = async (msg: string, nota: Criado) => {
+    const d = daLinha
+    setDaLinha(null)
+    if (!d) return
+    // a copy de uma ideia entra no card de produção dela; só ganha lugar onde a flecha caiu se esse card ainda não existe
+    const fim = () => { recarregar(); onAbrir({ raiz: nota.raiz as Raiz, nome: nota.nome }) }
+    if (d.copia && nota.tipo === 'producao')   // copy → copy: a nova nasce com `origem:` apontando a de onde a flecha saiu
+      await post('origem', { producao: { raiz: nota.raiz, nome: nota.nome }, origem: d.copia.alvo.nome }).catch(() => avisar('Não consegui gravar a origem.'))
+    const id = nota.tipo === 'ideia' ? null : nota.formato === VSL || !d.ligar.ideia ? `p:${nota.raiz}/${nota.nome}` : `g:${d.ligar.ideia}`
+    if (id && !est?.pos[id]) post('posicoes', { [id]: d.pos }, 'PUT').catch(() => {}).finally(fim)
+    else fim()
+    avisar(msg)
+  }
+
   // Delete só apaga linhas (desliga a fonte); cards não se apagam pelo canvas
   const antesDeApagar: OnBeforeDelete<No, Edge> = async ({ edges }) => {
     for (const e of edges) {
-      if (e.source.startsWith('e:')) await post('fonte', { ideia: e.target.slice(2), entrada: e.source.slice(2), sim: false }).catch(() => {})
+      const og = (e.data as { origem?: { raiz: string; nome: string } } | undefined)?.origem
+      if (og) await post('origem', { producao: og, origem: null }).catch(() => {})
+      else if (e.source.startsWith('e:')) await post('fonte', { ideia: e.target.slice(2), entrada: e.source.slice(2), sim: false }).catch(() => {})
       else if (e.target.startsWith('p:')) {
         const [raiz, ...resto] = e.target.slice(2).split('/')
         await post('ligar', { producao: { raiz, nome: resto.join('/') }, ideia: null }).catch(() => {})
+      } else if (e.target.startsWith('g:')) {   // ideia → produção: as copies dela saem da ideia (as VSLs têm ligação própria)
+        for (const pr of (est?.producoes ?? []).filter((x) => x.ideia === e.target.slice(2) && x.formato !== VSL))
+          await post('ligar', { producao: { raiz: pr.raiz, nome: pr.nome }, ideia: null }).catch(() => {})
       }
     }
     if (edges.length) { avisar(edges.length > 1 ? 'Ligações desfeitas' : 'Ligação desfeita'); recarregar() }
@@ -1020,7 +1100,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   }, [rf, onTrecho])
 
   return (
-    <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}><VistoUI.Provider value={marcarVisto}>
+    <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}><VistoUI.Provider value={marcarVisto}><DesligarUI.Provider value={(e) => { antesDeApagar({ nodes: [], edges: [e] }) }}>
     <div className={`canvas ${desenhando ? 'is-desenhando' : ''} ${mapa ? 'com-mapa' : ''} ${destaqueWinner ? '' : 'sem-winner'}`} ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
         onDoubleClick={(e) => { if (!desenhando && !(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
@@ -1039,9 +1119,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         <ReactFlow<No, Edge>
           proOptions={{ hideAttribution: true }}   // sem o selo "React Flow" no canto
           defaultViewport={vpInicial ?? undefined}
-          nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO}
+          nodes={nos} edges={arestasVis} onNodesChange={mudarNos} onEdgesChange={mudarArestas} nodeTypes={TIPOS_NO} edgeTypes={TIPOS_ARESTA}
           onNodeDragStart={(_, __, ns) => comecouArraste(ns)} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
-          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
+          onNodeDragStop={soltou} onSelectionDragStop={(_, ns) => { registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} onConnectEnd={soltouLinha} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
           onNodeClick={(e, n) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey || (e.target as HTMLElement).closest('a, video')) return
             // chip de formato no card de produção: abre aquela saída direto
@@ -1092,22 +1172,46 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <span className="pastinha-nome">{c.nome}</span>
             </button>
           ))}
+          {/* canvas arquivados: um ícone discreto de arquivo; hover ou clique abre a lista à direita */}
+          {(() => {
+            const arquivados = todosCanvas.filter((c) => c.arquivado && c.slug !== canvas)
+            if (!arquivados.length) return null
+            const abrir = (el: HTMLElement) => { if (fecharArq.current) window.clearTimeout(fecharArq.current); const r = el.getBoundingClientRect(); setArqAberto({ left: r.right + 10, top: r.top }) }
+            const fechar = () => { fecharArq.current = window.setTimeout(() => setArqAberto(null), 260) }
+            return <>
+              <button type="button" className={`canvas-arquivo ${arqAberto ? 'is-on' : ''}`} title={`${arquivados.length} canvas arquivado${arquivados.length > 1 ? 's' : ''}`} aria-label="Canvas arquivados"
+                onMouseEnter={(e) => abrir(e.currentTarget)} onMouseLeave={fechar} onClick={(e) => (arqAberto ? setArqAberto(null) : abrir(e.currentTarget))}>
+                <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="4" rx="1" /><path d="M4 7.5v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8M8 11h4" /></svg>
+              </button>
+              {arqAberto && createPortal(
+                <div className="menu-ctx glass glass--light canvas-arquivo-menu" role="menu" style={arqAberto}
+                  onMouseEnter={() => { if (fecharArq.current) window.clearTimeout(fecharArq.current) }} onMouseLeave={fechar}>
+                  <p className="menu-ctx-t">Arquivados</p>
+                  {arquivados.map((c) => (
+                    <button key={c.slug} role="menuitem" onClick={() => { setArqAberto(null); onTrocarCanvas(c.slug) }}>
+                      <span className="menu-emoji">{c.icone !== '🗂️' ? c.icone : '🗂️'}</span>{c.nome}<kbd>{c.producoes + c.vsls}</kbd>
+                    </button>
+                  ))}
+                </div>, document.body)}
+            </>
+          })()}
           {/* abaixo das pastas, separados por uma linha: os cards pinados e os últimos abertos (antes ficavam numa barra à parte) */}
           {(() => {
-            const pins = vistas.pinados.filter(existe), hist = vistas.historico.filter(existe)
+            const pins = vistas.pinados.filter((id) => existe(id) || (pinGlobal && !!canvasDoCard(id))), hist = vistas.historico.filter(existe)
             if (!pins.length && !hist.length) return null
-            const item = (id: string, pinado: boolean) => (
-              <div key={id} className={`trilho-item ${visao === `foco:${id}` ? 'is-on' : ''} ${pinado && arrastaPin && alvoPin === id && arrastaPin !== id ? 'is-alvo' : ''} ${arrastaPin === id ? 'is-arrastando' : ''}`}
+            const item = (id: string, pinado: boolean) => { const fora = !existe(id) ? canvasDoCard(id) : null; return (
+              <div key={id} className={`trilho-item ${fora ? 'is-fora' : ''} ${visao === `foco:${id}` ? 'is-on' : ''} ${pinado && arrastaPin && alvoPin === id && arrastaPin !== id ? 'is-alvo' : ''} ${arrastaPin === id ? 'is-arrastando' : ''}`}
                 draggable={pinado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); setArrastaPin(id) }}
                 onDragOver={(e) => { if (!pinado || !arrastaPin) return; e.preventDefault(); setAlvoPin(id) }}
                 onDragEnd={() => { setArrastaPin(null); setAlvoPin(null) }}
                 onDrop={(e) => { e.preventDefault(); if (pinado && arrastaPin) setVistas((v) => ({ ...v, pinados: moverNaLista(v.pinados, arrastaPin, id) })); setArrastaPin(null); setAlvoPin(null) }}>
-                <button className="trilho-abrir" onClick={() => irAoCard(id)} title={`${nomeDoId(id)}: abre a nota e mostra o card no canvas`}>
+                <button className="trilho-abrir" onClick={() => { if (!fora) return irAoCard(id); cardPendente = id; onTrocarCanvas?.(fora.slug) }}
+                  title={fora ? `${nomeDoId(id)}: está em ${fora.nome}; abre lá, com a nota` : `${nomeDoId(id)}: abre a nota e mostra o card no canvas`}>
                   {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
                 </button>
                 <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
               </div>
-            )
+            ) }
             return <>
               <span className="trilho-sep trilho-sep--pastas" />
               {pins.length > 0 && <><span className="trilho-secao" title="Pinados"><Icone n="pin" t={13} /></span>{pins.map((id) => item(id, true))}</>}
@@ -1124,6 +1228,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         <div className="canvas-status" role="group" aria-label="Pastas de status">
           {canvas !== INBOX && <Pasta nome="Ideias" n={est?.ideias.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaNova('ideias'))} />}
           <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
+          {/* os pinados de todos os canvas, em tabela (vale mesmo com o botão de pinados globais desligado) */}
+          <Pasta nome="Pinados" n={global ? vistas.pinados.filter((id) => notasDoId(global, id).length > 0).length : 0} ativa={tabela?.pasta === 'pinados'} cor="pinados" onClick={() => setTabela(tabelaNova('pinados'))} />
           <span className="status-sep" aria-hidden="true" />
           <Pasta nome="Gravar" n={contagem.gravar} ativa={visao === 'gravar' || tabela?.pasta === 'gravar'} cor="gravar" onClick={() => setTabela(tabelaNova('gravar'))} />
           <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao' || tabela?.pasta === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
@@ -1140,8 +1246,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             {/* zoom e linhas (mostrar tudo = duplo clique no vazio): ficam na barra de cima (antes eram os controles flutuantes do canto) */}
             <span className="canvas-sep" />
             <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
-              <button className="btn-icone" data-dica="Aproximar (⌘+)" onClick={() => rf.zoomIn({ duration: 160 })}><Icone n="mais" t={14} /></button>
-              <button className="btn-icone" data-dica="Afastar (⌘−)" onClick={() => rf.zoomOut({ duration: 160 })}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg></button>
+              {/* + e − de zoom saíram (zoom pelo mouse/trackpad e ⌘+/⌘−) */}
               <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
                 data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
               <button className="btn-icone" data-dica="Ajustar o canvas à tela (ou 2× clique no vazio)" aria-label="Ajustar o canvas à tela" onClick={() => enquadrarTudo()}>
@@ -1156,6 +1261,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <button className={`btn-icone ${mapa ? 'is-on' : 'is-desligado'}`} onClick={() => setMapa((v) => !v)} aria-label="Minimapa"
                 data-dica={mapa ? 'Esconder o minimapa' : 'Mostrar o minimapa'}>
                 <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.6" y="4" width="14.8" height="12" rx="2.2" /><rect x="9.6" y="9.4" width="5.4" height="4.2" rx="1" /></svg></button>
+              <button className={`btn-icone ${pinGlobal ? 'is-on' : 'is-desligado'}`} onClick={() => setPinGlobal((v) => !v)} aria-label="Pinados globais"
+                data-dica={pinGlobal ? 'Pinados globais: a esquerda mostra os de todos os canvas (clique para só os deste)' : 'Mostrar os pinados de todos os canvas'}><Icone n="pin" t={13} /></button>
               <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} data-dica={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
                 onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
               <button className={`btn-icone ${destaqueWinner ? 'is-on' : 'is-desligado'}`} onClick={() => setDestaqueWinner((v) => !v)} aria-label="Destaque dos winners"
@@ -1166,8 +1273,8 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         </div>
       </aside>
       {tabela && est && (
-        <ModalTabela est={global!} t={tabela} onMudar={setTabela} onFechar={() => setTabela(null)} canvasNome={canvas !== INBOX ? est?.canvas?.nome : undefined}
-          onAbrir={(a) => { const t = tabela; setTabela(null); onAbrir(a, { rotulo: t.pasta === 'ideias' ? 'Ideias' : t.pasta === 'winner' ? 'Winners' : STATUS.find((s) => s.k === t.pasta)?.nome ?? 'Tabela', fn: () => setTabela(t) }) }}
+        <ModalTabela est={global!} t={tabela} pinados={vistas.pinados} onMudar={setTabela} onFechar={() => setTabela(null)} canvasNome={canvas !== INBOX ? est?.canvas?.nome : undefined}
+          onAbrir={(a) => { const t = tabela; setTabela(null); onAbrir(a, { rotulo: t.pasta === 'ideias' ? 'Ideias' : t.pasta === 'winner' ? 'Winners' : t.pasta === 'pinados' ? 'Pinados' : STATUS.find((s) => s.k === t.pasta)?.nome ?? 'Tabela', fn: () => setTabela(t) }) }}
           onStatus={async (alvos, st) => {
             await tentarRef.current(() => post('status', { notas: alvos.map((a) => a.nome), status: st }), alvos.length === 1 ? 'Status mudou' : `${alvos.length} notas mudaram de status`)
             await recarregar()
@@ -1248,9 +1355,11 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         onDesarquivar={(ids) => tentar(async () => { for (const id of ids) await post('arquivar', { id, sim: false }) },
           ids.length === 1 ? 'De volta ao canvas' : `${ids.length} cards de volta ao canvas`)} />}
       {pergunta && <Perguntar p={pergunta} onFechar={() => setPergunta(null)} />}
+      {daLinha && <NovoRapido key={`${daLinha.ligar.de}|${daLinha.pos.x}`} tipo={daLinha.tipo} alternar ligar={daLinha.ligar} pos={daLinha.pos} canvasAtual={canvas} comSeletor={false}
+        onFechar={() => setDaLinha(null)} onCriado={(_, msg, nota) => criadoDaLinha(msg, nota)} />}
       {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
     </div>
-    </VistoUI.Provider></ChatUI.Provider></ProdutosUI.Provider>
+    </DesligarUI.Provider></VistoUI.Provider></ChatUI.Provider></ProdutosUI.Provider>
   )
 }
 
@@ -1310,6 +1419,15 @@ function ModalArquivados({ est, onFechar, onAbrir, onDesarquivar }: { est: Estad
 }
 
 
+/** As notas por trás de um id de card (i:/g:/e:/p:) num estado de canvas. */
+function notasDoId(e: EstadoCanvas, id: string): unknown[] {
+  const r = id.slice(2)
+  if (id.startsWith('i:')) return e.ideias.filter((i) => i.nome === r)
+  if (id.startsWith('g:')) return e.producoes.filter((p) => p.ideia === r)
+  if (id.startsWith('e:')) return e.entradas.filter((x) => x.nome === r)
+  return e.producoes.filter((p) => `${p.raiz}/${p.nome}` === r)
+}
+
 /** Pinados globais (todos os canvas). Na primeira vez, junta os pinados que antes eram guardados por canvas. */
 function pinadosGlobais(): string[] {
   try {
@@ -1324,6 +1442,7 @@ function pinadosGlobais(): string[] {
 }
 /** O último "Mostrar no canvas" já feito: global, para trocar de canvas depois não repetir o pedido antigo. */
 let mostrarFeito = 0
+let cardPendente: string | null = null   // pinado de outro canvas: depois de trocar, o canvas novo vai até ele
 let listaCanvasGuardada: ResumoCanvas[] = []   // a lista sobrevive à troca de canvas (a mesa remonta)
 /** Cache do estado de cada canvas: trocar de canvas desenha na hora com o que já se sabe e atualiza por trás. */
 const cacheEst = new Map<string, EstadoCanvas>()
@@ -1347,7 +1466,7 @@ export function aquecerCanvases() {
 function Pasta({ nome, n, ativa, cor, onClick }: { nome: string; n: number; ativa: boolean; cor: string; onClick: () => void }) {
   return (
     <button className={`status-botao is-${cor} ${ativa ? 'is-ativa' : ''}`} onClick={onClick} title={cor === 'winner' ? 'Os winners 🔥, com as datas de postagem' : `Tabela: ${nome.toLowerCase()}`}>
-      {cor === 'winner' ? <span className="status-fogo">🔥</span> : cor === 'ideias' ? <span className="status-fogo">💡</span> : <i className={`ponto is-${cor}`} />}
+      {cor === 'winner' ? <span className="status-fogo">🔥</span> : cor === 'ideias' ? <span className="status-fogo">💡</span> : cor === 'pinados' ? <span className="status-fogo">📌</span> : <i className={`ponto is-${cor}`} />}
       <span>{nome}</span><em>{n}</em>
     </button>
   )

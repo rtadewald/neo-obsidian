@@ -60,8 +60,9 @@ export type EventoChat =
   | { t: 'tela'; acao: string; pagina?: string; canvas?: string | null; raiz?: string; nome?: string }   // o Jarvis mexe na tela
 
 /** POST /api/chat e lê o SSE linha a linha. */
-export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; onde?: string; canvas?: string }, cb: (e: EventoChat) => void) {
-  const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; onde?: string; canvas?: string; nota?: { raiz: string; nome: string } | null }, cb: (e: EventoChat) => void, parar?: AbortSignal) {
+  // parar (o botão ⏹ do chat) corta a conexão: o servidor cancela a resposta do agente
+  const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: parar })
   if (!r.ok || !r.body) throw new Error(`${r.status}`)
   const leitor = r.body.getReader()
   const dec = new TextDecoder()

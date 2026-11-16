@@ -401,7 +401,17 @@ def _erro_legivel(msg: str) -> str:
     return msg[:400]
 
 
-async def conversar(conversa: str, texto: str, sinal_id: int | None = None, onde: str = "", canvas_slug: str = "") -> AsyncIterator[dict]:
+def _com_nota(texto: str, nota: dict | None) -> str:
+    """Com uma nota aberta no app, a mensagem vai com uma linha dizendo qual (o histórico guarda só o texto dele)."""
+    if not nota or not nota.get("nome"):
+        return texto
+    p = notas._caminho(nota.get("raiz", ""), nota["nome"])
+    onde_esta = f" · `{p.relative_to(VAULT)}`" if p and p.is_file() else ""
+    return f"[Nota aberta no app agora: [[{nota['nome']}]]{onde_esta}. Quando ele falar de \"esta copy\" ou \"aqui\", é ela.]\n\n{texto}"
+
+
+async def conversar(conversa: str, texto: str, sinal_id: int | None = None, onde: str = "", canvas_slug: str = "",
+                    nota: dict | None = None) -> AsyncIterator[dict]:
     """Envia uma mensagem e devolve eventos para o front: texto (delta), ferramenta, mudou, tela, fim, erro."""
     global _canvas_da_vez
     db.guardar_mensagem(conversa, "usuario", texto)
@@ -415,7 +425,7 @@ async def conversar(conversa: str, texto: str, sinal_id: int | None = None, onde
         aqui = f"\n## Onde o Rodrigo está no app agora\n{onde.strip()}\n" if onde.strip() else ""
         opcoes = _opcoes(sessao, _contexto_sinal(sinal_id) + aqui)
         async with ClaudeSDKClient(opcoes) as cli:
-            await cli.query(texto)
+            await cli.query(_com_nota(texto, nota))
             async for m in cli.receive_response():
                 while _eventos:   # o que as ferramentas pediram ao front (recarregar o canvas, abrir, mostrar…)
                     yield _eventos.pop(0)
