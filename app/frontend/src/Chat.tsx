@@ -175,6 +175,19 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
     controle.current.abort()
   }
 
+  // "/" no começo do campo abre o seletor de skills (as do vault, em 3 Skills); escolher insere "/nome "
+  const [skills, setSkills] = useState<{ nome: string; descricao: string }[] | null>(null)
+  const [selSkill, setSelSkill] = useState(0)
+  const [barraFechada, setBarraFechada] = useState<string | null>(null)   // Esc fecha até o texto mudar
+  const termo = /^\/([\p{L}\p{N}_-]*)$/u.exec(texto)?.[1]
+  useEffect(() => { if (termo !== undefined && !skills) fetch('/api/skills').then((r) => r.json()).then(setSkills).catch(() => setSkills([])) }, [termo, skills])
+  const barra = termo === undefined || barraFechada === texto || !skills ? [] : skills
+    .filter((k) => !termo || k.nome.toLowerCase().includes(termo.toLowerCase()) || k.descricao.toLowerCase().includes(termo.toLowerCase()))
+    .sort((a, b) => Number(!a.nome.startsWith(termo ?? '')) - Number(!b.nome.startsWith(termo ?? '')))
+    .slice(0, 8)
+  useEffect(() => setSelSkill(0), [termo])
+  const escolherSkill = (nome: string) => { setTexto(`/${nome} `); campo.current?.focus() }
+
   async function enviar(e?: React.FormEvent, direto?: string) {
     e?.preventDefault()
     if (direto === undefined) voz.current?.stop()   // enviar encerra o ditado
@@ -320,6 +333,17 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
         </div>
       )}
       {erroVoz && <p className="chat-voz-erro">{erroVoz}</p>}
+      {barra.length > 0 && (
+        <div className="chat-skills glass glass--light" role="listbox" aria-label="Skills">
+          <p className="menu-titulo">Skills</p>
+          {barra.map((k, i) => (
+            <button key={k.nome} type="button" role="option" aria-selected={i === selSkill} className={i === selSkill ? 'is-sel' : ''}
+              onMouseMove={() => setSelSkill(i)} onMouseDown={(e) => { e.preventDefault(); escolherSkill(k.nome) }}>
+              <b>/{k.nome}</b><span>{k.descricao}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <form className="campo" onSubmit={enviar}
         onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault() }}
         onDrop={(e) => { const f = [...e.dataTransfer.files]; if (f.some((x) => x.type.startsWith('image/'))) { e.preventDefault(); anexar(f) } }}>
@@ -328,6 +352,12 @@ export function Chat({ foco, limparFoco, aberto = true, onAlternar, trecho = nul
           ref={campo} rows={1} value={texto} placeholder={trecho ? 'O que fazer com esse trecho?' : 'Pergunte ao Jarvis…'} aria-label="Mensagem"
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
+            if (barra.length) {   // seletor de skills aberto: ↑↓ escolhem, ↵/Tab inserem, Esc fecha
+              if (e.key === 'ArrowDown') { e.preventDefault(); setSelSkill((i) => (i + 1) % barra.length); return }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setSelSkill((i) => (i - 1 + barra.length) % barra.length); return }
+              if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); escolherSkill(barra[selSkill].nome); return }
+              if (e.key === 'Escape') { e.preventDefault(); setBarraFechada(texto); return }
+            }
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
             else if (e.key === 'd' && e.metaKey && e.shiftKey && temVoz) { e.preventDefault(); ditar() }   // ⌘⇧D liga/desliga o ditado
             else if (e.key === 'Escape') { e.preventDefault(); if (ocupado) parar(); else e.currentTarget.blur() }   // Esc para a resposta; parado, sai do chat

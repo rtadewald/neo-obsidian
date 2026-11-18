@@ -11,6 +11,7 @@ export type Extra = {
   onDatas?: (datas: string[]) => void     // scheduled com várias datas (copy postada de novo): a lista inteira
   onPublicado?: (sim: boolean) => void     // publicado muda o status (pasta)
   onLink?: (nome: string) => void          // clicar num [[link]] das propriedades abre a nota
+  canvases?: { nome: string; icone: string }[]   // os canvas ativos: `grupo` vira um seletor de canvas
 }
 
 export const definirExtra = StateEffect.define<Extra>()
@@ -62,8 +63,10 @@ function yaml(v: string) {
   return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 function bloco(chave: string, v: string | string[]) {
-  if (Array.isArray(v)) return v.length ? `${chave}:\n${v.map((x) => `  - ${yaml(x)}`).join('\n')}` : `${chave}:`
-  return v ? `${chave}: ${ehBool(v) ? v : yaml(v)}` : `${chave}:`
+  // grupo (canvas) sempre entre aspas, como no resto do vault
+  const q = (x: string) => (chave === 'grupo' ? `"${x.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : yaml(x))
+  if (Array.isArray(v)) return v.length ? `${chave}:\n${v.map((x) => `  - ${q(x)}`).join('\n')}` : `${chave}:`
+  return v ? `${chave}: ${ehBool(v) ? v : q(v)}` : `${chave}:`
 }
 
 function trocar(view: EditorView, chave: string, v: string | string[] | null) {
@@ -93,6 +96,7 @@ class Painel extends WidgetType {
   eq(o: Painel) {
     return JSON.stringify(o.itens.map((i) => [i.chave, i.valor])) === JSON.stringify(this.itens.map((i) => [i.chave, i.valor]))
       && o.extra.status?.valor === this.extra.status?.valor && !!o.extra.onData === !!this.extra.onData
+      && (o.extra.canvases?.length ?? 0) === (this.extra.canvases?.length ?? 0)
   }
   ignoreEvent() { return true }
 
@@ -120,8 +124,37 @@ class Painel extends WidgetType {
       linha('status', s)
     }
 
+    // canvas (`grupo:`): chips com os canvas onde a nota vive, × tira, o seletor acrescenta
+    const cvs = this.extra.canvases
+    const campoCanvas = (atuais: string[]) => {
+      const caixa = document.createElement('div'); caixa.className = 'cm-prop-campo cm-prop-canvas'
+      const gravar = (l: string[]) => trocar(view, 'grupo', l.length > 1 ? l : l[0] ?? '')
+      for (const nome of atuais) {
+        const c = document.createElement('span'); c.className = 'cm-prop-chip'
+        const ic = cvs!.find((x) => x.nome === nome)?.icone
+        c.textContent = `${ic && ic !== '🗂️' ? ic + ' ' : ''}${nome}`
+        const x = document.createElement('button'); x.textContent = '×'; x.title = `Tirar de ${nome}`
+        x.onclick = () => gravar(atuais.filter((g) => g !== nome))
+        c.append(x); caixa.append(c)
+      }
+      const resto = cvs!.filter((x) => !atuais.includes(x.nome))
+      if (resto.length) {
+        const s = document.createElement('select'); s.className = 'cm-prop-canvas-mais'; s.title = 'Pôr em mais um canvas'
+        const p0 = document.createElement('option'); p0.value = ''; p0.textContent = atuais.length ? '+' : '+ escolher canvas'; s.append(p0)
+        for (const o of resto) { const op = document.createElement('option'); op.value = o.nome; op.textContent = `${o.icone !== '🗂️' ? o.icone + ' ' : ''}${o.nome}`; s.append(op) }
+        s.onchange = () => { if (s.value) gravar([...atuais, s.value]) }
+        caixa.append(s)
+      }
+      return caixa
+    }
+    if (cvs && !this.itens.some((i) => i.chave === 'grupo')) linha('canvas', campoCanvas([]))
+
     for (const it of this.itens) {
       const { chave, valor } = it
+      if (chave === 'grupo' && cvs) {
+        linha('canvas', campoCanvas((Array.isArray(valor) ? valor : valor ? [valor] : []).filter(Boolean)))
+        continue
+      }
       // scheduled aceita várias datas (a mesma copy postada de novo): um campo de data por data, × tira, + acrescenta
       if (/^scheduled$/i.test(chave)) {
         const datas = (Array.isArray(valor) ? valor : valor ? [valor] : []).map((x) => /^\d{4}-\d{2}-\d{2}/.exec(x)?.[0] ?? '').filter(Boolean)

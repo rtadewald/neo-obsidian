@@ -224,6 +224,60 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 - Vistas (`Visao` em `Canvas.tsx`): `principal`, `foco:<id>` (um card e
   tudo que está ligado a ele), além de `edicao`, `agendado` e `pub-<ano>`. A barra lateral guarda as vistas pinadas e
   o histórico.
+- **Pinados**: só 💡 ideias (`i:`) e categorias (`c:<nome>`) se pinam (`pinavel` em `pins.ts`; o resto sai da lista).
+  Clicar num pinado abre o `foco:` dele, isolado, com os filhos: a categoria parte de todas as ideias com aquela
+  `categoria:`; no mapa mental a raiz do foco abre expandida e a tela se enquadra. A categoria pina pelo botão direito.
+- **Guias de alinhamento**: arrastando um card sozinho, bordas e meio encaixam (7 px de tela) nos dos outros cards
+  visíveis, com uma linha rosa (`canvas-guia`, no `ViewportPortal`). No mapa, só a categoria encaixa.
+- **Alinhar e distribuir** (botão na barra de baixo): esquerda, centro, direita, topo, meio, base e distribuir na
+  horizontal/vertical os cards selecionados; no mapa mental, só as categorias. Entra no ⌘Z.
+- **Organizar o mapa** (botão de grade ao lado de Mapa mental, só no mapa): uma coluna (padrão) ou grade 3×3, 4×4, 5×5,
+  6×6 e 8×8, como no Neo Stitch: em todo nível os filhos de um card vão em colunas de N (nunca mais de N empilhados),
+  cada um com o bloco do seu galho. Fica no localStorage `canvas-grade#<canvas>`. Arrastar muda a ordem coluna a coluna.
+  As grades que dariam o mesmo resultado (nenhum card com mais de N filhos) ficam apagadas no menu.
+- **Criação** (💡 na barra de baixo, separado por um pipe dos 🔥/📌; também a primeira aba da tabela, com pipe antes de
+  Priorizar): a tabela das ideias do canvas em grupos categoria › 💡 ideia › copy. Tudo começa fechado (Expandir tudo /
+  Recolher tudo ao lado dos filtros; a seta da ideia abre as copies, com o ponto do status). A coluna Canvas mostra o emoji e o nome do canvas de
+  cada linha; a linha da categoria junta os canvas das ideias dela.
+- A bolinha de cada canvas (pastas da esquerda) não conta o que foi tirado dele à mão (`arquivados` do layout).
+
+### Mapa mental (modo do canvas)
+
+- O botão "Mapa mental" / "Livre" na barra de baixo (ou a tecla **G**) alterna **mapa mental** (o padrão) e **canvas
+  livre**, lembrado por canvas (`canvas-modo#<slug>` no localStorage). As árvores vão em colunas lado a lado, para encher a
+  tela em vez de virar uma fila comprida. No mapa os cards não se arrastam e não há camada de desenho: o lugar sai das
+  ligações (`emArvore` em `Canvas.tsx`). A 💡 ideia é a raiz, as produções e VSLs dela vão à direita, a copy que nasceu
+  de outra (`origem:`) depois da de origem. Card sem pai vira raiz, depois das ideias. A altura de cada card vem do que
+  o React Flow mediu; a relayout só troca `position`/`hidden` no mesmo objeto (trocar o objeto faz o React Flow medir
+  de novo, sem fim).
+- **Categorias**: cada 💡 ideia tem `categoria: "<emoji> <nome>"` no frontmatter (8 categorias por tipo de projeto, de
+  17/11/2026: Skills e plugins do Claude, Ferramentas e repos open source, Design e sites com IA, 3D e vídeo com IA,
+  Projetos que eu construí, Começar em IA e opinião, Vendas, Referências de outros players).
+- **Hierarquia do mapa** (`emArvoreNos`): **categoria** (card preto `categoria`, id `c:<nome>`, só existe no mapa) →
+  **💡 ideia com material** (o card visual de sempre, com imagem, vídeo e texto) → copies. A ideia **sem material**
+  (`material: false` na API, `canvas._tem_material`: sem link, embed nem texto além da frase das notas de lugar) some
+  do mapa e as produções/VSLs dela penduram direto na categoria. Ideia sem categoria cai em "Sem categoria". Cada
+  categoria abre a sua coluna; colapsa pelo botão ou duplo clique. O card de copy não mostra prévia nem data.
+- **Arrastar no mapa**: a categoria arrasta a árvore inteira junto e fica onde foi solta (posição `mapa|c:<nome>` no
+  `pos` do layout; as categorias sem lugar se arrumam à direita das arrastadas). Ideia ou copy arrastada para cima ou
+  para baixo muda de ordem entre os irmãos e volta para a coluna: a ordem fica em `ordem` do layout
+  (`{id do pai: [ids]}`, `PUT /api/canvas/ordem`); quem não está na lista vem depois, do mais novo ao mais velho.
+- `producao:` na copy (opcional): separa produções dentro de uma mesma ideia (chave "ideia › produção",
+  `chaveProd` em `canvasApi.ts`). Ainda não há copy usando.
+- **Juntar ideias**: com 2+ 💡 selecionadas, botão direito → "Juntar ideias numa só" (`POST /api/canvas/juntar`
+  `{destino, origens}`, `canvas.juntar_ideias`). O corpo de cada origem entra em `## Entradas` do destino como
+  `### <nome>` (os títulos dela descem dois níveis), tags e fontes se somam, as copies trocam o `ideia:` e as notas de
+  origem vão para a `.trash` do vault. O destino pode ser uma delas ou um nome novo (que herda canvas e categoria da primeira).
+- O botão −/+n na borda direita de um card com filhos colapsa a subárvore (`canvas-colapsadas#<slug>`). Abrir ou fechar
+  (e trocar de modo) enquadra o mapa na tela (`enquadrarTudo`, sem contar os cards escondidos). Dois cliques
+  continuam abrindo a nota; as alças continuam ligando cards.
+- **Toda copy visível tem ideia** desde 17/11/2026: as 95 copies sem `ideia:` (canvas temáticos + Inbox não publicado)
+  foram agrupadas por roteiro em ideias centrais, e as ideias citadas sem nota ganharam a nota 💡 (50 notas criadas).
+  A lista do que mudou ficou fora do repo; para desfazer, esvazie o `ideia:` das copies e apague as notas criadas.
+- **Plugar numa ideia que já existe**: o material entra na seção `## Entradas` da nota 💡 (`canvas._com_entrada`:
+  `### dd/mm/aaaa · título` e o conteúdo; cria a seção se não houver). Pelo `POST /api/canvas/entrada` com `ideia`.
+  Na tela: Radar → botão direito → "Plugar numa ideia que já existe ›"; ⌘⇧I → "Plugar numa ideia"; colar (⌘V) no
+  canvas com uma 💡 ideia selecionada. A busca de ideias é o `EscolherIdeia.tsx`.
 
 ### Selo NOVO nas ideias
 
@@ -347,6 +401,11 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   as ferramentas do Chrome ficam invisíveis.
 - **Página do X = último lote.** Cada coleta do X passa ao script os ids já vistos (`db.externos_recentes`) e ele
   rola o feed até juntar posts **inéditos**; esses ganham `lote` = a hora da coleta (`db.gravar_sinais(..., lote=)`).
+  São duas fases no mesmo script: os **50** inéditos do feed "Para você" (`ALVO`) e depois **50 de uma busca pelos temas**
+  (`BUSCA`, com `min_faves:500` e `lang:en`, aba Mais recentes; `POPULARES`, `MIN_CURTIDAS`). O feed com 500+ era quase
+  tudo fora do tema (futebol, política). O script troca para a busca com `history.pushState` + `popstate`, sem recarregar
+  (o agente se perdia navegando para a URL longa). Os da busca vêm com `metricas.popular = true`. O lote do X é
+  classificado logo depois da coleta dele, sem esperar o Instagram. A coleta do X leva uns 4 minutos.
   A página pede `?fonte=x&ultimo_lote=true`, então o Atualizar troca a tela inteira pelos próximos posts. Nada é
   apagado do SQLite: os curtidos de qualquer coleta ficam em **Curtidos** (`?status=curtido`, sem limite), com o link.
 - **Ordem congelada** (`Radar.tsx`, `congelar`): cada card ganha um lugar quando chega e não sai dele; like e deslike
@@ -361,11 +420,19 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   radar rodam só nele (cada sessão do SDK chama `select_browser` antes de tudo), longe do Chrome do dia a dia. X logado
   como @RTadewald; Instagram como **teste.asimov**, a conta própria do radar. Se a extensão for reinstalada, o id muda
   (`list_connected_browsers`).
+  Se o perfil estiver fechado (a sessão responde SEM_PERFIL), `config.com_perfil` abre o Chrome nele
+  (`open -na "Google Chrome" --args --profile-directory=<pasta>`; a pasta vem do Local State pelo nome "Claude Profile"),
+  espera 12 s a extensão conectar e tenta de novo. Não precisa deixar o perfil aberto.
 - **Instagram** (`coletores/instagram_radar.py`, aba Instagram; o `coletores/instagram.py` é outro: os Reels do próprio @rodrigotadewald para o Metricool): roda junto com a coleta do X. Duas fontes: a grade de Reels
   de cada perfil acompanhado (`app/dados/instagram_perfis.json`; começou com mavgpt, heysirio, filatov.design,
   marina_uiux, nick_saraev, que a conta segue) e a página /reels/ da conta (o algoritmo sugere; card com "sugerido").
   Para cada Reel inédito, a página `/p/<código>/` dá curtidas, comentários, data e legenda (meta `og:description`).
   Da grade, só os dos últimos 21 dias (ela começa pelos fixados); os perfis vêm antes do algoritmo no corte de 50.
+  Reel com legenda em português (`_brasileiro`) fica de fora: a referência é conteúdo gringo.
+  Fonte: **o algoritmo** (/reels/). A conta é treinada com 👍 no app (o like vai ao Instagram) e o feed vai melhorando.
+  Meta: os **50 primeiros Reels com 1k+ curtidas** (`ALVO`, `MIN_CURTIDAS`), no máximo 3 do mesmo autor (`POR_PERFIL`):
+  o script rola o /reels/ avaliando de 4 em 4 até juntar 50 + 8 de folga (`MARGEM`, para o filtro de português) ou 320
+  rolagens (`ROLAGENS`). A grade dos perfis acompanhados só entra com `USAR_PERFIS = True` (desligado).
   O Haiku classifica como os outros, e "fora do tema" não aparece. A aba mostra o último lote, como o X.
 - **Like espelhado no X** (`coletores/x_curtir.py`): 👍 num post do X ou num Reel do Instagram grava `x_quer=1` no SQLite (fila; o like vai para a rede de origem: no
   Instagram, o coração de 24 px da página `/p/<código>/`). A fila só vai ao

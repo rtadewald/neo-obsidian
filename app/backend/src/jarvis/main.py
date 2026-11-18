@@ -529,6 +529,27 @@ def canvas_produto(corpo: NoProduto):
     return {"mudou": _erros(lambda: canvas.no_produto(corpo.notas, corpo.produto, corpo.sim))}
 
 
+class JuntarIdeias(BaseModel):
+    destino: str          # ideia que já existe ou nome novo
+    origens: list[str]    # as que somem (o conteúdo vai para o destino)
+
+
+@app.post("/api/canvas/juntar")
+def canvas_juntar(corpo: JuntarIdeias):
+    return _erros(lambda: canvas.juntar_ideias(corpo.destino, corpo.origens))
+
+
+class TagsNota(BaseModel):
+    nome: str
+    tags: list[str]
+
+
+@app.post("/api/canvas/tags")
+def canvas_tags(corpo: TagsNota):
+    """Coluna Tags da tabela: grava a lista inteira e devolve a de antes (o ⌘Z volta para ela)."""
+    return {"antes": _erros(lambda: canvas.definir_tags(corpo.nome, corpo.tags))}
+
+
 class Winner(BaseModel):
     notas: list[dict]
     sim: bool = True
@@ -548,6 +569,18 @@ def canvas_desenho():
 @app.put("/api/canvas/desenho")
 def canvas_salvar_desenho(corpo: dict):
     _erros(lambda: canvas.salvar_desenho(corpo))
+    return {"ok": True}
+
+
+class OrdemFilhos(BaseModel):
+    pai: str
+    filhos: list[str]
+
+
+@app.put("/api/canvas/ordem")
+def canvas_ordem(corpo: OrdemFilhos):
+    """Mapa mental: grava a ordem dos filhos de um card (categoria ou ideia)."""
+    canvas.ordenar(corpo.pai, corpo.filhos)
     return {"ok": True}
 
 
@@ -664,6 +697,16 @@ class Saida(BaseModel):
 @app.post("/api/canvas/saida")
 def canvas_saida(corpo: Saida):
     return _erros(lambda: canvas.criar_saida(corpo.ideia, corpo.formato, corpo.titulo))
+
+
+class ParaCopy(BaseModel):
+    ideia: str
+    formato: str
+
+
+@app.post("/api/canvas/virar-copy")
+def canvas_virar_copy(corpo: ParaCopy):
+    return _erros(lambda: canvas.transformar_em_copy(corpo.ideia, corpo.formato))
 
 
 @app.get("/api/ads")

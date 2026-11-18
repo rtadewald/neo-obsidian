@@ -1,20 +1,26 @@
 import type { Raiz } from './notas'
 
 export type Midia = { links: string[]; imagem: string | null; copia: boolean }
-export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; tags?: string[] } & Partial<Midia>
+export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; tags?: string[]; categoria?: string | null; material?: boolean } & Partial<Midia>
 export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number; grupo?: string | null; tags?: string[] }
 export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado'
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
-  formato: string; ideia: string | null; origem?: string | null; previa: string; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; datas?: string[]
+  formato: string; ideia: string | null; producao?: string | null; origem?: string | null; previa: string; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; datas?: string[]
   palavras?: number; criado?: number
   winner?: boolean   // tag 🔥 na nota: performou acima da média
   tags?: string[]
 } & Midia
 export type Formato = { emoji: string; nome: string }
+/** A produção 🎬 de uma copy: as copies com a mesma chave viram um card só. Normalmente é a ideia; quando uma ideia
+ *  junta vários roteiros (ex.: Claude Skills), cada copy diz o seu em `producao:` e a chave vira "ideia › produção". */
+export const SEP_PROD = ' › '
+export const chaveProd = (p: { ideia: string | null; producao?: string | null }) => (p.ideia && p.producao ? `${p.ideia}${SEP_PROD}${p.producao}` : p.ideia ?? '')
+export const ideiaDaChave = (k: string) => k.split(SEP_PROD)[0]
 export type EstadoCanvas = {
   ideias: Ideia[]; entradas: Entrada[]; producoes: Producao[]
   pos: Record<string, { x: number; y: number }>; arquivados: string[]; formatos: Formato[]
+  ordem?: Record<string, string[]>   // mapa mental: a ordem dos filhos de cada card (arrastada à mão)
   canvas?: InfoCanvas
   produtos?: Produto[]
   visiveis?: string[]   // cards trazidos à mão (⌘↵, Mover para): aparecem mesmo publicados no Inbox
@@ -64,7 +70,10 @@ export const moverNaLista = (slugs: string[], de: string, para: string) => {
 }
 export const ordenarCanvases = (slugs: string[]) =>
   fetch('/api/canvases/ordem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slugs }) })
-export const listarCanvases = () => fetch('/api/canvases').then((r) => r.json() as Promise<ResumoCanvas[]>)
+// a última lista lida fica em memória: o modal da nota mostra as propriedades na hora e confere com o servidor por trás
+let canvasesCache: ResumoCanvas[] | null = null
+export const canvasesEmCache = () => canvasesCache
+export const listarCanvases = () => fetch('/api/canvases').then((r) => r.json() as Promise<ResumoCanvas[]>).then((l) => { canvasesCache = l; return l })
 
 export async function post<T = unknown>(rota: string, corpo: unknown, metodo = 'POST'): Promise<T> {
   const r = await fetch(`/api/canvas/${rota}`, { method: metodo, headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify(corpo) })
@@ -74,7 +83,9 @@ export async function post<T = unknown>(rota: string, corpo: unknown, metodo = '
 }
 
 /** O estado de todas as notas (canvas interno `todos`), para o que é global: as pastas e as tabelas delas. */
-export const carregarTudo = () => fetch('/api/canvas', { headers: { 'X-Canvas': 'todos' } }).then((r) => r.json() as Promise<EstadoCanvas>)
+let tudoCache: EstadoCanvas | null = null
+export const tudoEmCache = () => tudoCache
+export const carregarTudo = () => fetch('/api/canvas', { headers: { 'X-Canvas': 'todos' } }).then((r) => r.json() as Promise<EstadoCanvas>).then((e) => { tudoCache = e; return e })
 export const carregarCanvas = () => fetch('/api/canvas', { headers: cabecalhoCanvas() }).then((r) => r.json() as Promise<EstadoCanvas>)
 
 /** Pedido pronto para o Jarvis escrever uma saída nova a partir das irmãs. */

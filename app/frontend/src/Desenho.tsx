@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import '@excalidraw/excalidraw/index.css'
-import { cabecalhoCanvas } from './canvasApi'
 
 /** Camada de desenho do canvas: o Excalidraw de verdade (ferramentas, atalhos, cores, estilo à mão), por baixo dos
  *  cards e com o mesmo pan/zoom do React Flow. Fora do modo desenho ele só mostra os desenhos (não pega o mouse);
@@ -29,10 +28,18 @@ export const TECLAS_FERRAMENTA: Record<string, string> = {
 }
 
 /** O que a mesa usa para falar com a camada: empurrar o pan/zoom do canvas e escolher a ferramenta. */
+/** Último desenho conhecido de cada canvas: trocar de canvas mostra o desenho na hora e confere com o servidor por trás. */
+const cacheDesenho = new Map<string, { elements: Elementos; files: Arquivos }>()
+
 export type ControleDesenho = {
   vista: (v: Vista) => void; ferramenta: (t: string) => void; podeSair: () => boolean
   elementoEm: (x: number, y: number) => string | null   // id do desenho no ponto da tela (ou null)
   selecionar: (id: string) => void                       // ao entrar no modo desenho, já com este elemento selecionado
+  // seleção junto com os cards (o retângulo da seleção pega cards e desenhos; coordenadas do canvas = da cena)
+  noRetangulo: (a: { x: number; y: number }, b: { x: number; y: number }) => string[]
+  marcar: (ids: string[]) => void                        // mostra os desenhos selecionados (sem entrar no modo desenho)
+  arrastar: (ids: string[], dx: number, dy: number, fim?: boolean) => void   // desloca a partir de onde estavam no início
+  apagar: (ids: string[]) => void
 }
 
 export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle }: {
@@ -41,18 +48,30 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
   onSair: () => void
   controle: React.MutableRefObject<ControleDesenho | null>
 }) {
-  const [dados, setDados] = useState<{ elements: Elementos; files: Arquivos } | null>(null)
+  const [dados, setDados] = useState<{ elements: Elementos; files: Arquivos } | null>(() => cacheDesenho.get(canvas) ?? null)   // o último conhecido: aparece já na troca
   const api = useRef<Api | null>(null)
   const ultimaVista = useRef<Vista | null>(null)
   const assinatura = useRef('')
   const timer = useRef<number | undefined>(undefined)
+  const pendente = useRef<(() => void) | null>(null)   // a gravação que está esperando a pausa
   const caixa = useRef<HTMLDivElement>(null)
   const ferramentaPendente = useRef<string | null>(null)   // pedida antes do Excalidraw sair do modo leitura
 
   useEffect(() => {
     let vivo = true
-    fetch('/api/canvas/desenho', { headers: cabecalhoCanvas() }).then((r) => r.json())
-      .then((d) => { if (vivo) setDados({ elements: d.elements ?? [], files: d.files ?? {} }) })
+    fetch('/api/canvas/desenho', { headers: { 'X-Canvas': canvas } }).then((r) => r.json())
+      .then((d) => {
+        if (!vivo) return
+        const novo = { elements: d.elements ?? [], files: d.files ?? {} }
+        const sig = (x: { elements: Elementos }) => x.elements.map((e) => `${e.id}:${e.version}`).join()
+        const antes = cacheDesenho.get(canvas)
+        cacheDesenho.set(canvas, novo)
+        if (!antes) { setDados(novo); return }
+        if (sig(antes) !== sig(novo) && api.current) {   // mudou por fora desde a última vez: atualiza a cena já montada
+          api.current.addFiles(Object.values(novo.files) as never)
+          api.current.updateScene({ elements: novo.elements as never })
+        }
+      })
       .catch(() => { if (vivo) setDados({ elements: [], files: {} }) })
     return () => { vivo = false }
   }, [canvas])
@@ -74,8 +93,37 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
     return achado ? achado.id : null
   }
   const selecaoPendente = useRef<string | null>(null)
+  const origem = useRef<Record<string, { x: number; y: number }> | null>(null)   // posições no começo do arraste junto
+  const trocar = (f: (e: Elementos[number]) => Elementos[number] | null, ids: string[], gravarJa: boolean) => {
+    const a = api.current
+    if (!a || !modulo || !ids.length) return
+    const alvo = new Set(ids)
+    const els = a.getSceneElements().map((e) => (alvo.has(e.id) ? f(e) ?? e : e))
+    a.updateScene({ elements: els as never, captureUpdate: gravarJa ? modulo.CaptureUpdateAction.IMMEDIATELY : modulo.CaptureUpdateAction.NEVER })
+    if (gravarJa) gravar(a.getSceneElementsIncludingDeleted() as Elementos, a.getFiles() as Arquivos)
+  }
+  const nova = (e: Elementos[number], m: Partial<Elementos[number]>) => ({ ...e, ...m, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2 ** 31), updated: Date.now() }) as Elementos[number]
   controle.current = {
     elementoEm,
+    noRetangulo: (p, q) => {
+      const a = api.current
+      if (!a) return []
+      return a.getSceneElements().filter((e) => {
+        if (e.isDeleted) return false
+        const cx = e.x + e.width / 2, cy = e.y + e.height / 2   // o centro do desenho dentro do retângulo
+        return cx >= p.x && cx <= q.x && cy >= p.y && cy <= q.y
+      }).map((e) => e.id)
+    },
+    marcar: (ids) => api.current?.updateScene({ appState: { selectedElementIds: Object.fromEntries(ids.map((i) => [i, true])) as never } }),
+    arrastar: (ids, dx, dy, fim) => {
+      const a = api.current
+      if (!a || !ids.length) return
+      if (!origem.current) origem.current = Object.fromEntries(a.getSceneElements().filter((e) => ids.includes(e.id)).map((e) => [e.id, { x: e.x, y: e.y }]))
+      const o = origem.current
+      trocar((e) => (o[e.id] ? nova(e, { x: o[e.id].x + dx, y: o[e.id].y + dy }) : null), ids, !!fim)
+      if (fim) origem.current = null
+    },
+    apagar: (ids) => { trocar((e) => nova(e, { isDeleted: true }), ids, true); api.current?.updateScene({ appState: { selectedElementIds: {} as never } }) },
     selecionar: (id) => { selecaoPendente.current = id },
     vista: aplicarVista,
     ferramenta: (t) => { ferramentaPendente.current = t; if (ativo) api.current?.setActiveTool({ type: t as never }) },
@@ -93,12 +141,16 @@ export function Desenho({ canvas, ativo, vistaInicial, onVista, onSair, controle
     assinatura.current = sig
     if (primeira) return   // o primeiro onChange é o próprio carregamento
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => {
-      fetch('/api/canvas/desenho', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() },
+    pendente.current = () => {
+      fetch('/api/canvas/desenho', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Canvas': canvas },   // o canvas deste desenho, mesmo se já trocou
         body: JSON.stringify({ elements: els.filter((e) => !e.isDeleted), files }) }).catch(() => {})
-    }, 700)
+      cacheDesenho.set(canvas, { elements: els.filter((e) => !e.isDeleted), files })
+      pendente.current = null
+    }
+    timer.current = window.setTimeout(() => pendente.current?.(), 700)
   }
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  // sair do canvas (trocar ou fechar) com um traço ainda por gravar: grava já, em vez de perder
+  useEffect(() => () => { window.clearTimeout(timer.current); pendente.current?.() }, [])
 
   // ao entrar no modo desenho, o foco vai para o Excalidraw (os atalhos dele só valem com foco dentro dele)
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { INBOX, listarCanvases, type ResumoCanvas } from './canvasApi'
+import { EscolherIdeia } from './EscolherIdeia'
 
 /** Criação rápida de qualquer página: ⌘⇧I = 💡 nova ideia, ⌘⇧N = 🎬 nova produção (uma copy em Priorizar, Reels por padrão).
  *  Dentro de um canvas, vai para ele; nas outras páginas, um seletor escolhe o canvas (começa no último aberto).
@@ -30,6 +31,9 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
   const [canvas, setCanvas] = useState(canvasAtual ?? INBOX)
   const [erro, setErro] = useState('')
   const [indo, setIndo] = useState(false)
+  // 💡: criar uma ideia nova ou plugar o texto/link numa que já existe (vira entrada na seção Entradas dela)
+  const [plugar, setPlugar] = useState(false)
+  const [alvo, setAlvo] = useState<string | null>(null)
 
   useEffect(() => {
     if (!comSeletor) return
@@ -48,6 +52,14 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
     setIndo(true); setErro('')
     const cab = { 'Content-Type': 'application/json', 'X-Canvas': canvas }
     try {
+      if (tipo === 'ideia' && plugar) {
+        if (!alvo) throw new Error('Escolha a ideia onde isso entra.')
+        const r = await fetch('/api/canvas/entrada', { method: 'POST', headers: cab, body: JSON.stringify({ conteudo: t, ideia: alvo }) })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.detail || 'Não consegui plugar na ideia.')
+        onCriado(canvas, `Entrou em ${alvo}`, { raiz: 'ideias', nome: alvo, tipo })
+        return
+      }
       const r = tipo === 'ideia'
         ? await fetch('/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, ...(pos ? { pos } : {}) }) })
         : ligar?.ideia
@@ -77,8 +89,17 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
         )}
         <label className="paleta-campo">
           <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : icone(formato)}</span>
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? 'Nova ideia…' : ligar?.ideia ? 'Nova copy desta ideia…' : 'Nova criação…'} />
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? (plugar ? 'Link ou texto para a ideia…' : 'Nova ideia…') : ligar?.ideia ? 'Nova copy desta ideia…' : 'Nova criação…'} />
         </label>
+        {tipo === 'ideia' && (
+          <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Onde">
+            {([[false, 'Nova ideia'], [true, 'Plugar numa ideia']] as const).map(([k, nome]) => (
+              <button key={nome} type="button" role="radio" aria-checked={k === plugar} className={k === plugar ? 'is-on' : ''} onClick={() => setPlugar(k)}>{nome}</button>
+            ))}
+            {plugar && alvo && <span className="novo-rapido-rotulo">em {alvo}</span>}
+          </div>
+        )}
+        {tipo === 'ideia' && plugar && <EscolherIdeia onEscolher={setAlvo} placeholder="Em qual ideia isso entra?" />}
         {tipo === 'producao' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
             {FORMATOS.map(([f, nome]) => (

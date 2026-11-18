@@ -7,8 +7,10 @@ import { Sumario } from './Sumario'
 import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
+import { alternarPin, idDoCard, pinavel, usePins } from './pins'
+import { mudarStatus as statusComDesfazer } from './desfazer'
 import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
-import { STATUS, onde, carregarCanvas, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao } from './canvasApi'
+import { INBOX, STATUS, listarCanvases, onde, carregarTudo, tudoEmCache, canvasesEmCache, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao, type Formato } from './canvasApi'
 
 /** Modal estilo Notion: uma ideia e as saídas dela, uma por tab. Abre do canvas, do calendário e do ⌘P. */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
@@ -32,11 +34,13 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   onMudou?: () => void                        // algo mudou no vault (o canvas recarrega)
   versao?: number                             // o chat terminou de responder
 }) {
-  const [est, setEst] = useState<EstadoCanvas | null>(null)
+  // todas as notas (não só as do canvas aberto: a copy pode viver em outro); começa do que já está em memória
+  const [est, setEst] = useState<EstadoCanvas | null>(tudoEmCache)
   const [ativa, setAtiva] = useState<Alvo>(alvo)
   onde.nota = ativa   // o Jarvis recebe, em toda mensagem, a aba que está aberta (não só a nota com que o modal abriu)
   useEffect(() => () => { onde.nota = null }, [])
   const [mais, setMais] = useState(false)
+  const pins = usePins()
   const [posMais, setPosMais] = useState({ left: 0, top: 0 })
   useEffect(() => {
     if (!mais) return
@@ -47,7 +51,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   const [aviso, setAviso] = useState<string | null>(null)
   const avisar = (m: string) => { setAviso(m); window.setTimeout(() => setAviso((a) => (a === m ? null : a)), 2600) }
 
-  const recarregar = useCallback(() => carregarCanvas().then(setEst).catch(() => {}), [])
+  const recarregar = useCallback(() => carregarTudo().then(setEst).catch(() => {}), [])
   useEffect(() => { recarregar() }, [recarregar, versao])
   useEffect(() => setAtiva(alvo), [alvo])
   useEffect(() => { if (ativa.raiz !== 'entradas') lembrarAberta(ativa.raiz, ativa.nome) }, [ativa])   // entra nas últimas abertas da ⌘P
@@ -63,7 +67,8 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     const nomeIdeia = ativa.raiz === 'ideias' ? ativa.nome : prod?.ideia ?? null
     const ideia = nomeIdeia ? est.ideias.find((i) => i.nome === nomeIdeia) ?? null : null
     // as saídas são as notas com o mesmo `ideia:`, exista ou não a nota 💡 (o grupo 🎬 do canvas é só essa propriedade)
-    const saidas = nomeIdeia ? est.producoes.filter((p) => p.ideia === nomeIdeia).sort(porFormato) : prod ? [prod] : []
+    // copy de uma produção dentro de uma ideia maior (`producao:`): as abas são só as versões dela
+    const saidas = nomeIdeia ? est.producoes.filter((p) => p.ideia === nomeIdeia && (!prod?.producao || p.producao === prod.producao)).sort(porFormato) : prod ? [prod] : []
     const entradas = ideia ? est.entradas.filter((e) => ideia.fontes.includes(e.nome)) : []
     const usadaEm = ativa.raiz === 'entradas' ? est.ideias.filter((i) => i.fontes.includes(ativa.nome)) : []
     // ligações de copy para copy (`origem:`): a copy de onde esta nasceu e as que nasceram dela
@@ -280,6 +285,9 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
           {/* mostrar no canvas: fecha a nota e leva até o card (muda para o canvas dela, se for outro) */}
           {onMostrar && <button className="btn-icone modal-alvo" onClick={() => onMostrar(ativa)} aria-label="Mostrar no canvas" title="Mostrar no canvas (vai até o card)">
             <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3.6" /><circle cx="10" cy="10" r=".9" fill="currentColor" /></svg></button>}
+          {est && (() => { const id = idDoCard(est, ativa), sim = pins.includes(id); if (!pinavel(id)) return null
+            return <button className={`btn-icone modal-pin ${sim ? 'is-on' : ''}`} onClick={() => { alternarPin(id, !sim); avisar(sim ? 'Despinado' : 'Pinado na barra da esquerda') }}
+              aria-pressed={sim} aria-label={sim ? 'Despinar' : 'Pinar'} title={sim ? 'Despinar' : 'Pinar na barra da esquerda'}><Icone n="pin" t={15} /></button> })()}
           <button className="btn-icone modal-lixeira" onClick={() => setApagar(true)} aria-label="Deletar nota" title="Deletar esta nota (⌘⌫)"><Icone n="lixeira" t={15} /></button>
           <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
         </header>
@@ -323,7 +331,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
         )}
 
         <PainelNota key={`${ativa.raiz}/${ativa.nome}`} alvo={ativa} prod={grupo?.prod ?? undefined} ideia={grupo?.ideia?.nome}
-          versao={versao} onTrecho={onTrecho} avisar={avisar} onLink={abrirLink}
+          versao={versao} onTrecho={onTrecho} avisar={avisar} onLink={abrirLink} formatos={est?.formatos}
           onMudou={(novo) => { if (novo) setAtiva(novo); recarregar(); onMudou?.() }} />
         {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
         {apagar && (
@@ -354,8 +362,8 @@ function rotuloSaida(p: Producao, ideia?: string) {
 
 /** O editor de uma nota (cabeçalho, propriedades, texto e sumário). Usado no modal e na página Skills
  *  (`fixo`: o título não renomeia, para os arquivos das skills). */
-export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink, fixo }: {
-  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean
+export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink, fixo, formatos }: {
+  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean; formatos?: Formato[]
   onTrecho?: (t: Trecho, pedido?: string) => void; onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)
@@ -402,6 +410,24 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
   }, [])
   useEffect(() => () => { if (ref.current.estado === 'editando') salvar() }, [salvar])
 
+  // ideia → copy: a própria nota vai para Priorizar com o frontmatter de copy (o texto fica; o card fica no mesmo lugar)
+  const [virar, setVirar] = useState<{ left: number; top: number } | null>(null)
+  useEffect(() => {
+    if (!virar) return
+    const fora = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest?.('.menu-virar, .btn-virar')) setVirar(null) }
+    window.addEventListener('mousedown', fora)
+    return () => window.removeEventListener('mousedown', fora)
+  }, [virar])
+  async function virarCopy(formato: string) {
+    setVirar(null)
+    try {
+      await salvar()
+      const d = await post<Alvo>('virar-copy', { ideia: alvo.nome, formato })
+      onMudou(d)
+      avisar('Virou copy em Priorizar')
+    } catch (e) { avisar((e as Error).message) }
+  }
+
   // o Jarvis pode ter escrito nesta nota
   useEffect(() => {
     const n = ref.current.nota
@@ -428,14 +454,19 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
     } catch (e) { avisar((e as Error).message) }
   }
 
+  // pela rota do canvas, que deixa a mudança no ⌘Z do app (vale depois de fechar a nota)
+  // o status novo aparece na hora; o do servidor toma o lugar quando a nota recarrega
+  const [stLocal, setStLocal] = useState<string | null>(null)
+  useEffect(() => setStLocal(null), [prod?.status, prod?.nome])
   const mudarStatus = (s: string) => {
-    if (!prod || s === prod.status) return
-    if (s === 'publicado') return executar(() => acao(alvo, { acao: 'mover', destino: 'publicados' }), 'Publicada')
-    if (prod.raiz === 'publicados') return executar(async () => {
-      const d = await acao(alvo, { acao: 'mover', destino: 'priorizar' })
-      return s === 'ideia' ? d : acao(d, { acao: 'status', destino: s })
-    }, 'Voltou para Priorizar')
-    return executar(() => acao(alvo, { acao: 'status', destino: s }))
+    if (!prod || s === (stLocal ?? prod.status)) return
+    setStLocal(s)
+    const msg = s === 'publicado' ? 'Publicada' : prod.raiz === 'publicados' ? 'Voltou para Priorizar' : undefined
+    return executar(async () => {
+      const r = await statusComDesfazer([{ nome: alvo.nome, status: prod.status }], s)
+      const n = r.notas[0]
+      return n ? { raiz: n.raiz as Raiz, nome: n.nome } : undefined
+    }, msg)
   }
 
   const mudarData = (data: string) => data && executar(async () => {
@@ -454,20 +485,25 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
   }
 
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
+  // os canvas ativos, para o seletor de canvas das propriedades (`grupo:`)
+  const ativosDe = (l: { nome: string; icone: string; arquivado?: boolean; slug: string }[]) => l.filter((c) => !c.arquivado && c.slug !== INBOX).map((c) => ({ nome: c.nome, icone: c.icone }))
+  const [canvases, setCanvases] = useState<{ nome: string; icone: string }[] | undefined>(() => { const c = canvasesEmCache(); return c ? ativosDe(c) : undefined })
+  useEffect(() => { listarCanvases().then((l) => setCanvases(ativosDe(l))).catch(() => {}) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const extra: Extra = prod ? {
-    status: { valor: prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
+    status: { valor: stLocal ?? prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
     onData: mudarData,
     onDatas: mudarDatas,
     onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
     onLink,
-  } : { onLink }
+    canvases,
+  } : { onLink, canvases }
 
   if (!nota) return <div className="modal-corpo"><p className="mudo">Carregando…</p></div>
 
   return (
     <>
-      <div className="modal-topo">
+      <div className={`modal-topo ${semSumario ? "sem-sumario" : ""}`}>
         <div className="modal-titulo">
           <p className="ideias-caminho">{caminho.split('/').slice(0, -1).join(' / ')}</p>
           {titulo !== null ? (
@@ -486,6 +522,16 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
           <button className="modal-desligar" onClick={() => executar(() => post('ligar', { producao: { raiz: prod.raiz, nome: prod.nome }, ideia: null }), 'Saiu da ideia')}
             title="Tira esta copy da ideia (a nota continua igual)">Desligar da ideia</button>
         )}
+        {alvo.raiz === 'ideias' && formatos && !fixo && (
+          <button className="modal-desligar btn-virar" aria-expanded={!!virar} title="Esta ideia vira uma copy em Priorizar (o texto fica igual)"
+            onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setVirar((v) => v ? null : { left: r.left, top: r.bottom + 4 }) }}>
+            🎬 Transformar em copy</button>
+        )}
+        {virar && formatos && createPortal(
+          <div className="menu-ctx menu-virar glass glass--light" role="menu" style={virar}>
+            <p className="menu-ctx-t">Transformar em copy de…</p>
+            {formatos.map((f) => <button key={f.emoji} role="menuitem" onClick={() => virarCopy(f.emoji)}><span className="menu-emoji">{f.emoji}</span>{f.nome}</button>)}
+          </div>, document.body)}
         {onTrecho && (
           <button className="modal-desligar" onClick={async () => { await salvar(); onTrecho({ texto: '', linhaIni: 1, linhaFim: texto.split('\n').length, raiz: alvo.raiz, nome: alvo.nome, caminho }) }}
             title="Manda esta nota para o chat (⌘I manda só o trecho selecionado)"><span className="orb orb--msg" /> Perguntar ao Jarvis</button>
@@ -499,7 +545,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
               <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.8h6.5L15.5 7v10.2H5z" /><path d="M11.5 2.8V7h4M10.2 9.4v5.2M7.9 12.4l2.3 2.3 2.3-2.3" /></svg></button>}
       </div>
 
-      <div className="modal-corpo modal-corpo--sumario">
+      <div className={`modal-corpo modal-corpo--sumario ${semSumario ? "sem-sumario" : ""}`}>
         <div className="modal-editor">
           <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink}
             onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />

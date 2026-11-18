@@ -49,7 +49,8 @@ export default function App() {
   const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number; quieto?: boolean; esperar?: boolean; ate?: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
-  const [paletaCanvas, setPaletaCanvas] = useState(false)   // ⌘P: navegar entre os canvas
+  const [paletaCanvas, setPaletaCanvas] = useState(false)
+  const [pinsNota, setPinsNota] = useState(false)   // ⌘[ com nota aberta: a barra da esquerda só com os pinados   // ⌘P: navegar entre os canvas
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
@@ -172,6 +173,12 @@ export default function App() {
         setNovo(cmdI || (comando && e.key.toLowerCase() === 'i') ? 'ideia' : 'producao')
         return
       }
+      // ⌘[ com uma nota aberta: mostra/esconde à esquerda só os pinados (para pular entre eles sem fechar a nota)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === '[' || e.code === 'BracketLeft') && document.querySelector('.modal-fundo .modal-nota')) {
+        e.preventDefault(); e.stopPropagation()
+        setPinsNota((v) => !v)
+        return
+      }
       // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
         e.preventDefault()
@@ -189,7 +196,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app ${focoTela ? 'modo-foco' : ''} ${trabalho ? 'modo-trabalho' : ''} ${modal ? 'com-nota' : ''}`}>
+    <div className={`app ${focoTela ? 'modo-foco' : ''} ${trabalho ? 'modo-trabalho' : ''} ${modal ? 'com-nota' : ''} ${modal && pinsNota ? 'pins-nota' : ''}`}>
       <div className="lateral-area">
       {/* breadcrumb: NEO-OBSIDIAN (todos os canvas) › canvas › vista; nas outras páginas, só o nome dela */}
       <nav className="migalhas" aria-label="Onde você está">

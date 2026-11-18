@@ -19,11 +19,18 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
-from ..config import CHROME_PERFIL, DADOS
+from ..config import CHROME_PERFIL, com_perfil, DADOS
 
 PERFIS = DADOS / "instagram_perfis.json"
 PERFIS_INICIAIS = ["mavgpt", "heysirio", "filatov.design", "marina_uiux", "nick_saraev"]
-ALVO = 50          # Reels inéditos por coleta
+ALVO = 50          # os primeiros Reels do algoritmo (/reels/) com MIN_CURTIDAS+ (a rolagem segue até juntar ALVO + MARGEM)
+# a fonte é o algoritmo: o Rodrigo treina a conta com 👍 no app (o like vai para o Instagram) e o feed melhora.
+# Os perfis acompanhados (instagram_perfis.json) só entram se USAR_PERFIS = True.
+USAR_PERFIS = False
+POR_PERFIL = 3     # no máximo 3 Reels do mesmo autor por coleta (o higgsfield.ai enchia o lote)
+MARGEM = 8         # folga para o que o filtro de português tira depois
+MIN_CURTIDAS = 1000   # só Reels com 1k+ curtidas entram no radar (perfis e algoritmo)
+ROLAGENS = 320       # teto de Reels do algoritmo rolados por coleta (para antes, ao juntar ALVO + MARGEM)
 DIAS = 21          # da grade dos perfis, só os recentes (a grade começa pelos fixados, antigos)
 DOWNLOADS = Path.home() / "Downloads"
 
@@ -64,43 +71,51 @@ EXTRAI = r"""
 window.__jigDone = false;
 (async () => {
   const conhecidos = new Set(__CONHECIDOS__);
+  const META = __META__, MIN = __MIN__;   // para quando juntar META Reels com MIN+ curtidas
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   const lista = JSON.parse(localStorage.getItem('__jig') || '[]');
-  const rolavel = [...document.querySelectorAll('main *')].find((e) => e.scrollHeight > e.clientHeight + 200 && /(auto|scroll)/.test(getComputedStyle(e).overflowY));
-  for (let i = 0; i < 45 && rolavel; i++) {
-    const code = (location.pathname.match(/\/reels?\/([\w-]+)/) || [])[1];
-    if (code && !lista.some((x) => x.code === code)) lista.push({ code, views: 0, capa: null, perfil: null, origem: 'algoritmo' });
-    window.__jigN = lista.length;
-    rolavel.scrollBy(0, rolavel.clientHeight);
-    await espera(1600);
-  }
   const num = (s) => { const m = (s || '').match(/([\d.,]+)\s*([KkMm])?/); if (!m) return 0;
     let n = parseFloat(m[2] ? m[1].replace(',', '.') : m[1].replace(/[.,]/g, '')) || 0;
     if (/k/i.test(m[2] || '')) n *= 1e3; if (/m/i.test(m[2] || '')) n *= 1e6; return Math.round(n); };
   const meta = (t, p) => { const m = t.match(new RegExp('<meta[^>]+(?:property|name)="' + p + '"[^>]+content="([^"]*)"')); if (!m) return '';
     const d = document.createElement('textarea'); d.innerHTML = m[1]; return d.value; };
-  const novos = lista.filter((x) => !conhecidos.has(x.code));
-  const saida = [];
-  for (let i = 0; i < novos.length; i += 4) {
-    await Promise.all(novos.slice(i, i + 4).map(async (x) => {
+  const saida = [], lidos = new Set();
+  const bons = () => { const c = {}; return saida.filter((x) => x.curtidas >= MIN && (c[x.autor] = (c[x.autor] || 0) + 1) <= __POR__).length; };
+  // lê a página de cada Reel (og:description: "183 likes, 155 comments - nick_saraev no November 15, 2026: "legenda…"")
+  const avaliar = async (xs) => {
+    await Promise.all(xs.map(async (x) => {
+      lidos.add(x.code);
       try {
         const t = await (await fetch('/p/' + x.code + '/')).text();
         const og = meta(t, 'og:description');
-        // "183 likes, 155 comments - nick_saraev no November 15, 2026: "legenda…""
         const m = og.match(/^([\d.,]+\s*[KkMm]?)\s+likes?,\s*([\d.,]+\s*[KkMm]?)\s+comments?\s+-\s+([\w.]+)\s+\S+\s+([A-Z][a-z]+ \d{1,2}, \d{4})\s*:\s*"?([\s\S]*?)"?\s*$/);
         if (!m) return;
         saida.push({ ...x, curtidas: num(m[1]), comentarios: num(m[2]), autor: m[3], data: m[4], legenda: m[5],
                      capa: x.capa || meta(t, 'og:image') || null });
       } catch (e) { /* um Reel que não abriu não derruba a coleta */ }
     }));
-    window.__jigN = saida.length;
+    window.__jigN = bons();
+  };
+  const pendentes = () => lista.filter((x) => !conhecidos.has(x.code) && !lidos.has(x.code));
+  // 1) os Reels da grade dos perfis acompanhados
+  for (let p = pendentes(); p.length; p = pendentes()) await avaliar(p.slice(0, 4));
+  // 2) o feed do algoritmo: rola e avalia de 4 em 4 até juntar META bons (ou acabar as rolagens)
+  const rolavel = [...document.querySelectorAll('main *')].find((e) => e.scrollHeight > e.clientHeight + 200 && /(auto|scroll)/.test(getComputedStyle(e).overflowY));
+  for (let i = 0; i < __ROLAGENS__ && rolavel && bons() < META; i++) {
+    const code = (location.pathname.match(/\/reels?\/([\w-]+)/) || [])[1];
+    if (code && !lista.some((x) => x.code === code)) lista.push({ code, views: 0, capa: null, perfil: null, origem: 'algoritmo' });
+    const p = pendentes();
+    if (p.length >= 4) await avaliar(p);
+    rolavel.scrollBy(0, rolavel.clientHeight);
+    await espera(1500);
   }
+  await avaliar(pendentes());
   localStorage.removeItem('__jig');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(saida)], { type: 'application/json' }));
   a.download = '__ARQ__';
   document.body.appendChild(a); a.click(); a.remove();
-  window.__jigCount = saida.length;
+  window.__jigCount = bons();
   window.__jigDone = true;
 })();
 'iniciado'
@@ -108,24 +123,26 @@ window.__jigDone = false;
 
 LE = "window.__jigDone ? 'PRONTO ' + window.__jigCount : 'PENDENTE ' + (window.__jigN || 0)"
 
+PASSO_PERFIS = """3. Para cada perfil abaixo, na ordem: navegue para https://www.instagram.com/<perfil>/reels/, espere 3 s e rode este
+   script com javascript_tool, exatamente como está:
+```js
+__GRADE__
+```
+   Perfis: __PERFIS__
+"""
+
 PROMPT = """Você coleta Reels do Instagram para o Rodrigo, pela conta do radar. Só leitura: não curta, não siga, não
 comente, não clique em nada além do que os scripts fazem.
 0. Chame select_browser com deviceId "__PERFIL__" (o perfil "Claude Profile" do Chrome). Se não der, responda só "SEM_PERFIL".
 1. Chame tabs_context_mcp com createIfEmpty: true e use a aba que ela devolver (não crie outra).
 2. Navegue para https://www.instagram.com/ e espere 3 s (computer, action wait). Se a página pedir login, feche a aba
    e responda só "SEM_LOGIN". Depois rode com javascript_tool: `localStorage.removeItem('__jig'); 'ok'`
-3. Para cada perfil abaixo, na ordem: navegue para https://www.instagram.com/<perfil>/reels/, espere 3 s e rode este
-   script com javascript_tool, exatamente como está:
-```js
-__GRADE__
-```
-   Perfis: __PERFIS__
-4. Navegue para https://www.instagram.com/reels/, espere 3 s e rode UMA vez com javascript_tool, exatamente como está:
+__PASSO_PERFIS__4. Navegue para https://www.instagram.com/reels/, espere 3 s e rode UMA vez com javascript_tool, exatamente como está:
 ```js
 __EXTRAI__
 ```
 5. Espere 10 s (computer, action wait) e rode com javascript_tool: `__LE__`
-   Enquanto a resposta começar com "PENDENTE", repita o passo 5 (no máximo 18 vezes).
+   Enquanto a resposta começar com "PENDENTE", repita o passo 5 (no máximo 70 vezes: a rolagem pode levar uns 10 minutos).
 6. Feche a aba (tabs_close_mcp) e responda só "OK" se a última leitura começou com "PRONTO"; senão, "FALHOU: <motivo>".
 """
 
@@ -135,6 +152,23 @@ def _quando(data: str) -> datetime | None:
         return datetime.strptime(data, "%B %d, %Y").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+# conteúdo brasileiro fica de fora do radar (o Rodrigo quer referência gringa): legenda em português é descartada
+_PT = set("você vocês não está isso aqui então também porque muito mais pra para com uma umas uns como quando onde "
+          "fazer faz tem têm ser sobre seu sua nosso nossa agora hoje link comenta comente salva salve segue siga "
+          "aprender aprenda programação ferramenta ferramentas grátis vídeo vídeos inteligência artificial".split())
+_EN = set("you your the this that with for and are is was what how when here now just free learn tool tools "
+          "comment save follow video videos build code design using".split())
+
+
+def _brasileiro(texto: str) -> bool:
+    import re
+    t = texto.lower()
+    pal = re.findall(r"[a-zà-ú]+", t)
+    pt = sum(p in _PT for p in pal) + 2 * len(re.findall(r"ção|ções|ões|ã[oe]?\b", t))
+    en = sum(p in _EN for p in pal)
+    return pt >= 3 and pt > en * 1.5
 
 
 def _para_sinais(reels: list[dict]) -> list[dict]:
@@ -147,6 +181,8 @@ def _para_sinais(reels: list[dict]) -> list[dict]:
         eng = r["curtidas"] + 3 * r["comentarios"] + r.get("views", 0) / 40
         vel = eng / max(dias * 24, 6) ** 0.6
         texto = " ".join((r.get("legenda") or "").split()).rstrip('".').strip()
+        if _brasileiro(texto) or r["curtidas"] < MIN_CURTIDAS:
+            continue
         views = r.get("views") or 0
         itens.append({
             "fonte": "instagram", "externo": r["code"], "url": f"https://www.instagram.com/reel/{r['code']}/",
@@ -163,13 +199,21 @@ def _para_sinais(reels: list[dict]) -> list[dict]:
     for i in itens:
         i["nota"] = round(100 * math.log1p(i.pop("_vel")) / topo, 1)
     # os perfis acompanhados primeiro (é o que importa); o algoritmo completa até ALVO (o Haiku tira o fora do tema)
-    return sorted(itens, key=lambda i: (i["metricas"]["origem"] != "perfil", -i["nota"]))[:ALVO]
+    # no máximo POR_PERFIL do mesmo autor (os de nota maior); os perfis acompanhados primeiro, o algoritmo completa
+    por_autor: dict[str, int] = {}
+    escolhidos = []
+    for i in sorted(itens, key=lambda i: -i["nota"]):
+        a = (i["autor"] or "").lower()
+        por_autor[a] = por_autor.get(a, 0) + 1
+        if por_autor[a] <= POR_PERFIL:
+            escolhidos.append(i)
+    return sorted(escolhidos, key=lambda i: (i["metricas"]["origem"] != "perfil", -i["nota"]))[:ALVO]
 
 
 async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
     """`conhecidos`: códigos de Reels já coletados (não são lidos de novo)."""
     opts = ClaudeAgentOptions(
-        model="sonnet", tools=[], setting_sources=[], max_turns=60, extra_args={"chrome": None},
+        model="sonnet", tools=[], setting_sources=[], max_turns=200, extra_args={"chrome": None},
         env={"ENABLE_TOOL_SEARCH": "false", "ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
         allowed_tools=["mcp__claude-in-chrome__select_browser", "mcp__claude-in-chrome__tabs_context_mcp",
                        "mcp__claude-in-chrome__navigate", "mcp__claude-in-chrome__javascript_tool",
@@ -177,17 +221,22 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
         permission_mode="dontAsk",
     )
     arq = f"jarvis-ig-{uuid.uuid4().hex[:10]}.json"
-    script = EXTRAI.replace("__ARQ__", arq).replace("__CONHECIDOS__", json.dumps(sorted(set(conhecidos or []))))
+    script = EXTRAI.replace("__ARQ__", arq).replace("__ROLAGENS__", str(ROLAGENS)).replace("__META__", str(ALVO + MARGEM)).replace("__MIN__", str(MIN_CURTIDAS)).replace("__POR__", str(POR_PERFIL)).replace("__CONHECIDOS__", json.dumps(sorted(set(conhecidos or []))))
+    passo_perfis = (PASSO_PERFIS.replace("__GRADE__", GRADE).replace("__PERFIS__", ", ".join(perfis()))) if USAR_PERFIS else ""
     prompt = (PROMPT.replace("__PERFIL__", CHROME_PERFIL).replace("__GRADE__", GRADE).replace("__EXTRAI__", script)
-              .replace("__LE__", LE).replace("__PERFIS__", ", ".join(perfis())))
-    final = ""
-    async for m in query(prompt=prompt, options=opts):
-        if isinstance(m, ResultMessage):
-            final = m.result or ""
+              .replace("__LE__", LE).replace("__PASSO_PERFIS__", passo_perfis))
+    async def _uma() -> str:
+        final = ""
+        async for m in query(prompt=prompt, options=opts):
+            if isinstance(m, ResultMessage):
+                final = m.result or ""
+        return final
+
+    final = await com_perfil(_uma)
     if "SEM_LOGIN" in final:
         raise RuntimeError("o Instagram pediu login no Chrome (perfil Claude Profile)")
     if "SEM_PERFIL" in final:
-        raise RuntimeError("não achei o perfil Claude Profile do Chrome (a extensão está aberta nele?)")
+        raise RuntimeError("não achei o perfil Claude Profile do Chrome (tentei abrir o perfil, mas a extensão não conectou)")
     alvo = DOWNLOADS / arq
     for _ in range(30):
         if alvo.exists() and alvo.stat().st_size > 0:

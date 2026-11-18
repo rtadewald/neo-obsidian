@@ -13,10 +13,18 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import CHROME_PERFIL
+from ..config import CHROME_PERFIL, com_perfil
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, ToolResultBlock, ToolUseBlock, UserMessage, query
 
 ALVO = 50
+# depois do feed, uma busca no X pelos temas do Rodrigo só com posts de MIN_CURTIDAS+ (o feed "Para você" com 500+
+# era quase tudo fora do tema: futebol, política). POPULARES posts da busca, aba "Mais recentes".
+POPULARES = 50
+MIN_CURTIDAS = 500
+BUSCA = ('(AI OR LLM OR Claude OR "Claude Code" OR OpenAI OR ChatGPT OR Gemini OR "AI agent" OR "AI agents" OR MCP '
+         'OR "open source" OR GitHub OR Python OR JavaScript OR TypeScript OR React OR frontend OR "web design" OR '
+         '"UI design" OR Figma OR Cursor OR "vibe coding" OR Runway OR Kling OR Veo OR Sora OR "AI video") '
+         f'min_faves:{MIN_CURTIDAS} lang:en -filter:replies')
 DOWNLOADS = Path.home() / "Downloads"
 DEBUG = bool(__import__('os').environ.get('JARVIS_DEBUG'))
 
@@ -43,14 +51,13 @@ window.__jxDone = false; window.__jx = '[]';
   // já vistos em coletas anteriores (últimos 9 dígitos do id): pula, para trazer só posts inéditos
   const conhecidos = new Set(__CONHECIDOS__);
   const vistos = new Map();
-  for (let volta = 0; volta < 48 && vistos.size < __ALVO__ + 6; volta++) {
-    window.__jxN = vistos.size;
+  const ler = (mapa) => {
     for (const a of document.querySelectorAll('article[data-testid="tweet"]')) {
       const t = a.querySelector('time');
       const link = t && t.closest('a');
       if (!link) continue;
       const url = location.origin + new URL(link.href).pathname;
-      if (vistos.has(url)) continue;
+      if (vistos.has(url) || pop.has(url)) continue;
       const sid = (url.match(/status\/(\d+)/) || [])[1] || '';
       if (conhecidos.has(sid.slice(-9))) continue;
       const nome = a.querySelector('[data-testid="User-Name"]');
@@ -64,7 +71,7 @@ window.__jxDone = false; window.__jx = '[]';
       const fotos = a.querySelectorAll('[data-testid="tweetPhoto"]').length;
       const srcImg = vid ? (vid.getAttribute('poster') || (a.querySelector('[data-testid="videoPlayer"] img') || {}).src)
                          : foto ? foto.getAttribute('src') : card ? card.getAttribute('src') : null;
-      vistos.set(url, {
+      mapa.set(url, {
         url, handle, autor: nome ? nome.innerText.split('\n')[0] : '',
         texto: ((a.querySelector('[data-testid="tweetText"]') || {}).innerText || '').replace(/\S*[=&]\S*/g, '').replace(/\s+/g, ' ').trim(),
         quando: t.getAttribute('datetime'),
@@ -74,11 +81,29 @@ window.__jxDone = false; window.__jx = '[]';
         midia: vid ? 'video' : foto ? (fotos > 1 ? 'fotos' : 'foto') : card ? 'link' : null,
         promo,
       });
+        }
+  };
+  const pop = new Map();   // (só para o filtro de repetidos em ler)
+  const espera = (ms) => new Promise(r => setTimeout(r, ms));
+  const rolar = async (mapa, alvo, minimo, voltas) => {
+    const bons = () => [...mapa.values()].filter(p => !p.promo && p.curtidas >= minimo);
+    for (let volta = 0; volta < voltas && bons().length < alvo; volta++) {
+      window.__jxN = vistos.size + pop.size;
+      ler(mapa);
+      window.scrollBy(0, Math.round(innerHeight * 0.9));
+      await espera(1300);
     }
-    window.scrollBy(0, Math.round(innerHeight * 0.9));
-    await new Promise(r => setTimeout(r, 1300));
-  }
-  const lista = [...vistos.values()].filter(p => !p.promo).slice(0, __ALVO__);
+    return bons().slice(0, alvo);
+  };
+  // 1) o feed "Para você"
+  const feed = await rolar(vistos, __ALVO__, 0, 48);
+  // 2) a busca pelos temas (min_faves na própria busca): troca de página sem recarregar, para o script seguir vivo
+  history.pushState({}, '', __BUSCA__);
+  window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+  await espera(5000);
+  window.scrollTo(0, 0);
+  const busca = (await rolar(pop, __POP__, __MIN__, 80)).map(p => ({ ...p, popular: true }));
+  const lista = feed.concat(busca);
   // a saída do javascript_tool é cortada em ~1 mil caracteres: o JSON vai para um arquivo em Downloads
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(lista)], { type: 'application/json' }));
@@ -92,17 +117,17 @@ window.__jxDone = false; window.__jx = '[]';
 
 LE = "window.__jxDone ? 'PRONTO ' + window.__jxCount : 'PENDENTE ' + (window.__jxN || 0)"
 
-PROMPT = """Você coleta o feed do X para o Rodrigo. Só leitura: não clique em nada, não curta, não reposte, não siga.
+PROMPT = """Você coleta o X para o Rodrigo. Só leitura: não clique em nada, não curta, não reposte, não siga.
 0. Chame select_browser com deviceId "__PERFIL__" (o perfil "Claude Profile" do Chrome). Se não der, responda só "SEM_PERFIL".
 1. Chame tabs_context_mcp com createIfEmpty: true e use a aba que ela devolver (não crie outra). Navegue nela para
    https://x.com/home (feed "Para você").
 2. Espere 3 s (computer, action wait). Se a página pedir login, feche a aba e responda só "SEM_LOGIN".
-3. Rode este script UMA vez com javascript_tool, exatamente como está (ele começa a rolar o feed sozinho):
+3. Rode este script UMA vez com javascript_tool, exatamente como está (ele rola o feed e depois uma busca, sozinho):
 ```js
 __EXTRAI__
 ```
 4. Espere 10 s (computer, action wait) e rode com javascript_tool: `__LE__`
-   Enquanto a resposta começar com "PENDENTE", repita o passo 4 (no máximo 10 vezes).
+   Enquanto a resposta começar com "PENDENTE", repita o passo 4 (no máximo 40 vezes: leva alguns minutos).
 5. Feche a aba (tabs_close_mcp) e responda só "OK" se a última leitura começou com "PRONTO"; senão, "FALHOU: <motivo>".
 """
 
@@ -139,7 +164,7 @@ def _para_sinais(posts: list[dict]) -> list[dict]:
             "resumo": texto if len(texto) > 140 else "",
             "autor": p.get("handle") or p.get("autor"), "imagem": p.get("imagem"),
             "metricas": {k: p[k] for k in ("curtidas", "reposts", "respostas", "salvos", "views")}
-                        | {"vel": round(vel, 1), "midia": p.get("midia"), "texto": texto},
+                        | {"vel": round(vel, 1), "midia": p.get("midia"), "texto": texto, "popular": bool(p.get("popular"))},
             "destaque": f"{p['curtidas']:,} curtidas · {p['views']:,} views".replace(",", "."),
             "publicado_em": p.get("quando"), "_vel": vel,
         })
@@ -152,7 +177,7 @@ def _para_sinais(posts: list[dict]) -> list[dict]:
 async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
     """`conhecidos`: ids de posts já coletados; o script pula esses e rola até juntar ALVO posts inéditos."""
     opts = ClaudeAgentOptions(
-        model="sonnet", tools=[], setting_sources=[], max_turns=30, extra_args={"chrome": None},
+        model="sonnet", tools=[], setting_sources=[], max_turns=100, extra_args={"chrome": None},
         # sem busca de ferramentas (as do Chrome ficariam adiadas e invisíveis com tools=[]) e sem os conectores da conta
         env={"ENABLE_TOOL_SEARCH": "false", "ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
         allowed_tools=["mcp__claude-in-chrome__select_browser", "mcp__claude-in-chrome__tabs_context_mcp", "mcp__claude-in-chrome__tabs_create_mcp",
@@ -160,26 +185,33 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
                        "mcp__claude-in-chrome__tabs_close_mcp", "mcp__claude-in-chrome__computer"],
         permission_mode="dontAsk",
     )
+    from urllib.parse import quote
     arq = f"jarvis-x-{uuid.uuid4().hex[:10]}.json"
-    ids = sorted({c[-9:] for c in conhecidos or [] if c.isdigit()})
-    script = EXTRAI.replace("__ALVO__", str(ALVO)).replace("__ARQ__", arq).replace("__CONHECIDOS__", json.dumps(ids))
+    ids = json.dumps(sorted({c[-9:] for c in conhecidos or [] if c.isdigit()}))
+    busca = json.dumps(f"/search?q={quote(BUSCA)}&src=typed_query&f=live")
+    script = (EXTRAI.replace("__ALVO__", str(ALVO)).replace("__POP__", str(POPULARES)).replace("__MIN__", str(MIN_CURTIDAS))
+              .replace("__BUSCA__", busca).replace("__ARQ__", arq).replace("__CONHECIDOS__", ids))
     prompt = PROMPT.replace("__EXTRAI__", script).replace("__LE__", LE).replace("__PERFIL__", CHROME_PERFIL)
-    final = ""
-    async for m in query(prompt=prompt, options=opts):
-        if isinstance(m, AssistantMessage) and DEBUG:
-            for b in m.content:
-                if isinstance(b, ToolUseBlock):
-                    print("  ·", b.name.split("__")[-1], str(b.input)[:90])
-        elif isinstance(m, UserMessage) and DEBUG and isinstance(m.content, list):
-            for b in m.content:
-                if isinstance(b, ToolResultBlock):
-                    print("  ←", _texto_resultado(b)[:70].replace("\n", " "))
-        elif isinstance(m, ResultMessage):
-            final = m.result or ""
+    async def _uma() -> str:
+        final = ""
+        async for m in query(prompt=prompt, options=opts):
+            if isinstance(m, AssistantMessage) and DEBUG:
+                for b in m.content:
+                    if isinstance(b, ToolUseBlock):
+                        print("  ·", b.name.split("__")[-1], str(b.input)[:90])
+            elif isinstance(m, UserMessage) and DEBUG and isinstance(m.content, list):
+                for b in m.content:
+                    if isinstance(b, ToolResultBlock):
+                        print("  ←", _texto_resultado(b)[:70].replace("\n", " "))
+            elif isinstance(m, ResultMessage):
+                final = m.result or ""
+        return final
+
+    final = await com_perfil(_uma)
     if "SEM_LOGIN" in final:
         raise RuntimeError("o X pediu login no Chrome")
     if "SEM_PERFIL" in final:
-        raise RuntimeError("não achei o perfil Claude Profile do Chrome (a extensão está aberta nele?)")
+        raise RuntimeError("não achei o perfil Claude Profile do Chrome (tentei abrir o perfil, mas a extensão não conectou)")
     alvo = DOWNLOADS / arq
     for _ in range(30):  # o download pode levar um instante para aparecer
         if alvo.exists() and alvo.stat().st_size > 0:
@@ -189,6 +221,8 @@ async def coletar(conhecidos: list[str] | None = None) -> list[dict]:
         raise RuntimeError(f"o arquivo da coleta não apareceu em Downloads. Agente: {final[:160]}")
     posts = json.loads(alvo.read_text())
     alvo.unlink()
+    vistos = set()
+    posts = [p for p in posts if not (p["url"] in vistos or vistos.add(p["url"]))]
     return _para_sinais(posts)
 
 

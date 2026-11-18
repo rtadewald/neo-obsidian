@@ -1,3 +1,4 @@
+import { EscolherIdeia } from './EscolherIdeia'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { listarCanvases, type ResumoCanvas } from './canvasApi'
@@ -295,6 +296,12 @@ function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal };
     window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc); window.addEventListener('scroll', onFechar, true)
     return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc); window.removeEventListener('scroll', onFechar, true) }
   }, [onFechar])
+  const [plugar, setPlugar] = useState(false)   // escolher uma ideia que já existe em vez de criar outra
+  const plugarEm = async (ideia: string) => {
+    setEstado({ indo: true })
+    try { await criarIdeia(m.s, 'inbox', ideia); setEstado({ ok: `Entrou em ${ideia}` }); window.setTimeout(onFechar, 1300) }
+    catch (e) { setEstado({ erro: (e as Error).message }) }
+  }
   const adicionar = async (c: ResumoCanvas) => {
     setEstado({ indo: true })
     try { await criarIdeia(m.s, c.slug); setEstado({ ok: `💡 Virou ideia em ${c.icone} ${c.nome}` }); window.setTimeout(onFechar, 1100) }
@@ -302,8 +309,10 @@ function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal };
   }
   return createPortal(
     <div ref={caixa} className="menu-ctx glass glass--light menu-adicionar" role="menu" style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
-      <p className="menu-titulo">Adicionar ao canvas</p>
-      {estado.ok ? <p className="menu-aviso">{estado.ok}</p> : estado.erro ? <p className="menu-aviso is-erro">{estado.erro}</p> : (
+      <p className="menu-titulo">{plugar ? 'Plugar numa ideia' : 'Nova ideia no canvas'}</p>
+      {estado.ok ? <p className="menu-aviso">{estado.ok}</p> : estado.erro ? <p className="menu-aviso is-erro">{estado.erro}</p> : plugar ? (
+        <EscolherIdeia onEscolher={plugarEm} desligado={estado.indo} />
+      ) : (
         <div className="menu-adicionar-lista">
           {lista.filter((c) => !c.arquivado).map((c) => (
             <button key={c.slug} role="menuitem" disabled={estado.indo} onClick={() => adicionar(c)}>
@@ -311,6 +320,8 @@ function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal };
           ))}
         </div>
       )}
+      {!estado.ok && <button type="button" className="menu-plugar" onClick={() => setPlugar((v) => !v)}>
+        {plugar ? '← Criar uma ideia nova' : 'Plugar numa ideia que já existe ›'}</button>}
     </div>, document.body)
 }
 
@@ -345,11 +356,11 @@ function Atalhos({ onFechar }: { onFechar: () => void }) {
  *  Assim os destaques ficam no topo de cada coluna e nunca sobra buraco embaixo de um card mais curto. */
 function Mosaico({ itens, render }: { itens: Sinal[]; render: (s: Sinal) => React.ReactNode }) {
   const caixa = useRef<HTMLDivElement>(null)
-  const [n, setN] = useState(3)
+  const [n, setN] = useState(4)
   useEffect(() => {
     const el = caixa.current
     if (!el) return
-    const ro = new ResizeObserver(([e]) => setN(Math.max(1, Math.min(3, Math.floor((e.contentRect.width + 16) / 276)))))
+    const ro = new ResizeObserver(([e]) => setN(Math.max(1, Math.min(4, Math.floor((e.contentRect.width + 16) / 276)))))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -413,15 +424,15 @@ const estadoNoX = (s: Sinal) => { const r = REDES[s.fonte] ?? 'X'
     : noXPendente(s) ? (s.x_quer ? `O like vai para o ${r} na próxima coleta` : `O like sai do ${r} na próxima coleta`) : s.x_feito === 1 ? `Curtido no ${r} também` : `O like também curte no ${r} (na próxima coleta)` }
 
 /** Card do radar → 💡 ideia no canvas, já com o título, o link, a imagem e o texto do card. */
-async function criarIdeia(s: Sinal, canvas = 'inbox') {
+async function criarIdeia(s: Sinal, canvas = 'inbox', ideia?: string) {
   const m = s.metricas as { texto?: string }
   const titulo = REDES[s.fonte] ? `${s.autor ?? REDES[s.fonte]}: ${(m.texto || s.titulo || '').replace(/\s+/g, ' ').slice(0, 60)}` : s.titulo
   const conteudo = [s.url, s.porque && `> ${s.porque}`, m.texto || s.resumo, s.autor && `Fonte: ${s.autor}`].filter(Boolean).join('\n\n')
   const r = await fetch('/api/canvas/entrada', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Canvas': canvas },
-    body: JSON.stringify({ conteudo: conteudo || titulo, pronto: { titulo, url: s.url, thumb: s.imagem } }),
+    body: JSON.stringify({ conteudo: conteudo || titulo, pronto: { titulo, url: s.url, thumb: s.imagem }, ...(ideia ? { ideia } : {}) }),
   })
-  if (!r.ok) throw new Error('Não consegui criar a ideia.')
+  if (!r.ok) throw new Error(ideia ? 'Não consegui plugar na ideia.' : 'Não consegui criar a ideia.')
 }
 
 function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>) {

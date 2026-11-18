@@ -98,7 +98,7 @@ async def coletar(com_x: bool = True) -> dict:
                     det[nome] = {"itens": len(itens), "novos": db.gravar_sinais(itens)}
                 except Exception as e:  # uma fonte fora do ar não derruba as outras
                     det[nome] = {"erro": f"{type(e).__name__}: {e}"[:200]}
-        if com_x:  # abre uma aba no Chrome do Rodrigo e leva ~1,5 min
+        if com_x:  # abre uma aba no Chrome do Rodrigo e leva uns 5 min (50 do feed + 50 da busca pelos temas com 500+ curtidas)
             if db.pendentes_x():   # antes de rolar o feed: os likes da fila vão ao X (o algoritmo já aprende)
                 try:
                     det["x_likes"] = await asyncio.to_thread(x_curtir.espelhar)
@@ -110,6 +110,12 @@ async def coletar(com_x: bool = True) -> dict:
                 det["x"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}
             except Exception as e:
                 det["x"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
+            try:   # classifica o X na hora: o lote novo já aparece sem o que é fora do tema (o Instagram ainda demora)
+                for _ in range(3):
+                    if not await classificar_pendentes():
+                        break
+            except Exception:
+                traceback.print_exc()
             try:   # Instagram: a conta do radar no mesmo perfil do Chrome (perfis seguidos + Reels do algoritmo)
                 itens = await coletor_ig.coletar(db.externos_recentes("instagram", 600))
                 det["instagram"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}

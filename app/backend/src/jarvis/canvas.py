@@ -313,6 +313,7 @@ def _layout(slug: str | None = None) -> dict:
     d.setdefault("pos", {})
     d.setdefault("arquivados", [])
     d.setdefault("visiveis", [])   # cards trazidos à mão: aparecem mesmo publicados no Inbox
+    d.setdefault("ordem", {})      # mapa mental: a ordem dos filhos de cada card ({id do pai: [ids]})
     return d
 
 
@@ -398,7 +399,7 @@ def _todas() -> dict:
         m = _midia(t)
         if not m["imagem"] and _valor(fm, "thumb"):
             m["imagem"] = _valor(fm, "thumb")
-        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
+        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "categoria": _valor(fm, "categoria") or None, "material": _tem_material(t), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
                        "mtime": p.stat().st_mtime})
     for nome, p in notas._arquivos("entradas"):
         t = _ler(p)
@@ -475,7 +476,7 @@ def estado(slug: str | None = None) -> dict:
         tudo = {k: [x for x in v if (alvo in x["canvases"] if alvo else not x["canvases"])] for k, v in tudo.items()}
     lay = _layout(info["slug"])
     return {"canvas": info, "produtos": lista_produtos(), "visiveis": lay["visiveis"], **tudo, "pos": lay["pos"],
-            "arquivados": lay["arquivados"], "novas": novas,
+            "arquivados": lay["arquivados"], "ordem": lay["ordem"], "novas": novas,
             "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
@@ -484,6 +485,14 @@ def posicoes(pos: dict[str, dict]):
     d = _layout()
     for k, v in pos.items():
         d["pos"][k] = {"x": round(float(v["x"])), "y": round(float(v["y"]))}
+    _gravar_layout(d)
+
+
+@_travado
+def ordenar(pai: str, filhos: list[str]):
+    """Mapa mental: a ordem (de cima para baixo) dos filhos de um card, como o Rodrigo arrastou."""
+    d = _layout()
+    d["ordem"][pai] = list(dict.fromkeys(filhos))
     _gravar_layout(d)
 
 
@@ -568,9 +577,9 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
     conteudo = conteudo.strip()
     if not conteudo:
         raise ValueError("ideia vazia")
-    if ideia:
+    if ideia:   # plugar numa ideia que já existe: vira uma entrada na seção "## Entradas" da nota
         p = _caminho_ideia(ideia)
-        notas._escrever(p, _ler(p, None).rstrip() + f"\n\n{conteudo}\n")
+        notas._escrever(p, _com_entrada(_ler(p, None), conteudo, (pronto or {}).get("titulo") or ""))
         return {"nome": p.stem, "raiz": "ideias"}
     url = conteudo if re.fullmatch(r"https?://\S+", conteudo) else ""
     fm = {"url": url, "tipo": "texto", "thumb": ""}
@@ -612,6 +621,78 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
     if pos:
         posicoes({f"i:{p.stem}": pos})
     return {"nome": p.stem, "raiz": "ideias"}
+
+
+def _com_entrada(texto: str, conteudo: str, titulo: str = "", data: bool = True) -> str:
+    """Põe a entrada (data, título e o material) no fim da seção "## Entradas" da ideia; cria a seção no fim se não houver."""
+    from datetime import date
+    cab = " · ".join(x for x in [date.today().strftime('%d/%m/%Y') if data else "", titulo.strip()] if x) or date.today().strftime('%d/%m/%Y')
+    bloco = f"### {cab}" + (f"\n\n{conteudo.strip()}" if conteudo.strip() else "") + "\n"
+    m = re.search(r"^## Entradas[ \t]*$", texto, re.M)
+    if not m:
+        return texto.rstrip() + f"\n\n## Entradas\n\n{bloco}"
+    prox = re.search(r"^## ", texto[m.end():], re.M)   # a próxima seção do mesmo nível fecha a de Entradas
+    fim = m.end() + prox.start() if prox else len(texto)
+    return texto[:fim].rstrip() + f"\n\n{bloco}" + ("\n" + texto[fim:] if prox else "")
+
+
+def juntar_ideias(destino: str, origens: list[str]) -> dict:
+    """Várias 💡 ideias viram uma só: o texto (links, imagens, vídeos) de cada uma entra na seção "## Entradas" do
+    destino com o nome dela, as copies passam a apontar para o destino (`ideia:`), as tags e fontes se somam e as notas
+    de origem vão para a lixeira do vault. O destino pode ser uma ideia que já existe ou um nome novo."""
+    destino = "💡 " + _limpo(re.sub(r"^💡\s*", "", destino))
+    origens = [o for o in dict.fromkeys(origens) if o != destino]
+    if not origens:
+        raise ValueError("escolha ao menos uma ideia para juntar")
+    caminhos = [_caminho_ideia(o) for o in origens]
+    textos = [_ler(c, None) for c in caminhos]
+    pd = notas.IDEIAS / f"{destino}.md"
+    if pd.is_file():
+        t = _ler(pd, None)
+    else:   # nome novo: nasce com o canvas e a categoria da primeira
+        fm0 = _fm(textos[0])
+        t = "---\norigin:\ntags:\n---\n\n"
+        for k in ("grupo", "categoria"):
+            if _valor(fm0, k):
+                t = _definir(t, k, _valor(fm0, k))
+    for o, txt in zip(origens, textos):
+        fm = _fm(txt)
+        corpo = re.sub(r"^---\n.*?\n---\n?", "", txt, count=1, flags=re.S).strip()
+        corpo = corpo.replace("Ideia central das versões ligadas a ela (organizada para o mapa mental em 17/11/2026).", "").strip()
+        corpo = re.sub(r"^(#{1,4})(?= )", r"##\1", corpo, flags=re.M)   # os títulos dela descem dois níveis (ficam dentro do ### dela)
+        t = _com_entrada(t, corpo, re.sub(r"^💡\s*", "", o), data=False)
+        tags = _lista(_fm(t), "tags")
+        novas = tags + [x for x in _lista(fm, "tags") if x not in tags]
+        if novas != tags:
+            t = _definir(t, "tags", novas)
+        fontes = [x for x in map(_alvo, _lista(_fm(t), "fontes")) if x]
+        mais = [x for x in map(_alvo, _lista(fm, "fontes")) if x and x not in fontes]
+        if mais:
+            t = _definir(t, "fontes", [f"[[{x}]]" for x in fontes + mais])
+    notas._escrever(pd, t)
+    # as copies das ideias de origem passam para o destino
+    ligadas = 0
+    for raiz in notas.PASTAS:
+        for nome, p in notas._arquivos(raiz):
+            if _alvo(_valor(_fm(_ler(p)), "ideia")) in origens:
+                ligar_producao(raiz, nome, destino)
+                ligadas += 1
+    for o in origens:
+        notas.para_lixeira("ideias", o)
+    marcar_vista(origens)
+    return {"nome": destino, "raiz": "ideias", "juntadas": len(origens), "copies": ligadas}
+
+
+PLACEHOLDER = "Ideia central das versões ligadas a ela"
+
+
+def _tem_material(texto: str) -> bool:
+    """A ideia tem material de verdade (link, imagem, vídeo, texto)? As notas de lugar criadas na reorganização do mapa
+    mental não têm: no mapa elas somem e as copies delas penduram direto na categoria."""
+    corpo = re.sub(r"^---\n.*?\n---\n?", "", texto, count=1, flags=re.S)
+    linhas = [l for l in corpo.splitlines() if l.strip() and not l.strip().startswith("#") and PLACEHOLDER not in l]
+    resto = " ".join(linhas)
+    return bool(re.search(r"https?://|!\[\[|\[\[", resto)) or len(resto.strip()) > 40
 
 
 def _caminho_ideia(ideia: str) -> Path:
@@ -686,6 +767,39 @@ def criar_saida(ideia: str, formato: str, titulo: str = "", texto: str = "") -> 
     notas._escrever(p, cab + (texto.strip() + "\n" if texto.strip() else ""))
     marcar_no_canvas("priorizar", p.stem)
     return {"nome": p.stem, "raiz": "priorizar"}
+
+
+def transformar_em_copy(ideia: str, formato: str) -> dict:
+    """A própria ideia vira uma copy em Priorizar (`<formato> <nome>`): o texto fica, o frontmatter passa a ser o de
+    T-Copy.md (tags e canvas da ideia continuam) e o card fica no mesmo lugar. Se a ideia já tinha copies, a nova
+    entra no mesmo card de produção (`ideia:` apontando para ela, que segue como grupo)."""
+    if formato not in FORMATOS:
+        raise ValueError(f"formato inválido (use um de {' '.join(FORMATOS)})")
+    p = _caminho_ideia(ideia)
+    t = _ler(p, None)
+    fm = _fm(t)
+    m = FM.match(t)
+    corpo = t[m.end():] if m else "\n" + t
+    com_saidas = any(x.get("ideia") == ideia for x in _todas()["producoes"])
+    novo = _livre(notas.PRIORIZAR, f"{formato} {_base(ideia)}")
+    cab = "---\npublicado: false\nscheduled:\nideia:\ngrupo:\nnotion:\ntags:\n---\n"
+    if com_saidas:
+        cab = _definir(cab, "ideia", f"[[{ideia}]]")
+    grupos, tags = _lista(fm, "grupo"), _lista(fm, "tags")
+    if grupos:
+        cab = _definir(cab, "grupo", grupos if len(grupos) > 1 else grupos[0])
+    if tags:
+        cab = _definir(cab, "tags", tags)
+    for k in ("origin", "fontes"):   # o que a ideia tinha de próprio e não existe no T-Copy vai junto, se tiver valor
+        v = _lista(fm, k)
+        if v:
+            cab = _definir(cab, k, v if k == "fontes" else v[0])
+    notas._escrever(novo, cab + corpo)
+    p.unlink()
+    _renomear_pos(f"i:{ideia}", f"p:priorizar/{novo.stem}")
+    if ideia in _json(NOVAS, []):
+        _gravar_novas([novo.stem if n == ideia else n for n in _json(NOVAS, [])])
+    return {"nome": novo.stem, "raiz": "priorizar"}
 
 
 @_travado
@@ -969,8 +1083,14 @@ def resumos() -> list[dict]:
     for c in lista_canvases():
         alvo = None if c["slug"] == "inbox" else c["nome"]
         dentro = lambda x: alvo in x["canvases"] if alvo else not x["canvases"]
-        pr = [p for p in tudo["producoes"] if dentro(p)]
-        ideias = [i for i in tudo["ideias"] if dentro(i)]
+        # o que foi tirado deste canvas à mão (⌫ / Arquivar: `arquivados` do layout) não conta: a bolinha mostra o que aparece
+        try:
+            fora = set(_layout(c["slug"])["arquivados"])
+        except LayoutIlegivel:
+            fora = set()
+        chave = lambda p: f"{p['ideia']} › {p['producao']}" if p.get("ideia") and p.get("producao") else (p.get("ideia") or "")
+        pr = [p for p in tudo["producoes"] if dentro(p) and f"p:{p['raiz']}/{p['nome']}" not in fora and not (p.get("ideia") and f"g:{chave(p)}" in fora)]
+        ideias = [i for i in tudo["ideias"] if dentro(i) and f"i:{i['nome']}" not in fora]
         out.append({**c, "ideias": len(ideias), "producoes": sum(1 for p in pr if p["formato"] != "📺"),
                     "vsls": sum(1 for p in pr if p["formato"] == "📺"), "publicadas": sum(1 for p in pr if p["status"] == "publicado"),
                     "produtos": {x["slug"]: sum(1 for p in pr if _da_tag(p["tags"], x["tags"])) for x in prods}})
@@ -995,6 +1115,18 @@ def no_produto(nomes: list[str], slug: str, sim: bool) -> int:
             notas._escrever(p, _definir(t, "tags", novas))
             n += 1
     return n
+
+
+def definir_tags(nome: str, tags: list[str]) -> list[str]:
+    """Troca as tags da nota (coluna Tags da tabela). Devolve as de antes, para o ⌘Z do app."""
+    raiz, nome = achar(nome)
+    p = notas._caminho(raiz, nome)
+    t = _ler(p, None)
+    antes = _lista(_fm(t), "tags")
+    novas = list(dict.fromkeys(x.strip().lstrip("#") for x in tags if x.strip().lstrip("#")))
+    if novas != antes:
+        notas._escrever(p, _definir(t, "tags", novas))
+    return antes
 
 
 def importar(nome: str) -> dict:

@@ -11,7 +11,7 @@ import re
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 from .. import db
-from ..config import CHROME_PERFIL
+from ..config import CHROME_PERFIL, com_perfil
 
 # Instagram, na página /p/<código>/: o coração do post é o svg de 24 px ("Curtir"/"Descurtir"); os de 16 são dos comentários.
 CLICA_IG = r"""
@@ -77,10 +77,14 @@ async def _rodar(posts: list[dict]) -> dict[int, str]:
         permission_mode="dontAsk",
     )
     prompt = PROMPT.replace("__PERFIL__", CHROME_PERFIL).replace("__POSTS__", "\n\n".join(_bloco(i + 1, p) for i, p in enumerate(posts)))
-    final = ""
-    async for m in query(prompt=prompt, options=opts):
-        if isinstance(m, ResultMessage):
-            final = m.result or ""
+    async def _uma() -> str:
+        final = ""
+        async for m in query(prompt=prompt, options=opts):
+            if isinstance(m, ResultMessage):
+                final = m.result or ""
+        return final
+
+    final = await com_perfil(_uma)
     if "SEM_LOGIN" in final:
         return {p["id"]: "o site pediu login no Chrome" for p in posts}
     if "SEM_PERFIL" in final:
