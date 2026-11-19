@@ -17,7 +17,8 @@ Carrossel…, com o mesmo `ideia:`) se juntam num card 🎬.
 > chave do card 🎬. "Nova ideia", link colado e radar criam copies em Priorizar (`canvas._nova_copy`); a versão nova
 > (`criar_saida`) herda a categoria das irmãs. Copy sem `grupo:` vive onde as irmãs de `ideia:` vivem. O que ainda
 > fala de 💡 ideia abaixo é legado (o código aceita, mas o vault não tem mais nenhuma).
-Ao lado, um chat com o Claude Code (o "Jarvis") que roda dentro do vault, com as skills de copy.
+O app não tem IA dentro: ele é a **porta para o Claude Code** que roda no terminal (seção 9). Cada nota tem um código
+(`NEO-042`); o Rodrigo copia no app e cola no Claude Code, ou manda um pedido pela bolinha do canto (⌘J).
 
 - `app/backend/` — FastAPI em Python 3.12, rodado com `uv` (porta **8740**). O pacote Python ainda se chama `jarvis`
   (nome antigo do projeto); não renomeie.
@@ -84,7 +85,7 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 2 Notas/Engine/
   templates/           T - Copy.md é o frontmatter de toda copy nova
   attachments/         imagens coladas (![[Pasted image ….png]])
-3 Skills/<nome>/SKILL.md   as skills (o chat usa; o modal abre e edita)
+3 Skills/<nome>/SKILL.md   as skills (o Claude Code usa; o modal abre e edita)
 .trash/                a lixeira do Obsidian (para onde o app "apaga")
 ```
 
@@ -223,15 +224,12 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
   a não ser que esteja em `visiveis` (trazida por ⌘↵ ou Mover para). Ideia aparece se não tem saída ou se alguma
   saída está viva.
 - Filtros na barra: tipos (💡 🎬 📺) | produtos (os mesmos botões liga/desliga) e o seletor Todos, Backlog, Em edição, Agendado.
-- **Canvas como pastas na esquerda** (`.canvas-lista`): uma pastinha por canvas, com a cor dele e a contagem; clicar troca
-  de canvas ali mesmo, "Todos" abre a página de controle, onde cada card tem a cor do canvas (a mesma da pastinha); botão direito num
-  card (e numa pasta da esquerda): Renomear (nome e ícone), Cor (paleta no próprio menu), Arquivar/Reativar, Excluir
-  (com confirmação). É o mesmo componente, `MenuDoCanvas` em `Canvases.tsx`. Arquivado (`arquivado: true` em `canvases.json`) vai
-  para a seção Arquivados embaixo e sai das pastas e das listas de Mover para / Adicionar ao canvas; as notas não mudam. Por isso a barra não tem mais o nome nem o seletor de canvas.
-  O rodapé (pastas + barra) vai até o chat e o minimapa fica acima dele.
+- **Sem barra da esquerda (19/11/2026):** as pastas dos canvas, os pinados e o histórico na esquerda saíram (e o ⌘[ da nota).
+  Para trocar de canvas: a página principal (NEO-OBSIDIAN no breadcrumb), onde o botão direito num card de canvas
+  abre o `MenuDoCanvas` (Renomear, Cor, Arquivar/Reativar, Excluir), ou o ⌘P. Os pinados ficam na tabela "Pinados"
+  (barra de baixo). O rodapé vai até a borda.
 - Vistas (`Visao` em `Canvas.tsx`): `principal`, `foco:<id>` (um card e
-  tudo que está ligado a ele), além de `edicao`, `agendado` e `pub-<ano>`. A barra lateral guarda as vistas pinadas e
-  o histórico.
+  tudo que está ligado a ele), além de `edicao`, `agendado` e `pub-<ano>`. Os pinados abrem o `foco:` pela tabela Pinados.
 - **Pinados**: categorias (`c:<nome>`), cards 🎬 (`g:`) e copies (`p:`) se pinam (`pinavel` em `pins.ts`; o pin
   antigo `i:💡 X` vira `p:priorizar/X`, a copy que nasceu dela). Clicar num pinado abre o `foco:` dele, isolado, com os
   filhos: a categoria parte de todas as copies com aquela `categoria:`; no mapa mental a raiz do foco abre expandida e a tela se enquadra. A categoria pina pelo botão direito.
@@ -245,22 +243,51 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
   As grades que dariam o mesmo resultado (nenhum card com mais de N filhos) ficam apagadas no menu.
 - **Criação** (💡 na barra de baixo, separado por um pipe dos 🔥/📌; também a primeira aba da tabela, com pipe antes de
   Priorizar): as copies do canvas em grupos categoria › card 🎬 (2+ versões da mesma `ideia:`) › copies; a copy
-  sozinha fica direto na categoria, com o ponto do status. Tudo começa fechado (Expandir tudo / Recolher tudo ao lado
-  dos filtros). A coluna Canvas mostra o emoji e o nome do canvas de cada linha; a linha da categoria junta os canvas.
-- A bolinha de cada canvas (pastas da esquerda) não conta o que foi tirado dele à mão (`arquivados` do layout).
+  sozinha fica direto na categoria, com o ponto do status. A linha 🎬 não expande: o clique abre a primeira versão (ordem
+  dos formatos), e as outras ficam nas abas do modal. As versões de cada 🎬 (formato + ponto de status) ficam na coluna
+  Versões, ao lado do nome, só nesta aba; a linha fica de uma altura só. Dentro da categoria, cada linha é bolinha de status › ícone (🎬 ou o
+  formato da copy, `.tabela-ic`, na mesma linha do nome) › nome, recuada em relação à categoria; a coluna da esquerda fica
+  vazia nessas linhas. Expandir tudo / Recolher tudo, ao lado dos filtros, abre e fecha
+  as categorias. A coluna Canvas mostra o emoji e o nome do canvas de cada linha; a linha da categoria junta os canvas.
+- **Formatos na tabela:** um dropdown (`FiltroFormatos`) com uma caixinha por formato e a contagem, no lugar da fileira de ícones.
+- **A tabela guarda o estado de quando saiu**, por aba: busca, filtros, ordem, grupos abertos e a rolagem
+  (`tabelaSalva`, `localStorage` `tabela-estado`). Os números e as barras por mês do topo saíram.
 
 ### Mapa mental (modo do canvas)
 
-- O botão "Mapa mental" / "Livre" na barra de baixo (ou a tecla **G**) alterna **mapa mental** (o padrão) e **canvas
+- **Barra de baixo, à direita das pastas** (só ícones, dica no hover): alinhar, organizar (só no mapa mental), mouse/trackpad
+  | desenhar, ajuste automático, ajustar à tela, ✓ ver publicados, detalhes dos cards. O botão de detalhes (global,
+  `canvas-midia`, desligado por padrão) mostra nos cards 🎬 os chips de formato (📱 💰…) e as imagens/vídeos; desligado,
+  o card fica numa linha só (ícone, título inteiro, que quebra linha se precisar, 🔥 e o código à direita). A borda vermelha dos winners está
+  desligada (só o 🔥 no canto). O ✓ é por canvas
+  (`canvas-publicados#<slug>`, ligado por padrão): desligado, os cards publicados somem (`montar(..., semPub)`); os
+  trazidos à mão (`visiveis`) continuam, e os arquivados seguem fora de qualquer jeito. Os botões de mapa mental, minimapa, linhas e destaque
+  dos winners saíram: linhas e destaque ficam sempre ligados, o minimapa desligado, e o mapa mental alterna pela tecla **G**.
+- **Um ponto de saída por canvas:** no mapa mental (vista principal), o canvas tem um card raiz lima com o ícone e o
+  nome dele (`r:<slug>`, um nó `categoria` com `data.raiz`). Todas as categorias, e qualquer card sem pai, saem dele.
+  Duplo clique colapsa tudo; arrastar a raiz leva a árvore e guarda o lugar (`mapa|r:<slug>`); arrastar uma categoria
+  muda a ordem dela entre as irmãs (`ordem` do layout, pai = a raiz). Botão direito na raiz → "Nova copy numa categoria".
+- A tecla **G** alterna **mapa mental** (o padrão) e **canvas
   livre**, lembrado por canvas (`canvas-modo#<slug>` no localStorage). As árvores vão em colunas lado a lado, para encher a
   tela em vez de virar uma fila comprida. No mapa os cards não se arrastam e não há camada de desenho: o lugar sai das
   ligações (`emArvore` em `Canvas.tsx`). A 💡 ideia é a raiz, as produções e VSLs dela vão à direita, a copy que nasceu
   de outra (`origem:`) depois da de origem. Card sem pai vira raiz, depois das ideias. A altura de cada card vem do que
   o React Flow mediu; a relayout só troca `position`/`hidden` no mesmo objeto (trocar o objeto faz o React Flow medir
   de novo, sem fim).
+- **Canvas em uso (18/11/2026):** 📱 Reels (slug `reels-fia`; recebeu Diorama e Reels FID), 💰 Pico Asimov (recebeu VSL
+  Carrinho BF), 📺 VSL FIA e 📺 VSL FID, mais o Inbox. Dúvidas foi apagado. No VSL FIA, cada VSL `📺 FIA X.Y` tem `categoria: "VSL X"`
+  (a versão principal) e as categorias seguem em ordem numérica (`ordem` do layout, pai `r:vsls-fia`).
+- **Mídia no card de copy:** se alguma versão do card tem vídeo colado (`![[x.mp4]]`, campo `video` de `_midia`), imagem
+  colada, `thumb:` ou link do X/YouTube, o card mostra a mídia (sem a lista de links) logo abaixo do título; sem mídia, fica igual.
 - **Categorias**: cada copy tem `categoria: "<emoji> <nome>"` no frontmatter (a copy sem ela usa a de uma irmã da
   mesma `ideia:`; sem nenhuma, "Sem categoria"). Botão direito no card → Categoria muda (`POST /api/canvas/categoria`
-  `{nomes, categoria}`, `canvas.definir_categoria`); na categoria, "Nova copy aqui". Antes era a 💡 ideia que tinha (8 categorias por tipo de projeto, de
+  `{nomes, categoria}`, `canvas.definir_categoria`), num submenu "Categoria ›" com a atual marcada; na categoria,
+  "Nova copy aqui" e "Renomear" (`POST /api/canvas/categoria/renomear` `{de, para}`, `canvas.renomear_categoria`:
+  reescreve o `categoria:` das copies daquele canvas e leva junto lugar, ordem e arquivamento do layout; o front leva o
+  pin e o colapso). A categoria não é nota: é só esse texto no frontmatter das copies.
+  No hover, o card da categoria mostra um **+** (nova copy nela) e o card do canvas um **+** (nova categoria: pede o nome e
+  já a primeira copy, porque a categoria só existe nas copies). Botão direito na categoria → "Excluir categoria" manda as
+  copies dela para "Sem categoria" (nenhuma é apagada); na raiz → "Nova categoria". Antes era a 💡 ideia que tinha (8 categorias por tipo de projeto, de
   17/11/2026: Skills e plugins do Claude, Ferramentas e repos open source, Design e sites com IA, 3D e vídeo com IA,
   Projetos que eu construí, Começar em IA e opinião, Vendas, Referências de outros players).
 - **Hierarquia do mapa** (`emArvoreNos`): **categoria** (card preto `categoria`, id `c:<nome>`, só existe no mapa) →
@@ -292,7 +319,7 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 ### Selo NOVO nas ideias
 
 - **Toda 💡 ideia nova** ganha o selo **NOVO** no card (e borda lima): criada à mão (botão direito → Nova ideia, busca
-  ⌘P), card do Radar (botão 💡 ou "Adicionar ao canvas"), link ou texto colado no canvas e ideia criada pelo Jarvis
+  ⌘P), card do Radar (botão 💡 ou "Adicionar ao canvas"), link ou texto colado no canvas e copy criada pelo Claude
   (`canvas.criar_ideia` e `criar_entrada` chamam `marcar_nova`).
 - A lista fica em `app/dados/novas.json` (`canvas.marcar_nova` / `marcar_vista`). `estado()` devolve `novas` só com as
   que continuam novas: **ganhar uma produção (uma saída com `ideia:`) tira o selo sozinho**; renomear leva o selo junto.
@@ -304,7 +331,7 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
   `Desenho.tsx`), com as ferramentas, atalhos, cores, estilos e o traço à mão dele, em PT-BR.
 - Fica **por baixo dos cards**, com o mesmo pan/zoom do React Flow: o React Flow põe um ponto na tela em
   `cena * zoom + x`; o Excalidraw em `(cena + scrollX) * zoom`; então `scrollX = x / zoom` (os dois ocupam o mesmo
-  retângulo; a camada termina onde começa o chat). `onMove` do React Flow empurra a vista para o Excalidraw; no modo
+  retângulo; a camada vai até a borda). `onMove` do React Flow empurra a vista para o Excalidraw; no modo
   desenho, o pan/zoom feito dentro do Excalidraw volta para o React Flow (`onVista`).
 - **Modo desenho**: **E** liga e desliga (entra com a seleção; dentro do modo desenho o E sai, e a borracha fica no 0), **⌥E** (liga e desliga, pela tecla física, também com o foco no Excalidraw; ⌘E também, mas a extensão do Claude no Chrome toma o ⌘E), botão de lápis na barra do canvas, ou qualquer tecla de ferramenta do Excalidraw no canvas (R, D, O,
   A, L, P/X e 2–8, 0; o T não entra, ele troca mouse/trackpad), que já entra com a ferramenta. A camada vem para a frente, os atalhos do canvas (⌘A, ⌘Z,
@@ -343,11 +370,11 @@ para o modo trackpad. O minimapa liga e desliga num botão da barra (começa des
 e dois cliques com ele fora de tudo mostram o canvas todo.
 
 **Modo foco**: tecla **F** no canvas (ou o botão de cantos na barra) esconde navbar, breadcrumb, minimapa, pastas e a barra
-de baixo, que deslizam para as bordas; o chat do Jarvis e a barra dos pinados ficam (classe `modo-foco` no `.app`, em `App.tsx`); **Esc** volta.
+de baixo, que deslizam para as bordas; a barra dos pinados fica (classe `modo-foco` no `.app`, em `App.tsx`); **Esc** volta.
 
 ## 6. As telas
 
-A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · Instagram** | **Agendamento**.
+A navbar do topo tem três grupos: **Canvas · Redação · Calendário · Skills** | **X · Sites · Instagram** | **Agendamento** (⌃1… na ordem; também ⌥1… e ⌘1…, mas no Chrome o ⌘1–8 é do navegador e não chega à página).
 `⌘1…⌘6` trocam de página. A página atual fica no `localStorage`.
 
 | Tela | Arquivo | O que faz |
@@ -356,35 +383,37 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 | **Tabela** (das pastas) | `Tabela.tsx` | modal grande (90vh): contagem, destaque da pasta, média de palavras, barras por mês (filtram), filtros de formato/ano/canvas, busca, tabela ordenável (coluna Canvas). Clicar numa linha abre a copy com "← voltar" para a tabela |
 | **Calendário** | `CalendarioEditorial.tsx` | as copies com `scheduled`; arrastar reagenda (grava `scheduled`). Arrastar no vazio de uma semana cria um bloco de planejamento tracejado (`planejamento.json`, não mexe em nota) |
 | **X** e **Sites** | `Radar.tsx` | o radar (seção 8). X = feed "Para você"; Sites = GitHub, Hugging Face e Hacker News |
-| **Instagram** | `EmBreve.tsx` | ainda não existe |
+| **Redação** | `Redacao.tsx` | a tabela das copies (as mesmas abas, filtros e ações da tabela do canvas, `ModalTabela embutido`) com a nota aberta à direita, como no Obsidian (`PainelNota`), num card só, com uma divisória arrastável entre os dois lados (proporção em `redacao-largura`; duplo clique volta ao meio), e o botão 📅 Calendário: o `CalendarioEditorial` abre no lugar da nota e arrastar uma linha da tabela para um dia grava o `scheduled` (as linhas da tabela são arrastáveis com `raiz\0nome`). A Criação mostra as copies de todos os canvas. A tabela da Redação mostra só Copy, Versões, Status (seletor na célula: muda o status como o menu, com ⌘Z) e Data (campo de data na célula: grava o `scheduled` pela rota de agenda, `onData`) (as outras colunas ficam escondidas por CSS em `.tabela-embutida`). Abre com o cache de todas as notas (`tudoEmCache`) e, depois de uma mudança no vault, recarrega 1,5 s após a última (salvar a cada tecla travava a tabela). Guarda a nota aberta e se o calendário estava aberto (`redacao-aberta`, `redacao-calendario`) |
+| **Instagram** | `Instagram.tsx` | canais monitorados e os Reels deles, com métricas relativas ao canal (seção 8) |
 | **Agendamento** | `Calendario.tsx` | posts publicados e agendados do Instagram vindos do Metricool, com números (seção 8) |
 
 ### Sobrepostos a qualquer tela
 
 - **Modal de nota** (`ModalNota.tsx`, 90vh): abre qualquer nota (ideia, copy, skill).
+  - **1 clique num card do canvas abre a nota** (no chip de formato, aquela versão); ⌘/⇧ clique só seleciona; dois
+    cliques também abrem. Clique fora ou Esc fecha.
   - Abas no topo: uma por saída da mesma ideia (pela chave `ideia:`, exista ou não a nota 💡), com o ponto de status.
     Quando a nota 💡 existe, "← 💡 Nome" volta para ela, e a ideia mostra as saídas e as entradas em botões.
-    **+ Saída** cria a próxima versão num formato e pede ao Jarvis para escrevê-la (`pedidoSaida`).
+    **+ Saída** cria a próxima versão num formato e abre o pedido ao Claude para escrevê-la (`pedidoSaida`).
   - Título clicável renomeia. "Mostrar no canvas" volta ao canvas principal, enquadra e seleciona o card
-    (desligado se a nota está oculta lá). Lixeira com confirmação (`⌘⌫`). "Desligar da ideia", "Perguntar ao
-    Jarvis", ↗ "Abrir no Obsidian".
+    (desligado se a nota está oculta lá). Lixeira com confirmação (`⌘⌫`). "Desligar da ideia", o chip do código (clique copia), ↗ "Abrir no Obsidian".
   - **Painel de propriedades** (`propriedades.ts`) no topo do editor, como no Obsidian: a primeira linha é o
     **status** (vem da pasta, não do YAML); tags em chips; datas com calendário; `publicado` em caixinha; texto em
     campo; × remove; "+ Adicionar propriedade". `scheduled` e `publicado` passam pelas ações do app (agendar, mover
     de pasta), não só pelo YAML.
   - **Editor** (`Editor.tsx` + `livePreview.ts`, CodeMirror 6): live preview do Obsidian (marcas só na linha do
     cursor), callouts, tarefas, `[[links]]` com `⌘` + clique. Salva 1 s depois de parar de digitar e com `⌘S`.
-    `⌘I` manda o trecho selecionado (ou a nota) ao chat.
+    `⌘I` manda o trecho selecionado (ou a nota) para a caixa de pedido ao Claude.
 - **Busca rápida `⌘P`/`⌘O`** (`Paleta.tsx`): casa como o quick switcher do Obsidian em ideias, copies e skills; Enter
   abre no modal; sem resultado igual, oferece criar uma 💡 ideia com o texto digitado.
-- **Chat do Jarvis** (`Chat.tsx`), coluna da direita, redimensionável: seção 9.
+- **Porta do Claude** (`Pedido.tsx`), bolinha no canto inferior direito (verde = ouvindo): seção 9.
 - **Breadcrumb** no topo (`App.tsx`, `.migalhas`): NEO-OBSIDIAN (todos os canvas) › canvas › vista aberta (pasta ou card
   em canvas próprio). Clicar num nível volta para ele; o canvas conta a vista pela prop `onCaminho`.
 
 ## 7. Processos do dia a dia
 
-- **Ideia nova:** colar link/texto no canvas, botão direito → Nova ideia, 💡 num card do radar, ou o chat
-  (`criar_ideia`). Sempre em `0 Ideias/` com nome `💡 Título`.
+- **Ideia nova:** colar link/texto no canvas, botão direito → Nova ideia, 💡 num card do radar, ou o Claude Code
+  pela API. Sempre em `0 Ideias/` com nome `💡 Título`.
 - **Saída nova de uma ideia:** "+ Saída" no modal ou `canvas.criar_saida(ideia, formato)`: nasce em `1 Priorizar/`
   como `<formato> <título da ideia>` com `ideia: "[[💡 …]]"`. As saídas de uma ideia têm o mesmo nome; só muda o emoji
   (e um sufixo como "LP" ou "VSL" quando há duas do mesmo formato).
@@ -422,7 +451,7 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   não reordenam. A ordem recomeça ao trocar de filtro e quando uma coleta termina.
 - **Cards:** 👍 ensina o ranking e guarda em **Curtidos** (filtro no topo; `status=curtido` na API); 👎 tira do feed e
   ensina o contrário (`preferencias.py`; "Reavaliar" refaz o interesse a partir de 3 votos); 💡 cria uma ideia com
-  título, link, imagem e texto do card (`pronto` em `/api/canvas/entrada`) no Inbox; ◉ leva o card ao chat.
+  título, link, imagem e texto do card (`pronto` em `/api/canvas/entrada`) no Inbox; ◉ manda o card ao Claude (`RAD-<id>`).
 - **Botão direito num card** (tweet ou site) → "Adicionar ao canvas" com a lista dos canvas (`MenuAdicionar`): cria a
   mesma 💡 ideia, mandando `X-Canvas` do canvas escolhido (a nota nasce com o `grupo:` dele). Com texto selecionado fica o
   menu do navegador.
@@ -433,7 +462,21 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   Se o perfil estiver fechado (a sessão responde SEM_PERFIL), `config.com_perfil` abre o Chrome nele
   (`open -na "Google Chrome" --args --profile-directory=<pasta>`; a pasta vem do Local State pelo nome "Claude Profile"),
   espera 12 s a extensão conectar e tenta de novo. Não precisa deixar o perfil aberto.
-- **Instagram** (`coletores/instagram_radar.py`, aba Instagram; o `coletores/instagram.py` é outro: os Reels do próprio @rodrigotadewald para o Metricool): roda junto com a coleta do X. Duas fontes: a grade de Reels
+- **Instagram: canais monitorados** (`instagram_canais.py`, `Instagram.tsx`, aba Instagram, 19/11/2026). Duas vistas:
+  **Canais** (cadastro à mão: @, link ou vários separados por espaço; card com foto, seguidores, nº de reels e mediana de
+  views; × para de acompanhar e apaga os arquivos) e **Vídeos** (grade 9:16 com outlier = views ÷ mediana do canal,
+  views e engajamento = (curtidas + comentários) ÷ views; filtros de canal, data, outlier mínimo e ordem, guardados no
+  `localStorage`; clicar abre o player com o MP4 baixado). Botão **Atualizar** → `POST /api/ig/atualizar` (segundo plano,
+  `GET /api/ig/estado`). Coleta: um agente (Sonnet) abre o Chrome "Claude Profile" (conta teste.asimov) e, para cada
+  canal, navega a `/<canal>/reels/` e roda `SCRIPT`: lê seguidores e foto do og: da página do perfil, intercepta as
+  respostas que a página busca (a grade traz views/curtidas/comentários/capa; abrir um reel na própria página, com clique
+  e `history.back`, traz legenda, `taken_at`, duração e `video_versions`) e baixa `neo-igc-<prefixo>-<canal>.json` em
+  ~/Downloads. A API `/api/v1/users/web_profile_info` e `/api/v1/feed/user` dão 404 nessa conta: não use. Depois o
+  backend baixa fotos, capas e MP4 (`dados/ig/{fotos,capas,videos}`; os links do Instagram expiram). `POR_CANAL = 24`
+  (os mais recentes, fixados incluídos); ~180 MB por canal. Dados: `dados/ig/canais.json` e `dados/ig/videos.json`.
+  Rotas: `GET/POST /api/ig/canais`, `DELETE /api/ig/canais/{handle}`, `GET /api/ig/videos`, `GET /api/ig/arquivo/{tipo}/{nome}`.
+  As listas vêm com `cache: 'no-store'` (o Chrome guardava a resposta em HTML de quando o Vite estava subindo).
+- **Feed do Instagram no radar (desligado)**: `COLETAR_FEED_IG = False` em `radar.py`. **Instagram** (`coletores/instagram_radar.py`, aba Instagram; o `coletores/instagram.py` é outro: os Reels do próprio @rodrigotadewald para o Metricool): roda junto com a coleta do X. Duas fontes: a grade de Reels
   de cada perfil acompanhado (`app/dados/instagram_perfis.json`; começou com mavgpt, heysirio, filatov.design,
   marina_uiux, nick_saraev, que a conta segue) e a página /reels/ da conta (o algoritmo sugere; card com "sugerido").
   Para cada Reel inédito, a página `/p/<código>/` dá curtidas, comentários, data e legenda (meta `og:description`).
@@ -457,36 +500,33 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
   chamar ferramentas de **leitura** (`can_use_tool` nega agendar e editar). Posts e miniaturas vão para o SQLite e
   `dados/thumbs` (os links do Instagram expiram).
 
-## 9. O chat (Jarvis): uma IA que usa o app
+## 9. A porta para o Claude Code (`porta.py`, `porta.ts`, `Pedido.tsx`)
 
-- `agente.py`: uma sessão do Claude Code por conversa, retomada a cada mensagem, com o login da assinatura (Q9).
-- `cwd` = o vault, com o `CLAUDE.md` e as skills dele. **Sem travas, como um Claude Code no terminal**: tem Bash (baixar
-  vídeo, ffmpeg, whisper, yt-dlp, scripts) e `permission_mode="bypassPermissions"`; temporários vão em `/tmp/jarvis/`; as
-  instruções pedem confirmação no chat antes de apagar ou de algo sem volta. Escreve (Write/Edit) em **qualquer nota do vault**,
-  sem trava (evita `.obsidian/` e `.trash/` pelas instruções).
-- **Usa o app inteiro, como o Rodrigo.** Ferramentas próprias (MCP `jarvis`):
-  - específicas: `criar_ideia`, `criar_saida`, `ligar_ao_canvas`, `criar_entrada`, `posicionar`, `transcrever_youtube`,
-    `mudar_status` (inclusive publicar), `agendar`, `listar_canvas`, `mover_para_canvas`, `marcar_produto`,
-    `marcar_winner`. Acham a nota pelo nome, com ou sem a marca de status, e passam pelas funções do app.
-  - **`app`**: chama qualquer rota `/api/` do próprio app (menos o chat), em processo (`httpx.ASGITransport`), com o
-    `X-Canvas` do canvas que o Rodrigo está vendo. Tudo o que a interface faz passa por aqui (renomear, arquivar,
-    lixeira, canvas, posições, desenho…). Mudança (não-GET) manda o evento `mudou` ao front, que recarrega o canvas na hora.
-  - **`rotas`**: lista as rotas da API com o docstring e o corpo de cada uma (lido do FastAPI; rota nova aparece sozinha).
-  - **`tela`**: manda o evento `tela` ao front, que obedece em `App.tsx` (`onTela`): `pagina`, `abrir_canvas`,
-    `mostrar` (abre o canvas da nota, enquadra e seleciona o card), `abrir_nota`, `fechar_nota`, `foco`.
-  - Os eventos das ferramentas vão numa fila (`_eventos`) que `conversar` despeja no SSE entre as mensagens do SDK.
-  - O chat manda o slug do canvas aberto (`canvas`); as ferramentas específicas criam nele (`canvas._atual`).
-- As instruções dele (`INSTRUCOES` em `agente.py`) resumem este guia e apontam para cá; mantenha as duas coisas iguais.
-- O antigo modo construtor (o chat mexendo no código do app) foi removido.
-- **Várias conversas**: botão ＋ no topo do chat começa uma conversa nova (id `c-<base36>`); o relógio lista as anteriores
-  (`GET /api/chats`, título = a primeira mensagem do Rodrigo sem o cabeçalho do sinal/trecho) e apaga uma
-  (`DELETE /api/chats/{id}`). Cada conversa tem as suas mensagens e a sua sessão do Claude; a aberta fica em
-  `localStorage` (`chat-conversa`). A primeira, de sempre, é `radar`. Ao reabrir o chat ele já vai para o fim.
-- **Onde o Rodrigo está**: toda mensagem do chat leva `onde` (tela, canvas, vista, filtros de status/tipo/produto, cards
-  selecionados, nota aberta), montado por `canvasApi.descreverOnde()` e posto no contexto do agente
-  (`## Onde o Rodrigo está no app agora`). Cada card tem, no hover, um botão que leva a nota ao chat.
-- Mensagens que o app monta: `📡 Sinal do radar · fonte · autor · url` + linhas `> …` (o card em foco) e
-  `📎 [[nota]] · linhas X–Y · caminho` + linhas `> …` (o trecho do editor, `⌘I`).
+O chat do Jarvis saiu (18/11/2026). Tudo acontece no Claude Code do terminal, que mexe nas notas direto e usa o app
+pela API; o app é a porta para falar com ele. Modelo copiado do Neo Stitch.
+
+- **Códigos.** Cada nota do canvas (Priorizar, Publicados, Ideias, Entradas) tem `codigo: NEO-042` no frontmatter:
+  sequencial, nunca reaproveitado, contador em `dados/codigos.json`. Nota nova nasce com código (`notas._escrever`
+  carimba arquivo novo); nota criada fora do app (Obsidian, Claude) ganha no vigia; na subida da API, `garantir_codigos`
+  completa as que faltam sem mudar o mtime. Sinais do radar são `RAD-<id>` (derivado, não gravado).
+  - No app: chip do código em todo card (clique copia). Card 🎬 com várias versões mostra o da primeira e "+N"; o clique
+    copia os de todas as versões (também no botão direito → "Copiar códigos"). Chip na barra do modal.
+  - **Para o Claude achar a nota:** `curl -s localhost:8740/api/codigo/NEO-042` (raiz, nome, caminho, texto) ou
+    `grep -rl "^codigo: NEO-042" "/Users/rtadewald/Obsidian Notes/1 Copies"`.
+- **Fila de pedidos.** A bolinha do canto (⌘J), "Mandar ao Claude" no menu do card, `⌘I` no
+  editor e no foco do radar abrem a caixa de pedido com os anexos (códigos, trecho com linhas). Enviar (⌘↵) faz
+  `POST /api/fila` → uma linha em `dados/fila.jsonl` (`ts, texto, codigos, trecho, onde`). Sem ninguém ouvindo, o pedido
+  vai para a área de transferência, pronto para colar no terminal.
+  - **O Claude escuta** com `Monitor(command: "<repo>/app/ouvir.sh", timeout_ms: 1800000)` e rearma a cada 30 min.
+    O script faz `tail -n0 -F` da fila e toca `dados/.ouvinte` a cada 20 s; com o arquivo recente (< 60 s) a bolinha
+    fica verde (evento `porta` no SSE).
+- **Eventos (`GET /api/eventos`, SSE).** `mudou`: o vigia (`porta.vigiar_vault`, a cada 1,5 s) viu nota criada, editada,
+  movida ou apagada; o canvas e a nota aberta recarregam (a nota só se não houver edição pendente). `tela`: o Claude mexe
+  na tela com `POST /api/tela` `{acao, pagina?, canvas?, raiz?, nome?, codigo?}`; ações `pagina`, `abrir_canvas`,
+  `mostrar` (vai ao card e seleciona; com `codigo` no lugar de raiz + nome), `abrir_nota`, `fechar_nota`, `foco`.
+- **Onde o Rodrigo está:** o app manda (`porta.vigiarOnde`, de segundo em segundo, só quando muda) tela, canvas, vista,
+  filtros, cards selecionados com código e nota aberta com código; o Claude lê em `GET /api/onde`.
+- O radar e o Metricool continuam usando o SDK do Claude por conta própria (`radar.py`, `coletores/`, `metricool.py`).
 
 ## 10. API (FastAPI, `app/backend/src/jarvis/main.py`)
 
@@ -505,7 +545,8 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 | `POST /api/notas/priorizar` · `GET /api/notas-indice` | copy nova · índice da busca `⌘P` |
 | `GET /api/sinais` · `POST /api/sinais/{id}/voto` | radar (`?status=curtido`) · like/deslike (dispara o like no X) |
 | `POST /api/radar/atualizar` · `reavaliar` · `GET /api/radar/estado` | coleta e ranking |
-| `POST /api/chat` | chat do Jarvis (SSE: texto, ferramenta, mudou, tela, fim, erro) |
+| `GET /api/eventos` · `POST /api/tela` · `GET/POST /api/onde` | a porta: SSE (mudou, tela, porta) · o Claude mexe na tela · onde o Rodrigo está |
+| `GET /api/codigo/{NEO-042 ou RAD-1}` · `POST /api/fila` | nota (ou sinal) de um código · pedido para o Claude Code |
 | `GET /api/calendario` · `POST /api/calendario/sincronizar` · `/api/ads…` · `/api/planejamento…` | Metricool e planejamento |
 
 `raiz` é `priorizar`, `publicados`, `ideias`, `entradas` ou `skills` (`notas.RAIZES`; no front, `notas.ts`).
@@ -514,19 +555,20 @@ A navbar do topo tem três grupos: **Canvas · Calendário** | **X · Sites · I
 
 ```
 app/neo-obsidian.sh           o comando (sobe, para, abre)
+app/ouvir.sh                  o Claude Code escuta a fila de pedidos (Monitor)
 app/backend/src/jarvis/
   main.py                     rotas
   config.py                   VAULT, APP, DADOS (o caminho do vault é fixo aqui)
   notas.py                    status, mover, renomear (+ links), lixeira, agenda, pins do Obsidian
   canvas.py                   ideias, produções, canvas e produtos, layout, mídia dos cards
-  agente.py                   chat do Jarvis e as ferramentas dele (app, rotas, tela…)
+  porta.py                    códigos das notas, fila de pedidos, eventos SSE, vigia do vault, onde
   radar.py · preferencias.py · db.py · coletores/{fontes,x,x_curtir}.py   radar e like no X
   metricool.py · anuncios.py · planejamento.py · youtube.py · videos_x.py · auth.py
 app/frontend/src/
-  App.tsx                     navbar, breadcrumb, páginas, modal, busca, chat
+  App.tsx                     navbar, breadcrumb, páginas, modal, busca, eventos da porta
   Desenho.tsx                 camada de desenho (Excalidraw) sincronizada com o canvas
   Canvas.tsx                  canvas, cards, filtros, pastas, menus, gestos (função montar = quem aparece)
-  Tabela.tsx · ModalNota.tsx · Paleta.tsx · Chat.tsx · Radar.tsx · CalendarioEditorial.tsx · Calendario.tsx
+  Tabela.tsx · ModalNota.tsx · Paleta.tsx · Pedido.tsx · porta.ts · Radar.tsx · CalendarioEditorial.tsx · Calendario.tsx
   Editor.tsx · livePreview.ts · propriedades.ts   o editor no jeito do Obsidian
   canvasApi.ts · api.ts · notas.ts                tipos e chamadas; notas.ts = raízes, pastas, link do Obsidian
   index.css                   todo o CSS (tokens no topo)
@@ -537,7 +579,7 @@ skills (as skills seguem abrindo no modal pela busca `⌘P`). Não traga de volt
 
 ## 12. Armadilhas conhecidas
 
-- **"Entrada"** ainda existe no código e nas instruções do chat (`0 Ideias/Entradas/`, `fontes:`, card `e:`), mas o
+- **"Entrada"** ainda existe no código (`0 Ideias/Entradas/`, `fontes:`, card `e:`), mas o
   fluxo atual cria tudo como 💡 ideia. Não crie entradas novas; ao mexer, prefira convergir para ideia.
 - **Nome com sufixo " 2"**: `_livre` evita colisão acrescentando um número. Se aparecer, foi colisão de nome.
 - **Modo dev é lento:** o `neo-obsidian` roda o front pelo Vite em modo de desenvolvimento. Arrastar um card custa ~28 ms

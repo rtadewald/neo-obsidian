@@ -115,7 +115,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
           )}
           {!total && <p className="mudo paleta-vazio">Carregando…</p>}
         </div>
-        <footer className="paleta-pe"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>↵</kbd> abrir</span>{onImportar && <span><kbd>⌘↵</kbd> trazer pro canvas</span>}<span><kbd>esc</kbd> fechar</span></footer>
+        <footer className="paleta-pe"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>↵</kbd> abrir</span>{onImportar && <span><kbd>⌘↵</kbd> {document.querySelector('.redacao') ? 'abrir em aba nova' : 'trazer pro canvas'}</span>}<span><kbd>esc</kbd> fechar</span></footer>
       </div>
     </div>
   )

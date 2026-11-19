@@ -78,19 +78,19 @@ export function titulo(v: EditorView, nivel: number) {
 
 type Props = {
   valor: string; onMudar: (v: string) => void; onSalvar?: () => void; onLink?: (nome: string) => void; chave: string
-  onJarvis?: (s: Selecao) => void                    // ⌘I: manda o trecho para o chat
+  onClaude?: (s: Selecao) => void                    // ⌘I: manda o trecho ao Claude Code
   onMenu?: (x: number, y: number) => void            // botão direito
   viewRef?: MutableRefObject<EditorView | null>
   extra?: Extra                                      // status e ações do app no painel de propriedades
 }
 
-export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, viewRef, chave, extra }: Props) {
+export function Editor({ valor, onMudar, onSalvar, onLink, onClaude, onMenu, viewRef, chave, extra }: Props) {
   const extraRef = useRef(extra)
   extraRef.current = extra
   const caixa = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  const cb = useRef({ onMudar, onSalvar, onLink, onJarvis, onMenu })
-  cb.current = { onMudar, onSalvar, onLink, onJarvis, onMenu }
+  const cb = useRef({ onMudar, onSalvar, onLink, onClaude, onMenu })
+  cb.current = { onMudar, onSalvar, onLink, onClaude, onMenu }
 
   useEffect(() => {  // um editor novo por nota (histórico de desfazer não vaza entre notas)
     if (!caixa.current) return
@@ -107,7 +107,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onJarvis, onMenu, vie
             contextmenu: (e) => { if (!cb.current.onMenu) return false; e.preventDefault(); cb.current.onMenu(e.clientX, e.clientY); return true },
           }),
           keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { cb.current.onSalvar?.(); return true } },
-            { key: 'Mod-i', preventDefault: true, run: (v) => { cb.current.onJarvis?.(selecao(v)); return true } },
+            { key: 'Mod-i', preventDefault: true, run: (v) => { cb.current.onClaude?.(selecao(v)); return true } },
             { key: 'Mod-b', preventDefault: true, run: (v) => { envolver(v, '**'); return true } },   // negrito, como no Obsidian
             indentWithTab, ...defaultKeymap, ...historyKeymap]),
           EditorView.updateListener.of((u) => { if (u.docChanged) cb.current.onMudar(u.state.doc.toString()) }),

@@ -11,6 +11,8 @@ from . import db, preferencias
 from .coletores import x as coletor_x
 from .coletores import x_curtir
 from .coletores import instagram_radar as coletor_ig
+
+COLETAR_FEED_IG = False   # o feed do algoritmo do Instagram (a aba Instagram agora são os canais monitorados)
 from .coletores.fontes import COLETORES
 from .config import MODELO_RADAR
 
@@ -116,10 +118,11 @@ async def coletar(com_x: bool = True) -> dict:
                         break
             except Exception:
                 traceback.print_exc()
-            try:   # Instagram: a conta do radar no mesmo perfil do Chrome (perfis seguidos + Reels do algoritmo)
+            if COLETAR_FEED_IG:   # o feed do Instagram saiu do radar (a aba Instagram virou canais monitorados)
+             try:   # Instagram: a conta do radar no mesmo perfil do Chrome (perfis seguidos + Reels do algoritmo)
                 itens = await coletor_ig.coletar(db.externos_recentes("instagram", 600))
                 det["instagram"] = {"itens": len(itens), "novos": db.gravar_sinais(itens, lote=time.time())}
-            except Exception as e:
+             except Exception as e:
                 det["instagram"] = {"erro": f"{type(e).__name__}: {e}"[:200]}
         try:
             det["classificados"] = 0

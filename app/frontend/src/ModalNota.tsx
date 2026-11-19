@@ -7,6 +7,7 @@ import { Sumario } from './Sumario'
 import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
+import { codigoDe, codigoDeAsync, copiar } from './porta'
 import { alternarPin, idDoCard, pinavel, usePins } from './pins'
 import { mudarStatus as statusComDesfazer } from './desfazer'
 import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
@@ -37,7 +38,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
   // todas as notas (não só as do canvas aberto: a copy pode viver em outro); começa do que já está em memória
   const [est, setEst] = useState<EstadoCanvas | null>(tudoEmCache)
   const [ativa, setAtiva] = useState<Alvo>(alvo)
-  onde.nota = ativa   // o Jarvis recebe, em toda mensagem, a aba que está aberta (não só a nota com que o modal abriu)
+  onde.nota = ativa   // GET /api/onde mostra a aba aberta (não só a nota com que o modal abriu)
   useEffect(() => () => { onde.nota = null }, [])
   const [mais, setMais] = useState(false)
   const pins = usePins()
@@ -146,7 +147,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
       onMudou?.()
       setAtiva(d)
       onPedido?.(pedidoSaida(ideia, d.nome, formato, nomeFormato))
-      avisar('O Jarvis está escrevendo essa versão')
+      avisar('Nota criada: mande o pedido ao Claude')
     } catch (e) { avisar((e as Error).message) }
   }
 
@@ -189,45 +190,6 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     else window.location.href = `obsidian://open?vault=${encodeURIComponent('Obsidian Notes')}&file=${encodeURIComponent(nome)}`
   }
 
-  // Jarvis aberto (⌘J) com a nota aberta: a nota e o chat, lado a lado, ficam centralizados juntos na tela
-  // (topo e base alinhados aos do chat). O chat sai do canto direito com um translate; sem espaço, volta ao canto e a nota encolhe.
-  const [chatBox, setChatBox] = useState<{ dir: number; topo: number; base: number } | null>(null)
-  const tamRef = useRef(tam)
-  tamRef.current = tam
-  const medirRef = useRef<() => void>(() => {})
-  useEffect(() => {
-    let chat: HTMLElement | null = null, desloc = 0
-    const soltar = () => { if (chat) chat.style.translate = ''; chat = null; desloc = 0 }
-    const medir = () => {
-      const c = document.querySelector<HTMLElement>('.corpo > .chat:not(.chat--fechado)')
-      if (c !== chat) { soltar(); chat = c }
-      if (!c) { setChatBox(null); return }
-      const r = c.getBoundingClientRect()
-      const vw = window.innerWidth, gap = 12
-      const dirNatural = r.right + desloc                 // onde o chat fica sem o translate
-      const margem = Math.max(0, vw - dirNatural)
-      const nota = Math.min(tamRef.current?.w ?? vw * 0.7, vw)
-      const total = nota + gap + r.width
-      const esq = (vw - total) / 2
-      const novo = esq >= margem ? Math.round(dirNatural - (esq + total)) : 0
-      const chatEsq = r.left + desloc - novo              // borda esquerda do chat já deslocado
-      if (novo !== desloc) { desloc = novo; c.style.translate = novo ? `${-novo}px 0` : '' }
-      setChatBox({ dir: Math.max(0, vw - chatEsq + gap), topo: r.top, base: Math.max(0, window.innerHeight - r.bottom) })
-    }
-    medirRef.current = medir
-    medir()
-    const corpo = document.querySelector('.corpo')
-    const mo = new MutationObserver(medir)
-    if (corpo) mo.observe(corpo, { attributes: true, childList: true, subtree: false })
-    const ro = new ResizeObserver(medir)
-    if (corpo) ro.observe(corpo)
-    window.addEventListener('resize', medir)
-    // o chat anima a largura ao abrir: mede de novo quando a animação dele acaba
-    const fimAnim = (e: TransitionEvent) => { if ((e.target as HTMLElement).matches?.('.corpo, .corpo > .chat')) medir() }
-    document.addEventListener('transitionend', fimAnim)
-    return () => { mo.disconnect(); ro.disconnect(); window.removeEventListener('resize', medir); document.removeEventListener('transitionend', fimAnim); soltar() }
-  }, [])
-  useEffect(() => { medirRef.current() }, [tam])
 
   const tabs: { alvo: Alvo; rotulo: string; prod?: Producao }[] = grupo
     ? [
@@ -239,11 +201,10 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     : [{ alvo: ativa, rotulo: ativa.nome }]
 
   return (
-    <div className="modal-fundo" style={chatBox ? { paddingRight: chatBox.dir, paddingTop: chatBox.topo, paddingBottom: chatBox.base, justifyContent: 'flex-end' } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
+    <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
       <div ref={caixaNota} className="modal-nota glass glass--light" role="dialog" aria-label={ativa.nome}
         style={{
           ...(tam ? { width: Math.min(tam.w, window.innerWidth - 16), height: Math.min(tam.h, window.innerHeight - 16) } : {}),
-          ...(chatBox ? { height: '100%', alignSelf: 'stretch' } : {}),
         }}>
         {ALCAS.map(([k, dx, dy]) => <div key={k} className={`modal-alca modal-alca--${k}`} onPointerDown={(e) => redimensionar(e, dx, dy)} onDoubleClick={padrao}
           title="Arraste para mudar o tamanho da nota (duplo clique volta ao padrão)" />)}
@@ -276,7 +237,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
                 <button className="modal-tab is-mais" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPosMais({ left: r.left, top: r.bottom + 4 }); setMais((v) => !v) }} title="Nova saída desta ideia"><Icone n="mais" t={14} /> Saída</button>
                 {mais && createPortal(
                   <div className="menu-ctx glass glass--light" role="menu" style={posMais}>
-                    <p className="menu-ctx-t"><span className="orb orb--msg" />Nova saída (o Jarvis escreve)</p>
+                    <p className="menu-ctx-t"><span className="orb orb--msg" />Nova saída (o Claude escreve)</p>
                     {est.formatos.map((f) => <button key={f.emoji} role="menuitem" onClick={() => novaSaida(f.emoji, f.nome)}><span className="menu-emoji">{f.emoji}</span>{f.nome}</button>)}
                   </div>, document.body)}
               </span>
@@ -362,6 +323,14 @@ function rotuloSaida(p: Producao, ideia?: string) {
 
 /** O editor de uma nota (cabeçalho, propriedades, texto e sumário). Usado no modal e na página Skills
  *  (`fixo`: o título não renomeia, para os arquivos das skills). */
+/** Código da nota (NEO-042) na barra do editor: clicar copia, para colar no Claude Code. */
+function Codigo({ nome, versao }: { nome: string; versao?: number }) {
+  const [c, setC] = useState(() => codigoDe(nome))
+  useEffect(() => { let vivo = true; codigoDeAsync(nome).then((x) => { if (vivo) setC(x) }); return () => { vivo = false } }, [nome, versao])
+  if (!c) return null
+  return <button type="button" className="nota-codigo" onClick={() => copiar(c)} title="Copiar o código para colar no Claude Code">{c}</button>
+}
+
 export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink, fixo, formatos }: {
   alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean; formatos?: Formato[]
   onTrecho?: (t: Trecho, pedido?: string) => void; onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
@@ -428,7 +397,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
     } catch (e) { avisar((e as Error).message) }
   }
 
-  // o Jarvis pode ter escrito nesta nota
+  // a nota mudou no vault (o Claude Code escreveu nela)
   useEffect(() => {
     const n = ref.current.nota
     if (!versao || !n || ref.current.estado !== 'salvo') return
@@ -532,10 +501,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
             <p className="menu-ctx-t">Transformar em copy de…</p>
             {formatos.map((f) => <button key={f.emoji} role="menuitem" onClick={() => virarCopy(f.emoji)}><span className="menu-emoji">{f.emoji}</span>{f.nome}</button>)}
           </div>, document.body)}
-        {onTrecho && (
-          <button className="modal-desligar" onClick={async () => { await salvar(); onTrecho({ texto: '', linhaIni: 1, linhaFim: texto.split('\n').length, raiz: alvo.raiz, nome: alvo.nome, caminho }) }}
-            title="Manda esta nota para o chat (⌘I manda só o trecho selecionado)"><span className="orb orb--msg" /> Perguntar ao Jarvis</button>
-        )}
+        <Codigo nome={alvo.nome} versao={versao} />
         <button className={`btn-icone ${semSumario ? '' : 'is-on'}`} onClick={alternarSumario} aria-pressed={!semSumario}
           title={semSumario ? 'Mostrar o sumário (⌘])' : 'Esconder o sumário (⌘])'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
           <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2.5" /><path d="M12.5 3.5v13M14.6 7.2h-.1M14.6 10h-.1" /></svg></button>
@@ -548,7 +514,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
       <div className={`modal-corpo modal-corpo--sumario ${semSumario ? "sem-sumario" : ""}`}>
         <div className="modal-editor">
           <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink}
-            onJarvis={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
+            onClaude={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
         </div>
         {!semSumario && <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />}
       </div>

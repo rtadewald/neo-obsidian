@@ -6,29 +6,26 @@ import { Canvases, preCarregarCanvases } from './Canvases'
 import { INBOX, cabecalhoCanvas, carregarTudo, listarCanvases, onde, usarCanvas } from './canvasApi'
 import { ModalNota } from './ModalNota'
 import type { Alvo, Voltar } from './canvasApi'
-import { Chat } from './Chat'
+import { Pedido } from './Pedido'
+import { EVENTO_AVISO, anexoDaNota, assinarEventos, codigoSinal, pedirAoClaude, vigiarOnde } from './porta'
 import { EmBreve } from './EmBreve'
 import { Icone } from './Icone'
 import { Radar } from './Radar'
+import { Instagram } from './Instagram'
+import { EVENTO_REDACAO, Redacao } from './Redacao'
 import { Skills } from './Skills'
 import { NovoRapido, type TipoNovo } from './NovoRapido'
 import { PaletaCanvas } from './PaletaCanvas'
 import { Paleta } from './Paleta'
 import type { Raiz, Trecho } from './notas'
-import type { Sinal } from './api'
 
 // navbar do topo, em três grupos: criar (canvas, planejamento) | radares | agendamento (Metricool).
 // ⌘O busca notas e abre no modal; ⌘P navega entre os canvas.
-const GRUPOS = [['Canvas', 'Calendário', 'Skills'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
+const GRUPOS = [['Canvas', 'Redação', 'Calendário', 'Skills'], ['X', 'Sites', 'Instagram'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
-  Canvas: 'grafo', Calendário: 'calendario', Skills: 'skills', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
+  Canvas: 'grafo', Redação: 'editar', Calendário: 'calendario', Skills: 'skills', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
 }
-/** Aba do radar de onde veio um sinal, pela fonte ou pelo link. */
-const abaDoSinal = (a: { fonte?: string; url?: string | null }) =>
-  a.fonte === 'x' || /^https?:\/\/(www\.)?(x|twitter)\.com\//.test(a.url ?? '') ? 'X'
-    : a.fonte === 'instagram' || /^https?:\/\/(www\.)?instagram\.com\//.test(a.url ?? '') ? 'Instagram' : 'Sites'
-
 export default function App() {
   // canvas isolados: null = página de controle (lista dos canvas); clicar em NEO-OBSIDIAN volta para ela
   const [canvasSlug, setCanvasSlug] = useState<string | null>(() => { try { return localStorage.getItem('canvas-atual') || INBOX } catch { return INBOX } })
@@ -40,17 +37,16 @@ export default function App() {
     listarCanvases().then((l) => { if (canvasSlug && l.length && !l.some((c) => c.slug === canvasSlug)) setCanvasSlug(INBOX) }).catch(() => {})
   }, [canvasSlug])
   const [pagina, setPagina] = useState<string>(() => { try { const p = localStorage.getItem('pagina'); return p && (NAV as readonly string[]).includes(p) ? p : 'Canvas' } catch { return 'Canvas' } })
-  onde.pagina = pagina   // o chat manda isso ao Jarvis (ver canvasApi.onde)
+  onde.pagina = pagina   // vai ao backend (GET /api/onde): o Claude Code sabe onde o Rodrigo está
   if (!canvasSlug) onde.canvas = null
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
   // modal de nota (ideia + saídas em tabs): canvas, calendário e ⌘P abrem aqui
   const [modal, setModal] = useState<Alvo | null>(null)
-  if (!modal) onde.nota = null   // com a nota aberta, o ModalNota informa a aba ativa (o chat manda isso ao Jarvis)
+  if (!modal) onde.nota = null   // com a nota aberta, o ModalNota informa a aba ativa (vai para GET /api/onde)
   const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [mostrar, setMostrar] = useState<{ alvo: Alvo; n: number; quieto?: boolean; esperar?: boolean; ate?: number }>()   // Mostrar no canvas, pedido pelo modal   // de onde a nota foi aberta (a tabela das pastas)
   const [paleta, setPaleta] = useState(false)
   const [paletaCanvas, setPaletaCanvas] = useState(false)
-  const [pinsNota, setPinsNota] = useState(false)   // ⌘[ com nota aberta: a barra da esquerda só com os pinados   // ⌘P: navegar entre os canvas
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   // abrir uma nota pela ⌘P/⌘O: se ela vive num canvas ativo (não arquivado), muda para ele antes de abrir; senão fica onde está
@@ -79,48 +75,51 @@ export default function App() {
     setModal({ raiz, nome })
     irParaCard({ raiz, nome })
   }
+  // na Redação a busca abre a copy numa aba de lá (Enter: a da frente; ⌘↵: uma nova)
+  const abrirNaRedacao = (alvo: Alvo, nova: boolean) => window.dispatchEvent(new CustomEvent(EVENTO_REDACAO, { detail: { alvo, nova } }))
   const [caminhoCanvas, setCaminhoCanvas] = useState<Passo[]>([])   // o que o canvas aberto conta ao breadcrumb
   const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: o canvas recarrega
-  // sinal em conversa no chat: sobrevive a recarregar a página
-  const [foco, setFoco] = useState<Sinal | null>(() => { try { return JSON.parse(localStorage.getItem('foco-sinal') || 'null') } catch { return null } })
-  useEffect(() => { try { if (foco) localStorage.setItem('foco-sinal', JSON.stringify(foco)); else localStorage.removeItem('foco-sinal') } catch { /* sem storage */ } }, [foco])
-  // clicar no sinal do chat (o anexado ou um do histórico) volta para o card dele no Radar, no modo foco
-  const [irSinal, setIrSinal] = useState<{ id?: number; url?: string | null; n: number }>()
-  const abrirSinal = useCallback((a: { id?: number; url?: string | null; fonte?: string }) => { setPagina(abaDoSinal(a)); setIrSinal((x) => ({ ...a, n: (x?.n ?? 0) + 1 })) }, [])
-  // trecho de nota mandado do editor para o chat (⌘I), pedido pronto das ações rápidas e aviso de que a nota pode ter mudado
-  const [trecho, setTrecho] = useState<Trecho | null>(null)
-  const [pedido, setPedido] = useState<{ texto: string; n: number }>({ texto: '', n: 0 })
+  const [ouvindo, setOuvindo] = useState(false)   // o Claude Code está ouvindo a fila (bolinha verde)
   const [versao, setVersao] = useState(0)
   // todos os canvas ficam carregados: na abertura e, depois, logo após cada mudança no vault
   useEffect(() => { const t = window.setTimeout(aquecerCanvases, 400); return () => window.clearTimeout(t) }, [mudou, versao])
+  // ⌘I no editor, "Mandar ao Claude" nos cards e pedidos prontos: abrem a caixa de pedido ao Claude Code
   const mandarTrecho = useCallback((t: Trecho, p?: string) => {
-    setTrecho(t); setChat(true)
-    if (p) setPedido((x) => ({ texto: p, n: x.n + 1 }))
+    anexoDaNota({ raiz: t.raiz, nome: t.nome } as Alvo, t).then((a) => pedirAoClaude({ anexos: [a], texto: p }))
   }, [])
-  const mandarPedido = useCallback((p: string) => { setChat(true); setPedido((x) => ({ texto: p, n: x.n + 1 })) }, [])
+  const mandarPedido = useCallback((p: string) => pedirAoClaude({ anexos: [], texto: p }), [])
+  const sinalAoClaude = useCallback((s: { id: number; titulo?: string | null; texto?: string | null }) =>
+    pedirAoClaude({ anexos: [{ codigo: codigoSinal(s.id), rotulo: (s.titulo || s.texto || 'sinal do radar').slice(0, 80) }] }), [])
   const abrirModal = useCallback((a: Alvo, v?: Voltar) => { setModal(a); setVoltar(v ?? null) }, [])
-  const [chat, setChat] = useState(() => { try { return localStorage.getItem('chat') !== 'fechado' } catch { return true } })
-  useEffect(() => { try { localStorage.setItem('chat', chat ? 'aberto' : 'fechado') } catch { /* sem storage */ } }, [chat])
-  useEffect(() => { if (foco) setChat(true) }, [foco])
-  // largura do chat: arrastando a borda esquerda dele (duplo clique volta ao padrão)
-  const [chatW, setChatW] = useState<number | null>(() => { try { return Number(localStorage.getItem('chat-w')) || null } catch { return null } })
-  useEffect(() => { try { if (chatW) localStorage.setItem('chat-w', String(chatW)); else localStorage.removeItem('chat-w') } catch { /* sem storage */ } }, [chatW])
-  const arrastar = (e: React.PointerEvent) => {
-    const el = corpo.current
-    if (!el) return
-    e.preventDefault()
-    const direita = el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight)
-    const max = Math.min(900, el.clientWidth * 0.6)
-    const mover = (ev: PointerEvent) => setChatW(Math.round(Math.max(300, Math.min(max, direita - ev.clientX))))
-    const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
-    document.body.classList.add('arrastando')
-    window.addEventListener('pointermove', mover)
-    window.addEventListener('pointerup', soltar)
-  }   // trouxe um card para a conversa: o chat abre
+  // eventos do backend: nota mudou no vault (o Claude editou daqui), o Claude mexendo na tela e se ele está ouvindo
+  const tela = useRef<(ev: { acao: string; pagina?: string; canvas?: string | null; raiz?: string; nome?: string }) => void>(() => {})
+  tela.current = (ev) => {
+    if (ev.acao === 'pagina' && ev.pagina && (NAV as readonly string[]).includes(ev.pagina)) setPagina(ev.pagina)
+    else if (ev.acao === 'abrir_canvas') { setModal(null); setCanvasSlug(ev.canvas ?? null); setPagina('Canvas') }
+    else if (ev.acao === 'mostrar' && ev.raiz && ev.nome) {
+      const alvo = { raiz: ev.raiz, nome: ev.nome } as Alvo
+      setModal(null); setVoltar(null)
+      if (ev.canvas) { usarCanvas(ev.canvas); setCanvasSlug(ev.canvas); setPagina('Canvas'); setMostrar((m) => ({ alvo, n: (m?.n ?? 0) + 1 })) }
+      else irParaCard(alvo)
+    }
+    else if (ev.acao === 'abrir_nota' && ev.raiz && ev.nome) setModal({ raiz: ev.raiz, nome: ev.nome } as Alvo)
+    else if (ev.acao === 'fechar_nota') { setModal(null); setVoltar(null) }
+    else if (ev.acao === 'foco') window.dispatchEvent(new Event('modo-foco'))
+  }
+  useEffect(() => assinarEventos((ev) => {
+    if (ev.t === 'mudou') setVersao((v) => v + 1)
+    else if (ev.t === 'porta') setOuvindo(ev.ouvindo)
+    else if (ev.t === 'tela') tela.current(ev)
+  }), [])
+  useEffect(() => vigiarOnde(), [])
+  useEffect(() => {
+    const f = (e: Event) => avisarApp((e as CustomEvent<string>).detail)
+    window.addEventListener(EVENTO_AVISO, f); return () => window.removeEventListener(EVENTO_AVISO, f)
+  }, [])
 
-  // modo foco (só no canvas): navbar, breadcrumb, minimapa, pastas e barra de baixo saem para as bordas; o chat fica.
+  // modo foco (só no canvas): navbar, breadcrumb, minimapa, pastas e barra de baixo saem para as bordas.
   // F liga (fora de campos e do Excalidraw), Esc desliga; o botão da barra do canvas manda o evento 'modo-foco'.
-  // modo de trabalho (W): só as duas barras saem (navegação de cima e barra de baixo); pastas, pinados e chat ficam
+  // modo de trabalho (W): só as duas barras saem (navegação de cima e barra de baixo); pastas e pinados ficam
   const [focoTela, setFocoTela] = useState(false)
   const [trabalho, setTrabalho] = useState(false)
   useEffect(() => { if (pagina !== 'Canvas' || !canvasSlug) { setFocoTela(false); setTrabalho(false) } }, [pagina, canvasSlug])
@@ -145,8 +144,6 @@ export default function App() {
     return () => { window.removeEventListener('keydown', tecla); window.removeEventListener('modo-foco', alternar) }
   }, [])
 
-  // o chat ocupa a altura toda, do topo ao pé da tela
-  const corpo = useRef<HTMLElement>(null)
 
   // ⌘O: busca rápida de notas, que abre a nota no modal; ⌘P: ir para um canvas
   useEffect(() => {
@@ -161,7 +158,7 @@ export default function App() {
       }
       // nova ideia / nova criação (no canvas aberto; fora dele, com seletor de canvas). ⌥N pela tecla física (e.code):
       // no Mac o ⌥N vira o til. ⌘⇧I/⌘⇧N também valem onde o navegador deixa (o Chrome reserva o ⌘⇧N para a janela anônima).
-      // ⌘I nova ideia (com uma nota aberta o ⌘I segue mandando o trecho ao Jarvis), ⌥N nova criação
+      // ⌘I nova copy (com uma nota aberta o ⌘I manda o trecho ao Claude Code), ⌥N nova criação
       const cmdI = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'i' || e.code === 'KeyI')
       const opcao = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN'
       const comando = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())
@@ -173,20 +170,10 @@ export default function App() {
         setNovo(cmdI || (comando && e.key.toLowerCase() === 'i') ? 'ideia' : 'producao')
         return
       }
-      // ⌘[ com uma nota aberta: mostra/esconde à esquerda só os pinados (para pular entre eles sem fechar a nota)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === '[' || e.code === 'BracketLeft') && document.querySelector('.modal-fundo .modal-nota')) {
-        e.preventDefault(); e.stopPropagation()
-        setPinsNota((v) => !v)
-        return
-      }
-      // ⌘J mostra/oculta o chat do Jarvis (o ⌘B é o negrito do editor)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
-        e.preventDefault()
-        setChat((c) => !c)
-      }
-      // ⌘1…⌘7 trocam de aba, na ordem da navbar (com uma nota aberta, os números navegam entre as versões dela: ModalNota)
-      const n = Number(e.key)
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota')) {
+      // ⌃1…⌃8 (ou ⌥1…, ou ⌘1… onde o navegador deixa: no Chrome o ⌘1–8 troca de aba do navegador antes da página)
+      // trocam de aba, na ordem da navbar. Com uma nota aberta no modal, os números navegam entre as versões dela (ModalNota)
+      const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : 0
+      if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota')) {
         e.preventDefault()
         setPagina(NAV[n - 1])
       }
@@ -196,7 +183,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app ${focoTela ? 'modo-foco' : ''} ${trabalho ? 'modo-trabalho' : ''} ${modal ? 'com-nota' : ''} ${modal && pinsNota ? 'pins-nota' : ''}`}>
+    <div className={`app ${focoTela ? 'modo-foco' : ''} ${trabalho ? 'modo-trabalho' : ''} ${modal ? 'com-nota' : ''}`}>
       <div className="lateral-area">
       {/* breadcrumb: NEO-OBSIDIAN (todos os canvas) › canvas › vista; nas outras páginas, só o nome dela */}
       <nav className="migalhas" aria-label="Onde você está">
@@ -215,7 +202,7 @@ export default function App() {
             {k > 0 && <span className="lateral-sep" aria-hidden="true" />}
             {g.map((p) => (
               <button key={p} className={`lateral-btn ${p === pagina ? 'is-ativa' : ''}`} onClick={() => setPagina(p)} aria-current={p === pagina}
-                data-dica={`⌘${NAV.indexOf(p) + 1}`}>
+                data-dica={`⌃${NAV.indexOf(p) + 1}`}>
                 <Icone n={ICONE[p]} t={14} /><span>{p}</span>
               </button>
             ))}
@@ -225,17 +212,17 @@ export default function App() {
       <span />
       </div>
 
-      <main ref={corpo} className={`corpo ${chat ? '' : 'sem-chat'}`}
-        style={chat && chatW ? { gridTemplateColumns: `minmax(0, 1fr) ${chatW}px` } : undefined}>
+      <main className="corpo sem-chat">
         <section className="pagina">
           {pagina === 'Canvas' ? (canvasSlug
               ? <Canvas key={canvasSlug} canvas={canvasSlug} onCaminho={setCaminhoCanvas} onTrocarCanvas={setCanvasSlug} mostrar={mostrar} onAbrir={abrirModal} onTrecho={mandarTrecho} onPedido={mandarPedido} versao={versao + mudou} />
               : <Canvases onAbrir={setCanvasSlug} />)
+            : pagina === 'Redação' ? <Redacao versao={versao + mudou} onTrecho={mandarTrecho} />
             : pagina === 'Calendário' ? <CalendarioEditorial onAbrir={(raiz, nome) => abrirModal({ raiz, nome })} />
             : pagina === 'Skills' ? <Skills versao={versao} onTrecho={mandarTrecho} onAbrirNota={(alvo) => abrirModal(alvo)} />
-            : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} foco={foco} onConversar={setFoco} ir={irSinal} />
-            : pagina === 'Instagram' ? <Radar key="instagram" titulo="Instagram" fontes={['instagram']} foco={foco} onConversar={setFoco} ir={irSinal} />
-            : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} foco={foco} onConversar={setFoco} ir={irSinal} />
+            : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} onConversar={sinalAoClaude} />
+            : pagina === 'Instagram' ? <Instagram />
+            : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} onConversar={sinalAoClaude} />
             : pagina === 'Agendamento' ? <Calendario />
             : <EmBreve pagina={pagina} />}
           {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
@@ -243,22 +230,7 @@ export default function App() {
         onMudou={() => setMudou((n) => n + 1)} versao={versao}
         onMostrar={(a) => { irParaCard(a).then((ok) => { if (ok) { setModal(null); setVoltar(null) } }) }} />}
         </section>
-        <Chat foco={foco} limparFoco={() => setFoco(null)} aberto={chat} onAlternar={() => setChat((v) => !v)}
-          alca={<div className="chat-alca" onPointerDown={arrastar} onDoubleClick={() => setChatW(null)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />}
-          onAbrirSinal={abrirSinal}
-          onTela={(ev) => {   // o Jarvis mexendo na tela, como o Rodrigo faria com o mouse
-            if (ev.acao === 'pagina' && ev.pagina && (NAV as readonly string[]).includes(ev.pagina)) setPagina(ev.pagina)
-            else if (ev.acao === 'abrir_canvas') { setModal(null); setCanvasSlug(ev.canvas ?? null); setPagina('Canvas') }
-            else if (ev.acao === 'mostrar' && ev.raiz && ev.nome) {
-              const alvo = { raiz: ev.raiz, nome: ev.nome } as Alvo
-              setModal(null); if (ev.canvas) setCanvasSlug(ev.canvas); setPagina('Canvas'); setMudou((n) => n + 1)
-              setMostrar((m) => ({ alvo, n: (m?.n ?? 0) + 1 }))
-            }
-            else if (ev.acao === 'abrir_nota' && ev.raiz && ev.nome) setModal({ raiz: ev.raiz, nome: ev.nome } as Alvo)
-            else if (ev.acao === 'fechar_nota') { setModal(null); setVoltar(null) }
-            else if (ev.acao === 'foco') window.dispatchEvent(new Event('modo-foco'))
-          }}
-          trecho={trecho} limparTrecho={() => setTrecho(null)} pedido={pedido} onFim={() => setVersao((v) => v + 1)} />
+        <Pedido ouvindo={ouvindo} />
       </main>
 
       {novo && <NovoRapido tipo={novo} canvasAtual={canvasSlug} comSeletor={pagina !== 'Canvas' || !canvasSlug} onFechar={() => setNovo(null)}
@@ -275,8 +247,8 @@ export default function App() {
       {paletaCanvas && <PaletaCanvas atual={canvasSlug} onFechar={() => setPaletaCanvas(false)}
         onIr={(slug) => { setModal(null); usarCanvas(slug); setCanvasSlug(slug); setPagina('Canvas') }} />}
       {paleta && <Paleta onFechar={() => setPaleta(false)}
-        onAbrir={(raiz, nome) => { setPaleta(false); abrirNoCanvasDela(raiz, nome) }}
-        onImportar={canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card
+        onAbrir={(raiz, nome) => { setPaleta(false); if (pagina === 'Redação') abrirNaRedacao({ raiz, nome } as Alvo, false); else abrirNoCanvasDela(raiz, nome) }}
+        onImportar={pagina === 'Redação' ? (raiz, nome) => { setPaleta(false); abrirNaRedacao({ raiz, nome } as Alvo, true) } : canvasSlug ? (raiz, nome) => {   // ⌘↵: traz a nota para o canvas aberto, enquadra e seleciona o card
           setPaleta(false)
           fetch('/api/canvas/importar', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify({ nome }) })
             .then((r) => r.json()).then((d) => {

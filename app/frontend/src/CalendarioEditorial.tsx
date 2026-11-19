@@ -22,7 +22,7 @@ function matiz(t: string) {
   return h % 360
 }
 
-export function CalendarioEditorial({ onAbrir }: { onAbrir: (raiz: Raiz, nome: string) => void }) {
+export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz, nome: string) => void; onMudou?: () => void }) {
   const [mes, setMes] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [itens, setItens] = useState<ItemAgenda[]>([])
   const [blocos, setBlocos] = useState<Bloco[]>([])
@@ -56,6 +56,7 @@ export function CalendarioEditorial({ onAbrir }: { onAbrir: (raiz: Raiz, nome: s
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, de }),   // de: qual das datas da nota foi arrastada (as outras ficam)
     })
     carregar()
+    onMudou?.()
   }
 
   async function salvarBloco(texto: string) {

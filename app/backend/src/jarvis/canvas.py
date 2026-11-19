@@ -371,6 +371,7 @@ def salvar_desenho(d: dict, slug: str | None = None):
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 IMG = re.compile(r"!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]|!\[[^\]]*\]\((https?://[^)\s]+)\)")
 EXT_IMG = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif")
+EXT_VIDEO = (".mp4", ".mov", ".webm", ".m4v")
 
 
 def _midia(texto: str) -> dict:
@@ -382,10 +383,16 @@ def _midia(texto: str) -> dict:
         if m.group(2) or m.group(1).lower().endswith(EXT_IMG):
             img = alvo
             break
+    video = None   # vídeo colado na nota (`![[gravação.mp4]]` ou `![](…mp4)`)
+    for m in IMG.finditer(corpo):
+        alvo = m.group(2) or m.group(1).strip()
+        if alvo.lower().split("?")[0].endswith(EXT_VIDEO):
+            video = m.group(2) or f"/api/anexo/{alvo}"
+            break
     links = list(dict.fromkeys(u.rstrip(".,;") for u in URL.findall(IMG.sub("", corpo))))[:6]
     resto = re.sub(r"^#.*$", "", IMG.sub("", URL.sub("", corpo)), flags=re.M)
     copia = len(re.sub(r"[\s\-*>#=_|`]+", " ", resto).strip()) >= 80
-    return {"links": links, "imagem": img, "copia": copia}
+    return {"links": links, "imagem": img, "video": video, "copia": copia}
 
 
 def _todas() -> dict:
@@ -399,14 +406,14 @@ def _todas() -> dict:
         m = _midia(t)
         if not m["imagem"] and _valor(fm, "thumb"):
             m["imagem"] = _valor(fm, "thumb")
-        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "categoria": _valor(fm, "categoria") or None, "material": _tem_material(t), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
+        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "codigo": _valor(fm, "codigo"), "categoria": _valor(fm, "categoria") or None, "material": _tem_material(t), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
                        "mtime": p.stat().st_mtime})
     for nome, p in notas._arquivos("entradas"):
         t = _ler(p)
         fm = _fm(t)
         entradas.append({"nome": nome, "url": _valor(fm, "url") or "", "tipo": _valor(fm, "tipo") or "link",
                          "thumb": _valor(fm, "thumb") or "", "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"),
-                         "previa": notas._previa(t), "mtime": p.stat().st_mtime})
+                         "previa": notas._previa(t), "codigo": _valor(fm, "codigo"), "mtime": p.stat().st_mtime})
     for raiz in notas.PASTAS:
         for nome, p in notas._arquivos(raiz):
             inteiro = _ler(p, None)
@@ -421,7 +428,8 @@ def _todas() -> dict:
                               "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "origem": _alvo(_valor(fm, "origem")), "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"),
                               "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
                               "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"),
-                              "categoria": _valor(fm, "categoria") or None, **_midia(t)})
+                              "categoria": _valor(fm, "categoria") or None, "codigo": _valor(fm, "codigo"),
+                              **{**_midia(t), **({"imagem": _valor(fm, "thumb")} if _valor(fm, "thumb") and not _midia(t)["imagem"] else {})}})
     # `grupo:` pode ter vários canvas (a nota vive em todos). `canvases` = os válidos; `canvas` = o primeiro (ou None)
     nomes = {c["nome"] for c in lista_canvases() if c["slug"] != "inbox"}
     validos = lambda gs: [g for g in dict.fromkeys(gs) if g in nomes]
@@ -808,20 +816,6 @@ def transformar_em_copy(ideia: str, formato: str) -> dict:
     return {"nome": novo.stem, "raiz": "priorizar"}
 
 
-@_travado
-def posicionar_perto(card: str, perto_de: str):
-    """Para o agente: põe o card ao lado de outro (ids `i:`, `e:` ou `p:raiz/nome`, ou só o nome da nota)."""
-    d = _layout()
-    achar = lambda n: n if n in d["pos"] else next((k for k in d["pos"] if k.split(":", 1)[-1].split("/")[-1] == n), None)
-    alvo = achar(perto_de)
-    if not alvo:
-        raise ValueError(f"{perto_de} ainda não tem posição no canvas")
-    base = d["pos"][alvo]
-    chave = achar(card) or (card if ":" in card else f"i:{card}" if card.startswith("💡") else f"e:{card}")
-    d["pos"][chave] = {"x": base["x"] + 320, "y": base["y"]}
-    _gravar_layout(d)
-
-
 def _id(raiz: str, nome: str) -> str:
     return {"ideias": f"i:{nome}", "entradas": f"e:{nome}"}.get(raiz, f"p:{raiz}/{nome}")
 
@@ -922,7 +916,7 @@ def _trocar_grupo(antigo: str, novo: str | None) -> int:
     return n
 
 
-# ---------- para o agente do chat: as mesmas ações do app, pelo nome da nota ----------
+# ---------- as mesmas ações do app, pelo nome da nota (as rotas e o Claude Code usam) ----------
 
 def achar(nome: str) -> tuple[str, str]:
     """Raiz de uma nota pelo nome (sem .md). Procura em Priorizar, Publicados, Ideias e Entradas, nessa ordem."""
@@ -1053,34 +1047,6 @@ def canvas_da_nota(nomes: list[str], destino: str, sim: bool) -> dict:
     return {"cards": cards, "canvas": c["nome"], "notas": mudou}
 
 
-def listar_canvas() -> list[dict]:
-    """Os canvas (nome, quantas notas vivem em cada um) e os produtos (nome e tags), para o agente."""
-    return [{"canvas": c["nome"], "slug": c["slug"], **{k: v for k, v in r.items() if k in ("ideias", "producoes", "vsls")}}
-            for c, r in ((c, next(x for x in resumos() if x["slug"] == c["slug"])) for c in lista_canvases())]
-
-
-# ---------- imagens coladas no chat ----------
-
-TIPOS_IMAGEM = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
-
-
-def salvar_imagem(dados: bytes, tipo: str) -> dict:
-    """Imagem colada no chat vai para os anexos do vault, com o nome que o Obsidian daria (`Pasted image <data>.png`):
-    o agente lê o arquivo e a imagem fica no vault para usar numa nota com `![[...]]`."""
-    ext = TIPOS_IMAGEM.get(tipo)
-    if not ext:
-        raise ValueError("formato de imagem não suportado (png, jpg, webp ou gif)")
-    if len(dados) > 15 * 1024 * 1024:
-        raise ValueError("imagem maior que 15 MB")
-    ANEXOS.mkdir(parents=True, exist_ok=True)
-    base = f"Pasted image {datetime.now():%Y%m%d%H%M%S}"
-    p, n = ANEXOS / f"{base}.{ext}", 1
-    while p.exists():
-        p, n = ANEXOS / f"{base} {n}.{ext}", n + 1
-    p.write_bytes(dados)
-    return {"nome": p.name, "caminho": str(p.relative_to(notas.VAULT))}
-
-
 def resumos() -> list[dict]:
     """Contagens de cada canvas (e de cada produto dentro dele) lendo as notas uma vez só."""
     tudo = _todas()
@@ -1161,3 +1127,29 @@ def definir_categoria(nomes: list[str], categoria: str | None) -> int:
         notas._escrever(p, _definir(t, "categoria", cat))
         n += 1
     return n
+
+
+@_travado
+def renomear_categoria(de: str, para: str) -> int:
+    """Renomeia uma categoria do canvas aberto: o `categoria:` de cada copy dele com esse nome, e o lugar, a ordem e o
+    arquivamento do card da categoria no layout (`c:<nome>`). Devolve quantas copies mudaram."""
+    de, para = de.strip(), para.strip()
+    if not para or para == de:
+        return 0
+    info = canvas_info()
+    alvo = None if info["slug"] == "inbox" else info["nome"]
+    n = 0
+    for pr in _todas()["producoes"]:
+        if (alvo in pr["canvases"] if alvo else not pr["canvases"]) and pr.get("categoria") == de:
+            p = notas.TODAS[pr["raiz"]] / f"{pr['nome']}.md"
+            notas._escrever(p, _definir(_ler(p, None), "categoria", para))
+            n += 1
+    d = _layout()
+    velho, novo = f"c:{de}", f"c:{para}"
+    troca = lambda k: k.replace(velho, novo) if k == velho or k.endswith("|" + velho) else k
+    d["pos"] = {troca(k): v for k, v in d["pos"].items()}
+    d["ordem"] = {(novo if k == velho else k): [novo if x == velho else x for x in v] for k, v in d["ordem"].items()}
+    d["arquivados"] = [novo if x == velho else x for x in d["arquivados"]]
+    _gravar_layout(d)
+    return n
+

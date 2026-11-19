@@ -6,7 +6,7 @@ import type { Alvo } from './canvasApi'
 import type { Trecho } from './notas'
 
 /** Editor de skills: as pastas de `3 Skills` à esquerda (cada skill com os arquivos de apoio dela), o texto no meio
- *  e o Jarvis à direita (o chat de sempre). O editor é o mesmo da nota: salva sozinho, ⌘I manda o trecho ao Jarvis. */
+ *  O editor é o mesmo da nota: salva sozinho, ⌘I manda o trecho ao Claude Code. */
 type Skill = { nome: string; descricao: string; categoria: string; mtime: number; arquivos: string[] }
 /** Ordem das categorias na lista (as outras vêm depois, em ordem alfabética). */
 const ORDEM_CAT = ['Copywriting', 'Pesquisa', 'Operações']

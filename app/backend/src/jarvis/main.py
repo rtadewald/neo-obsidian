@@ -1,4 +1,4 @@
-"""API do Jarvis. Dev: `uv run jarvis` (porta 8740). O front (Vite) faz proxy de /api para cá."""
+"""API do Neo-Obsidian. Dev: `uv run jarvis` (porta 8740). O front (Vite) faz proxy de /api para cá."""
 import asyncio
 import time
 import json
@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agente, anuncios, auth, canvas, db, metricool, notas, planejamento, preferencias, radar, videos_x
+from . import anuncios, instagram_canais, auth, canvas, db, metricool, notas, planejamento, porta, preferencias, radar, videos_x
 from .config import FRONT_DIST
 
 MODO_AUTH = auth.preparar()
@@ -141,40 +141,152 @@ def estado():
             "ultima": db.ultima_coleta(), "proxima": _proxima or _quando_proxima()}
 
 
-class Mensagem(BaseModel):
-    conversa: str = "radar"
-    texto: str
-    sinal: int | None = None
-    canvas: str = ""      # slug do canvas aberto: o padrão das ferramentas do Jarvis
-    onde: str = ""        # onde o Rodrigo está no app (tela, canvas, filtros, nota aberta): vai para o contexto do agente
-    nota: dict | None = None   # {raiz, nome}: a nota aberta no modal; vira uma linha no começo da mensagem
+# ---------- Instagram: canais monitorados e os Reels deles (ver instagram_canais.py) ----------
+
+class NovoCanalIG(BaseModel):
+    perfis: str   # um ou vários (@, link ou nome), separados por espaço, vírgula ou linha
 
 
-@app.post("/api/chat")
-async def chat(m: Mensagem):
-    async def eventos():
-        async for ev in agente.conversar(m.conversa, m.texto, m.sinal, m.onde, m.canvas, m.nota):
+@app.get("/api/ig/canais")
+def ig_canais():
+    return instagram_canais.canais()
+
+
+@app.post("/api/ig/canais")
+def ig_canal_novo(corpo: NovoCanalIG):
+    try:
+        return {"novos": instagram_canais.adicionar(corpo.perfis)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/ig/canais/{handle}")
+def ig_canal_apagar(handle: str):
+    instagram_canais.remover(handle)
+    return {"ok": True}
+
+
+@app.get("/api/ig/videos")
+def ig_videos():
+    """Os Reels coletados, com outlier (views ÷ mediana do canal), views e engajamento."""
+    return instagram_canais.videos()
+
+
+class AtualizarIG(BaseModel):
+    so: list[str] | None = None
+
+
+_ig_tarefa: asyncio.Task | None = None
+
+
+@app.post("/api/ig/atualizar")
+async def ig_atualizar(corpo: AtualizarIG | None = None):
+    """Dispara a coleta em segundo plano (o agente abre o Instagram no Chrome logado)."""
+    global _ig_tarefa
+    if instagram_canais.estado["rodando"]:
+        return {"status": "já rodando"}
+
+    async def rodar():
+        try:
+            await instagram_canais.atualizar(corpo.so if corpo else None)
+        except Exception:  # noqa: BLE001 — o erro fica em estado["erro"]
+            pass
+    _ig_tarefa = asyncio.create_task(rodar())
+    return {"status": "iniciado"}
+
+
+@app.get("/api/ig/estado")
+def ig_estado():
+    return instagram_canais.estado
+
+
+@app.get("/api/ig/arquivo/{tipo}/{nome}")
+def ig_arquivo(tipo: str, nome: str):
+    p = instagram_canais.arquivo(tipo, nome)
+    if not p:
+        raise HTTPException(404, "arquivo não encontrado")
+    return FileResponse(p)
+
+
+# ---------- a porta para o Claude Code (ver porta.py) ----------
+
+@app.get("/api/eventos")
+async def eventos():
+    """SSE para o app: `mudou` (uma nota mudou no vault), `tela` (o Claude mexe na tela) e `porta` (se ele ouve)."""
+    async def corpo():
+        async for ev in porta.assinar():
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-    return StreamingResponse(eventos(), media_type="text/event-stream",
+    return StreamingResponse(corpo(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.get("/api/chat/{conversa}")
-def historico(conversa: str):
-    return db.mensagens(conversa)
+class Tela(BaseModel):
+    acao: str                  # pagina | abrir_canvas | mostrar | abrir_nota | fechar_nota | foco
+    pagina: str | None = None
+    canvas: str | None = None  # slug
+    raiz: str | None = None
+    nome: str | None = None
+    codigo: str | None = None  # no lugar de raiz + nome
 
 
-@app.get("/api/chats")
-def chats():
-    """As conversas do Jarvis (mais recente primeiro): id, titulo, n de mensagens, atualizado_em."""
-    return db.lista_conversas()
+@app.post("/api/tela")
+def tela(t: Tela):
+    """O Claude Code mexe na tela do Rodrigo, como ele faria com o mouse."""
+    ev = {"t": "tela", **t.model_dump(exclude_none=True)}
+    if t.codigo:
+        n = porta.achar_codigo(t.codigo)
+        if not n:
+            raise HTTPException(404, f"nenhuma nota com o código {t.codigo}")
+        ev |= {"raiz": n["raiz"], "nome": n["nome"]}
+    porta.publicar(ev)
+    return {"ok": True, "app_aberto": bool(porta._filas)}
 
 
-@app.delete("/api/chats/{conversa}")
-def chats_apagar(conversa: str):
-    """Apaga uma conversa do Jarvis (as mensagens e a sessão)."""
-    db.apagar_conversa(conversa)
+@app.get("/api/onde")
+def onde_ler():
+    """Onde o Rodrigo está no app agora: tela, canvas, vista, filtros, cards selecionados (com código), nota aberta."""
+    return porta.onde
+
+
+@app.post("/api/onde")
+def onde_gravar(corpo: dict):
+    porta.onde.clear()
+    porta.onde.update(corpo)
     return {"ok": True}
+
+
+@app.get("/api/codigo/{cod}")
+def codigo(cod: str):
+    """A nota de um código (NEO-042): raiz, nome, caminho no vault e o texto."""
+    if cod.upper().startswith("RAD-"):   # sinal do radar
+        s = db.sinal(int(cod[4:])) if cod[4:].isdigit() else None
+        if not s:
+            raise HTTPException(404, f"nenhum sinal com o código {cod}")
+        return {"codigo": cod.upper(), "sinal": s}
+    n = porta.achar_codigo(cod)
+    if not n:
+        raise HTTPException(404, f"nenhuma nota com o código {cod}")
+    return n
+
+
+class Pedido(BaseModel):
+    texto: str = ""
+    codigos: list[str] = []      # notas (NEO-042) ou sinais do radar (RAD-123) de que o pedido fala
+    trecho: dict | None = None   # {codigo, linhaIni, linhaFim, texto}: o trecho selecionado no editor
+    onde: dict | None = None
+
+
+@app.post("/api/fila")
+def fila(p: Pedido):
+    """Pedido do Rodrigo, feito no app, para o Claude Code (que escuta `dados/fila.jsonl`)."""
+    linha = porta.enfileirar({"texto": p.texto, "codigos": p.codigos, "trecho": p.trecho, "onde": p.onde or porta.onde})
+    return {"ok": True, "ouvindo": porta.ouvinte_vivo(), "ts": linha["ts"]}
+
+
+@app.on_event("startup")
+async def _ligar_porta():
+    await asyncio.to_thread(porta.garantir_codigos, None, True)
+    asyncio.create_task(porta.vigiar_vault())
 
 
 @app.get("/api/metricool/estado")
@@ -449,20 +561,6 @@ def canvas_estado():
     return canvas.estado()
 
 
-class ImagemColada(BaseModel):
-    dados: str          # base64 (sem o prefixo data:)
-    tipo: str           # image/png, image/jpeg…
-
-
-@app.post("/api/chat/imagem")
-def chat_imagem(corpo: ImagemColada):
-    import base64
-    try:
-        return canvas.salvar_imagem(base64.b64decode(corpo.dados), corpo.tipo)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-
 @app.get("/api/anexo/{nome:path}")
 def anexo(nome: str):
     p = canvas.anexo(nome)
@@ -624,6 +722,17 @@ class NovaIdeia(BaseModel):
 class Categoria(BaseModel):
     nomes: list[str]
     categoria: str | None = None
+
+
+class RenomearCategoria(BaseModel):
+    de: str
+    para: str
+
+
+@app.post("/api/canvas/categoria/renomear")
+def canvas_categoria_renomear(corpo: RenomearCategoria):
+    """Mapa mental: renomeia a categoria nas copies do canvas aberto (e o card dela no layout)."""
+    return _erros(lambda: {"mudadas": canvas.renomear_categoria(corpo.de, corpo.para)})
 
 
 @app.post("/api/canvas/categoria")

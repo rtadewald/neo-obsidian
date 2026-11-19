@@ -1,8 +1,8 @@
-import { useCallback, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { Fragment, useCallback, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
 import { alternarPin, idDoCard, pinavel, usePins } from './pins'
-import { chaveProd, ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
+import { chaveProd, ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd, porFormato as ordemFormato } from './canvasApi'
 
 /** Modal de tabela das pastas (Priorizar, Em edição, Agendado, Publicado): as copies em linhas, com números,
  *  filtros e ordenação. Clicar numa linha abre a copy no modal de nota, que tem "voltar" para cá. */
@@ -19,6 +19,17 @@ export const tabelaNova = (pasta: Pasta): EstadoTabela => ({
   ordem: { col: pasta === 'edicao' ? 'mtime' : 'data', asc: pasta === 'agendado' },   // winners: mais recentes primeiro
 })
 
+/** A tabela guarda o estado de quando saiu (por pasta): filtros, busca, ordem, grupos abertos e a rolagem. */
+const CHAVE = 'tabela-estado'
+type Guardado = { t: EstadoTabela; cats: string[]; ideias: string[]; rolagem: number }
+const guardadas: Record<string, Guardado> = (() => { try { return JSON.parse(localStorage.getItem(CHAVE) || '{}') } catch { return {} } })()
+const guardar = (pasta: string, g: Partial<Guardado>) => {
+  guardadas[pasta] = { ...(guardadas[pasta] ?? { t: tabelaNova(pasta as Pasta), cats: [], ideias: [], rolagem: 0 }), ...g }
+  try { localStorage.setItem(CHAVE, JSON.stringify(guardadas)) } catch { /* sem storage */ }
+}
+/** Abre a pasta como ela estava quando o Rodrigo saiu (ou nova, na primeira vez). */
+export const tabelaSalva = (pasta: Pasta): EstadoTabela => guardadas[pasta]?.t ?? tabelaNova(pasta)
+
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 const dia = (p: Producao) => (p.scheduled ?? '').slice(0, 10) || new Date((p.criado ?? p.mtime) * 1000).toISOString().slice(0, 10)
 const dataBr = (d: string) => `${d.slice(8, 10)} ${MESES[Number(d.slice(5, 7)) - 1]} ${d.slice(2, 4)}`
@@ -30,12 +41,16 @@ const INBOX_NOME = '📥 Inbox'
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data', tags: 'Tags', grupo: 'Canvas', palavras: 'Palavras', mtime: 'Editada' }
 
-export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear, onTags, canvasNome, pinados = [], icones = {} }: {
+export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onApagar, onStatus, onRenomear, onTags, canvasNome, pinados = [], icones = {}, embutido, aberta, extra, onData }: {
+  embutido?: boolean   // na página Redação: sem véu, sem fechar, ocupa o lugar dela
+  aberta?: Alvo | null   // a nota aberta ao lado (linha destacada)
+  extra?: React.ReactNode   // botões a mais no topo (o calendário da Redação)
+  onData?: (alvo: Alvo, data: string) => Promise<void>   // Redação: a data da copy editada na célula
   icones?: Record<string, string>   // nome do canvas → emoji dele (o indicativo do canvas nas linhas)
   canvasNome?: string   // o canvas aberto: a aba Ideias mostra só as dele
   pinados?: string[]    // ids dos cards pinados (i:/g:/e:/p:), de todos os canvas
   est: EstadoCanvas; t: EstadoTabela; onMudar: (t: EstadoTabela) => void; onFechar: () => void
-  onAbrir: (a: Alvo) => void; onCanvas: (pasta: StatusProd, ano: string) => void
+  onAbrir: (a: Alvo, opts?: { nova?: boolean }) => void; onCanvas: (pasta: StatusProd, ano: string) => void
   onApagar?: (alvos: Alvo[]) => Promise<void>   // seleção múltipla → lixeira do vault
   onStatus?: (alvos: Alvo[], status: StatusProd) => Promise<void>
   onRenomear?: (alvo: Alvo, novo: string) => Promise<void>
@@ -74,10 +89,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const chaveDe = (p: { raiz: string; nome: string }) => `${p.raiz}/${p.nome}`
   const alternar = (k: string) => setSel((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
   useEffect(() => {
+    if (embutido) return
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onFechar() } }
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
-  }, [onFechar])
+  }, [onFechar, embutido])
 
   // as 💡 ideias do canvas aberto viram linhas como as das copies (formato 💡, "produção" = quantas versões têm)
   const linhaIdeia = useCallback((i: EstadoCanvas['ideias'][number]): Producao => {
@@ -87,7 +103,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   }, [est])
   // Criação: as copies do canvas aberto (cada uma numa categoria; as versões da mesma `ideia:` juntas num card 🎬)
   const ideiasDoCanvas = useMemo(() => est.producoes
-    .filter((p) => !canvasNome || (p.canvases ?? (p.canvas ? [p.canvas] : [])).includes(canvasNome)), [est, canvasNome])
+    .filter((p) => { const cs = p.canvases ?? (p.canvas ? [p.canvas] : []); return embutido ? cs.length > 0 : !canvasNome || cs.includes(canvasNome) }), [est, canvasNome, embutido])   // na Redação: as de todos os canvas
   // os pinados viram linhas: a 💡 ideia, cada copy de uma produção 🎬 e as copies soltas (entradas ficam de fora)
   const linhasPinadas = useMemo(() => {
     const vistos = new Set<string>(), out: Producao[] = []
@@ -120,8 +136,20 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   }, [base, t.formatos, t.mes, t.ordem, t.pasta])
 
   // aba Criação: categoria › ideia › copy, em grupos que abrem e fecham (tudo começa fechado)
-  const [catAbertas, setCatAbertas] = useState<Set<string>>(() => new Set())
-  const [ideiasAbertas, setIdeiasAbertas] = useState<Set<string>>(() => new Set())
+  const [catAbertas, setCatAbertas] = useState<Set<string>>(() => new Set(guardadas[t.pasta]?.cats ?? []))
+  const [ideiasAbertas, setIdeiasAbertas] = useState<Set<string>>(() => new Set(guardadas[t.pasta]?.ideias ?? []))
+  useEffect(() => { guardar(t.pasta, { t }) }, [t])
+  const pastaAntes = useRef(t.pasta)
+  useEffect(() => { if (pastaAntes.current === t.pasta) guardar(t.pasta, { cats: [...catAbertas], ideias: [...ideiasAbertas] }) }, [catAbertas, ideiasAbertas, t.pasta])
+  // a rolagem: volta para onde estava (ao abrir e ao trocar de aba) e guarda enquanto rola
+  const rolo = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { const r = rolo.current; if (r) r.scrollTop = guardadas[t.pasta]?.rolagem ?? 0 }, [t.pasta])
+  // trocar de aba dentro da tabela: os grupos abertos são os daquela pasta
+  useEffect(() => {
+    if (pastaAntes.current === t.pasta) return
+    pastaAntes.current = t.pasta
+    setCatAbertas(new Set(guardadas[t.pasta]?.cats ?? [])); setIdeiasAbertas(new Set(guardadas[t.pasta]?.ideias ?? []))
+  }, [t.pasta])
   const trocar = (set: (f: (s: Set<string>) => Set<string>) => void, k: string) => set((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
   // a categoria de uma copy: a dela, ou a de uma irmã da mesma `ideia:`
   const catDe = useCallback((p: Producao) => p.categoria || est.producoes.find((x) => p.ideia && x.ideia === p.ideia && x.categoria)?.categoria || 'Sem categoria', [est])
@@ -148,23 +176,6 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
     for (const p of base.filter((p) => !t.mes || dia(p).startsWith(t.mes))) c[p.formato || '📄'] = (c[p.formato || '📄'] ?? 0) + 1
     return Object.entries(c).sort((a, b) => b[1] - a[1])
   }, [base, t.mes])
-  // barras por mês: do ano escolhido, ou os últimos 12 meses com copy
-  const meses = useMemo(() => {
-    const c: Record<string, number> = {}
-    for (const p of base.filter((p) => !t.formatos.length || t.formatos.includes(p.formato))) c[dia(p).slice(0, 7)] = (c[dia(p).slice(0, 7)] ?? 0) + 1
-    const ks = t.ano ? Array.from({ length: 12 }, (_, i) => `${t.ano}-${String(i + 1).padStart(2, '0')}`) : Object.keys(c).sort().slice(-12)
-    return ks.map((k) => [k, c[k] ?? 0] as const)
-  }, [base, t.formatos, t.ano])
-  const maxMes = Math.max(1, ...meses.map((m) => m[1]))
-  const palavras = linhas.map((p) => p.palavras ?? 0).filter((n) => n > 0)
-  const media = palavras.length ? Math.round(palavras.reduce((a, b) => a + b, 0) / palavras.length) : 0
-  const hoje = new Date().toISOString().slice(0, 10)
-  const em7 = new Date(Date.now() + 7 * 86400e3).toISOString().slice(0, 10)
-  const destaque = t.pasta === 'agendado'
-    ? { n: linhas.filter((p) => p.scheduled && p.scheduled.slice(0, 10) >= hoje && p.scheduled.slice(0, 10) <= em7).length, r: 'nos próximos 7 dias' }
-    : t.pasta === 'publicado' || t.pasta === 'winner' ? { n: linhas.filter((p) => dia(p) >= new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10)).length, r: 'nos últimos 30 dias' }
-    : { n: linhas.filter((p) => Date.now() / 1000 - p.mtime > 14 * 86400).length, r: 'paradas há +14 dias' }
-
   const ordenar = (col: Coluna) => mudar({ ordem: { col, asc: t.ordem.col === col ? !t.ordem.asc : col === 'nome' || col === 'tags' || col === 'grupo' } })
   const alternarFormato = (f: string) => mudar({ formatos: t.formatos.includes(f) ? t.formatos.filter((x) => x !== f) : [...t.formatos, f] })
   const filtrando = t.busca || t.formatos.length || t.ano || t.mes || t.grupo
@@ -172,34 +183,45 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const alvo = document.querySelector('section.pagina')
   type Galho = { nivel: number; n?: number; aberta?: boolean; alternar?: () => void }
   /** A linha do card 🎬: as versões da mesma `ideia:` (clicar abre e fecha; as versões vêm embaixo). */
-  const linhaProducao = (i: { chave: string; nome: string; copias: Producao[] }, abre: boolean) => (
-    <tr key={i.chave} className="tabela-grupo tabela-nivel-1 is-prod" onClick={() => trocar(setIdeiasAbertas, i.chave)}>
+  // card 🎬: clicar abre a primeira versão (pela ordem dos formatos); as outras ficam nas abas do modal
+  const linhaProducao = (i: { chave: string; nome: string; copias: Producao[] }) => { const p1 = [...i.copias].sort(ordemFormato)[0]; return (
+    <tr key={i.chave} className="tabela-grupo tabela-nivel-1 is-prod" onClick={(e) => onAbrir({ raiz: p1.raiz, nome: p1.nome }, { nova: e.metaKey || e.ctrlKey })} title={`Abrir ${p1.nome} (as outras versões ficam nas abas)`}>
       {onApagar && <td className="col-sel" />}
-      <td className="col-formato">🎬</td>
+      <td className="col-formato" />
       <td className="col-nome"><div className="tabela-galho">
-        <span className={`tabela-seta-grupo ${abre ? 'is-aberta' : ''}`}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-        <div><b>{semEmoji(i.nome)}<em className="tabela-n">{i.copias.length}</em></b><span>{i.copias.map((c) => c.formato || '📄').join(' ')}</span></div></div></td>
+        <i className={`ponto is-${p1.status}`} title={STATUS.find((x) => x.k === p1.status)?.nome} />
+        <div><b><span className="tabela-ic">🎬</span>{semEmoji(i.nome)}<em className="tabela-n">{i.copias.length}</em></b></div></div></td>
+      <td className="col-versoes">{[...i.copias].sort(ordemFormato).map((c) => <span key={c.nome} title={c.nome}><i className={`ponto is-${c.status}`} />{c.formato || '📄'}</span>)}</td>
+      {embutido && <td className="col-status"><Status p={p1} /></td>}
       <td className="col-data"><span className="mudo">{dataBr(dia(i.copias[0]))}</span></td>
-      <td />
+      <td className="col-tags" />
       <td className="col-grupo">{chipCanvas(i.copias[0].canvas)}</td>
       <td className="col-palavras">{i.copias.reduce((n, c) => n + (c.palavras ?? 0), 0) || <span className="mudo">0</span>}</td>
       <td className="col-mtime">{relativo(Math.max(...i.copias.map((c) => c.mtime)))}</td>
     </tr>
-  )
+  ) }
   const linha = (p: Producao, g?: Galho) => (
-                <tr key={`${p.raiz}/${p.nome}`} onClick={() => onAbrir({ raiz: p.raiz, nome: p.nome })} tabIndex={0} className={`${sel.has(chaveDe(p)) ? 'is-sel' : ''} ${g?.nivel ? `tabela-nivel-${g.nivel}` : ''}`}
+                <tr key={`${p.raiz}/${p.nome}`} onClick={(e) => onAbrir({ raiz: p.raiz, nome: p.nome }, { nova: e.metaKey || e.ctrlKey })} tabIndex={0} className={`${sel.has(chaveDe(p)) ? 'is-sel' : ''} ${g?.nivel ? `tabela-nivel-${g.nivel}` : ''} ${aberta && aberta.raiz === p.raiz && aberta.nome === p.nome ? 'is-aberta' : ''}`}
+                  draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', `${p.raiz}\u0000${p.nome}`); e.dataTransfer.effectAllowed = 'move' }}
                   onContextMenu={(e) => { e.preventDefault(); setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 280), p: { raiz: p.raiz, nome: p.nome } }) }}
                   onKeyDown={(e) => e.key === 'Enter' && onAbrir({ raiz: p.raiz, nome: p.nome })}>
                   {onApagar && <td className="col-sel" onClick={(e) => { e.stopPropagation(); alternar(chaveDe(p)) }}>
                     <input type="checkbox" aria-label={`Marcar ${p.nome}`} checked={sel.has(chaveDe(p))} onChange={() => {}} /></td>}
-                  <td className="col-formato">{p.formato || '📄'}</td>
+                  <td className="col-formato">{!g?.nivel && (p.formato || '📄')}</td>
                   <td className="col-nome">{g?.nivel ? <div className="tabela-galho">
                     {g.nivel === 1 && g.n ? (g.n ? <button className={`tabela-seta-grupo ${g.aberta ? 'is-aberta' : ''}`} aria-label={g.aberta ? 'Fechar as copies' : `Mostrar ${g.n} copies`} onClick={(e) => { e.stopPropagation(); g.alternar?.() }}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button> : <span className="tabela-seta-grupo is-vazia" />)
                       : <i className={`ponto is-${p.status}`} title={STATUS.find((x) => x.k === p.status)?.nome} />}
-                    <div><b>{semEmoji(p.nome)}{g.nivel === 1 && g.n ? <em className="tabela-n">{g.n}</em> : null}</b>{p.previa && <span>{p.previa}</span>}</div></div>
+                    <div><b><span className="tabela-ic">{p.formato || '📄'}</span>{semEmoji(p.nome)}{g.nivel === 1 && g.n ? <em className="tabela-n">{g.n}</em> : null}</b>{p.previa && <span>{p.previa}</span>}</div></div>
                     : <><b>{semEmoji(p.nome)}</b>{p.previa && <span>{p.previa}</span>}</>}</td>
-                  <td className="col-data">{(p.datas?.length ?? 0) > 1 ? <span title={`Postada ${p.datas!.length} vezes`}>{p.datas!.map(dataBr).join(' · ')}</span>
-                    : p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : t.pasta === 'winner' ? <span className="mudo" title="Sem data de postagem (scheduled vazio)">sem data</span> : <span className="mudo">{dataBr(dia(p))}</span>}</td>
+                  {t.pasta === 'ideias' && <td className="col-versoes" />}
+                  {embutido && <td className="col-status" onClick={(e) => e.stopPropagation()}>
+                    {onStatus ? <select className={`tabela-status-sel is-${p.status}`} value={p.status} onChange={(e) => onStatus([{ raiz: p.raiz, nome: p.nome }], e.target.value as StatusProd)}>
+                      {STATUS.map((x) => <option key={x.k} value={x.k}>{x.nome}</option>)}</select> : <Status p={p} />}</td>}
+                  {embutido && onData ? <td className="col-data" onClick={(e) => e.stopPropagation()}>
+                    <input type="date" className="tabela-data-in" value={(p.scheduled ?? '').slice(0, 10)} title="Mudar a data (scheduled)"
+                      onChange={(e) => { if (/^2\d{3}-/.test(e.target.value)) onData({ raiz: p.raiz, nome: p.nome }, e.target.value) }} /></td>
+                  : <td className="col-data">{(p.datas?.length ?? 0) > 1 ? <span title={`Postada ${p.datas!.length} vezes`}>{p.datas!.map(dataBr).join(' · ')}</span>
+                    : p.scheduled ? dataBr(p.scheduled.slice(0, 10)) : t.pasta === 'winner' ? <span className="mudo" title="Sem data de postagem (scheduled vazio)">sem data</span> : <span className="mudo">{dataBr(dia(p))}</span>}</td>}
                   <td className="col-tags" onClick={onTags ? (e) => e.stopPropagation() : undefined}>
                     <CelulaTags tags={p.tags ?? []} sugestoes={todasTags} onMudar={onTags && ((l) => onTags({ raiz: p.raiz, nome: p.nome }, l))} /></td>
                   <td className="col-grupo">{chipCanvas(p.canvas)}</td>
@@ -209,52 +231,36 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   )
 
   const corpo = (
-    <div className="modal-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
-      <div className="modal-nota modal-tabela glass glass--light" role="dialog" aria-label="Tabela de copies">
+    <div className={embutido ? 'tabela-embutida-fundo' : 'modal-fundo'} onMouseDown={(e) => !embutido && e.target === e.currentTarget && onFechar()}>
+      <div className={`modal-nota modal-tabela glass glass--light ${embutido ? 'tabela-embutida' : ''}`} role={embutido ? undefined : 'dialog'} aria-label="Tabela de copies">
         <header className="modal-tabs">
           <nav role="tablist">
-            {canvasNome && <button role="tab" aria-selected={t.pasta === 'ideias'} className={`modal-tab ${t.pasta === 'ideias' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('ideias'))}
+            {canvasNome && <button role="tab" aria-selected={t.pasta === 'ideias'} className={`modal-tab ${t.pasta === 'ideias' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaSalva('ideias'))}
               title={`Criação: as copies de ${canvasNome} por categoria`}>
               <span className="tabela-fogo">💡</span><span>Criação</span><em className="tabela-n">{ideiasDoCanvas.length}</em>
             </button>}
             {canvasNome && <span className="modal-tab-sep" aria-hidden="true" />}
             {STATUS.map((s) => (
-              <button key={s.k} role="tab" aria-selected={s.k === t.pasta} className={`modal-tab ${s.k === t.pasta ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova(s.k))}>
+              <button key={s.k} role="tab" aria-selected={s.k === t.pasta} className={`modal-tab ${s.k === t.pasta ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaSalva(s.k))}>
                 <i className={`ponto is-${s.k}`} /><span>{s.nome}</span><em className="tabela-n">{contagem(s.k)}</em>
               </button>
             ))}
-            <button role="tab" aria-selected={t.pasta === 'winner'} className={`modal-tab ${t.pasta === 'winner' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('winner'))}>
+            <button role="tab" aria-selected={t.pasta === 'winner'} className={`modal-tab ${t.pasta === 'winner' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaSalva('winner'))}>
               <span className="tabela-fogo">🔥</span><span>Winners</span><em className="tabela-n">{est.producoes.filter((p) => p.winner).length}</em>
             </button>
-            <button role="tab" aria-selected={t.pasta === 'pinados'} className={`modal-tab ${t.pasta === 'pinados' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('pinados'))} title="Os cards pinados, de todos os canvas">
+            <button role="tab" aria-selected={t.pasta === 'pinados'} className={`modal-tab ${t.pasta === 'pinados' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaSalva('pinados'))} title="Os cards pinados, de todos os canvas">
               <span className="tabela-fogo">📌</span><span>Pinados</span><em className="tabela-n">{linhasPinadas.length}</em>
             </button>
           </nav>
-          {t.pasta !== 'ideia' && t.pasta !== 'winner' && t.pasta !== 'ideias' && t.pasta !== 'pinados' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
-          <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>
+          {extra}
+          {!embutido && t.pasta !== 'ideia' && t.pasta !== 'winner' && t.pasta !== 'ideias' && t.pasta !== 'pinados' && <button className="tabela-canvas" onClick={() => onCanvas(t.pasta as StatusProd, t.ano)} title="Abrir estas copies no canvas"><Icone n="grafo" t={13} /> Ver no canvas</button>}
+          {!embutido && <button className="btn-icone" onClick={onFechar} aria-label="Fechar" title="Fechar (esc)"><Icone n="fechar" t={16} /></button>}
         </header>
-
-        <section className="tabela-numeros">
-          <div className="tabela-num"><b>{linhas.length}</b><span>{filtrando ? `de ${daPasta.length} copies` : 'copies'}</span></div>
-          <div className="tabela-num"><b>{destaque.n}</b><span>{destaque.r}</span></div>
-          <div className="tabela-num"><b>{media || '—'}</b><span>palavras em média</span></div>
-          <div className="tabela-meses" aria-label="Copies por mês">
-            {meses.map(([k, n]) => (
-              <button key={k} className={`tabela-mes ${t.mes === k ? 'is-on' : ''} ${t.mes && t.mes !== k ? 'is-apagado' : ''}`} onClick={() => mudar({ mes: t.mes === k ? '' : k })}
-                title={`${MESES[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}: ${n} ${n === 1 ? 'copy' : 'copies'}`}>
-                <i style={{ height: `${Math.max(n ? 8 : 2, (n / maxMes) * 100)}%` }} /><span>{MESES[Number(k.slice(5)) - 1].slice(0, 1)}</span>
-              </button>
-            ))}
-          </div>
-        </section>
 
         <section className="tabela-filtros">
           <label className="tabela-busca"><Icone n="busca" t={13} /><input value={t.busca} onChange={(e) => mudar({ busca: e.target.value })} placeholder="Buscar copy, produção ou texto" autoFocus /></label>
-          <div className="tabela-chips">
-            {porFormato.map(([f, n]) => (
-              <button key={f} className={`tabela-chip ${t.formatos.includes(f) ? 'is-on' : ''}`} onClick={() => alternarFormato(f)}>{f}<em>{n}</em></button>
-            ))}
-          </div>
+          <FiltroFormatos lista={porFormato} on={t.formatos} nomes={Object.fromEntries((est.formatos ?? []).map((f) => [f.emoji, f.nome]))}
+            onAlternar={alternarFormato} onLimpar={() => mudar({ formatos: [] })} />
           {anos.length > 1 && (
             <select className="tabela-select" value={t.ano} onChange={(e) => mudar({ ano: e.target.value, mes: '' })}>
               <option value="">Todos os anos</option>{anos.map((a) => <option key={a} value={a}>{a}</option>)}
@@ -267,11 +273,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
           )}
           {t.pasta === 'ideias' && categorias.length > 0 && (() => {
             // tudo aberto = nenhuma categoria fechada e toda ideia com copies aberta; o botão alterna entre os dois
-            const tudoAberto = categorias.every(([c, is]) => catAbertas.has(c) && is.every((i) => i.copias.length < 2 || ideiasAbertas.has(i.chave)))
+            const tudoAberto = categorias.every(([c]) => catAbertas.has(c))
             return <button className="tabela-select tabela-tudo" onClick={() => {
               if (tudoAberto) { setCatAbertas(new Set()); setIdeiasAbertas(new Set()) }
-              else { setCatAbertas(new Set(categorias.map(([c]) => c))); setIdeiasAbertas(new Set(categorias.flatMap(([, is]) => is.map((i) => i.chave)))) }
-            }} title={tudoAberto ? 'Fechar todas as categorias' : 'Abrir todas as categorias e as versões de cada produção'}>
+              else setCatAbertas(new Set(categorias.map(([c]) => c)))
+            }} title={tudoAberto ? 'Fechar todas as categorias' : 'Abrir todas as categorias'}>
               <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 {tudoAberto ? <path d="M3 2.5l3 3 3-3M3 9.5l3-3 3 3" /> : <path d="M3 5l3-3 3 3M3 7l3 3 3-3" />}</svg>
               {tudoAberto ? 'Recolher tudo' : 'Expandir tudo'}</button>
@@ -279,16 +285,16 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
           {filtrando ? <button className="tabela-limpar" onClick={() => mudar({ busca: '', formatos: [], ano: '', mes: '', grupo: '' })}>Limpar filtros</button> : null}
         </section>
 
-        <div className="tabela-rolo">
+        <div className="tabela-rolo" ref={rolo} onScroll={(e) => guardar(t.pasta, { rolagem: e.currentTarget.scrollTop })}>
           <table className="tabela">
             <thead>
               <tr>{onApagar && <th className="col-sel" onClick={(e) => e.stopPropagation()}>
                 <input type="checkbox" aria-label="Marcar todas as linhas" checked={linhas.length > 0 && linhas.every((p) => sel.has(chaveDe(p)))}
                   onChange={(e) => setSel(e.target.checked ? new Set(linhas.map(chaveDe)) : new Set())} /></th>}
                 {(Object.keys(ROTULO_COL) as Coluna[]).map((c) => (
-                <th key={c} className={`col-${c}`} onClick={() => ordenar(c)} aria-sort={t.ordem.col === c ? (t.ordem.asc ? 'ascending' : 'descending') : 'none'}>
+                <Fragment key={c}><th className={`col-${c}`} onClick={() => ordenar(c)} aria-sort={t.ordem.col === c ? (t.ordem.asc ? 'ascending' : 'descending') : 'none'}>
                   {ROTULO_COL[c]}{t.ordem.col === c && <span className="tabela-seta">{t.ordem.asc ? '↑' : '↓'}</span>}
-                </th>
+                </th>{c === 'nome' && t.pasta === 'ideias' && <th className="col-versoes">Versões</th>}{c === 'nome' && embutido && <th className="col-status">Status</th>}</Fragment>
               ))}</tr>
             </thead>
             <tbody>
@@ -301,14 +307,13 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
                     {onApagar && <td className="col-sel" />}
                     <td className="col-formato"><span className={`tabela-seta-grupo ${aberta ? 'is-aberta' : ''}`}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></span></td>
                     <td className="col-nome"><b>{cat}</b><span>{todas.length} {todas.length === 1 ? 'copy' : 'copies'}{todas.length !== ideias.length ? ` · ${ideias.filter((i) => i.copias.length > 1).length} produções 🎬` : ''}</span></td>
-                    <td /><td />
+                    {t.pasta === 'ideias' && <td className="col-versoes" />}{embutido && <td className="col-status" />}<td className="col-data" /><td className="col-tags" />
                     <td className="col-grupo"><div className="tabela-caixas">{canvases.map((c) => <span key={c}>{chipCanvas(c)}</span>)}</div></td>
-                    <td /><td />
+                    <td className="col-palavras" /><td className="col-mtime" />
                   </tr>,
                   ...(aberta ? ideias.flatMap((i) => {
                     if (i.copias.length === 1) return [linha(i.copias[0], { nivel: 1 })]
-                    const abre = ideiasAbertas.has(i.chave)
-                    return [linhaProducao(i, abre), ...(abre ? i.copias.map((c) => linha(c, { nivel: 2 })) : [])]
+                    return [linhaProducao(i)]
                   }) : []),
                 ]
               })}
@@ -368,7 +373,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
       </div>
     </div>
   )
-  return alvo ? createPortal(corpo, alvo) : corpo
+  return alvo && !embutido ? createPortal(corpo, alvo) : corpo
 }
 
 /** Célula da coluna Tags: mostra as tags; com clique vira um campo (Enter ou vírgula põe, × ou ⌫ no vazio tira, Esc fecha). */
@@ -456,3 +461,44 @@ function MenuTags({ alvos, sugestoes, onTags }: { alvos: Producao[]; sugestoes: 
     {opcoes.length > 0 && <div className="menu-tags-sug">{opcoes.map((x) => <button key={x} className="tabela-tag" onClick={() => por(x)}>{x}</button>)}</div>}
   </>
 }
+
+
+/** Os tipos de conteúdo (formatos) num dropdown só: o botão mostra os escolhidos; o menu tem uma caixinha por formato. */
+function FiltroFormatos({ lista, on, nomes, onAlternar, onLimpar }: {
+  lista: [string, number][]; on: string[]; nomes: Record<string, string>; onAlternar: (f: string) => void; onLimpar: () => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  const caixa = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!aberto) return
+    const fora = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as Node)) setAberto(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setAberto(false) } }
+    window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc, true)
+    return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc, true) }
+  }, [aberto])
+  const rotulo = on.length === 0 ? 'Todos os formatos' : on.length <= 3 ? `Formatos: ${on.join(' ')}` : `${on.length} formatos`
+  return (
+    <div className="tabela-fmt" ref={caixa}>
+      <button className={`tabela-select tabela-fmt-botao ${on.length ? 'is-on' : ''}`} onClick={() => setAberto((v) => !v)} aria-expanded={aberto}>{rotulo}
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg></button>
+      {aberto && (
+        <div className="tabela-fmt-menu glass glass--light" role="menu">
+          {lista.map(([f, n]) => (
+            <button key={f} role="menuitemcheckbox" aria-checked={on.includes(f)} className="tabela-fmt-item" onClick={() => onAlternar(f)}>
+              <i className={`menu-caixinha ${on.includes(f) ? 'is-on' : ''}`}>{on.includes(f) ? '✓' : ''}</i>
+              <span className="tabela-fmt-ic">{f}</span><span>{nomes[f] ?? (f === '📄' ? 'Sem formato' : f)}</span><em>{n}</em>
+            </button>
+          ))}
+          {on.length > 0 && <><hr /><button className="tabela-fmt-item" onClick={onLimpar}>Limpar</button></>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+/** Coluna Status (na Redação): o ponto e o nome do status da copy. */
+function Status({ p }: { p: Producao }) {
+  return <span className="tabela-status"><i className={`ponto is-${p.status}`} />{STATUS.find((x) => x.k === p.status)?.nome}</span>
+}
+

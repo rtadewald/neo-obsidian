@@ -1,8 +1,8 @@
 import type { Raiz } from './notas'
 
-export type Midia = { links: string[]; imagem: string | null; copia: boolean }
-export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; tags?: string[]; categoria?: string | null; material?: boolean } & Partial<Midia>
-export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number; grupo?: string | null; tags?: string[] }
+export type Midia = { links: string[]; imagem: string | null; video?: string | null; copia: boolean }
+export type Ideia = { nome: string; previa: string; fontes: string[]; mtime: number; grupo?: string | null; canvas?: string | null; canvases?: string[]; tags?: string[]; categoria?: string | null; material?: boolean; codigo?: string | null } & Partial<Midia>
+export type Entrada = { nome: string; url: string; tipo: string; thumb: string; previa: string; mtime: number; grupo?: string | null; tags?: string[]; codigo?: string | null }
 export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado'
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
@@ -11,6 +11,7 @@ export type Producao = {
   winner?: boolean   // tag 🔥 na nota: performou acima da média
   tags?: string[]
   categoria?: string | null   // `categoria:` da copy: a caixa do mapa mental onde ela vive
+  codigo?: string | null      // NEO-042: copiar e colar no Claude Code
 } & Midia
 export type Formato = { emoji: string; nome: string }
 /** A produção 🎬 de uma copy: as copies com a mesma chave viram um card só. Normalmente é a ideia; quando uma ideia
@@ -25,7 +26,7 @@ export type EstadoCanvas = {
   canvas?: InfoCanvas
   produtos?: Produto[]
   visiveis?: string[]   // cards trazidos à mão (⌘↵, Mover para): aparecem mesmo publicados no Inbox
-  novas?: string[]      // 💡 ideias que chegaram (radar, link, Jarvis) e ainda não foram usadas nem vistas: selo NOVO
+  novas?: string[]      // 💡 ideias que chegaram (radar, link, Claude) e ainda não foram usadas nem vistas: selo NOVO
 }
 export type Alvo = { raiz: Raiz; nome: string }
 /** De onde a nota foi aberta: o modal mostra um botão para voltar para lá. */
@@ -56,7 +57,7 @@ export const INBOX = 'inbox'
 let canvasAtual = INBOX
 export const usarCanvas = (slug: string) => { canvasAtual = slug }
 export const cabecalhoCanvas = () => ({ 'X-Canvas': canvasAtual })
-/** Slug do canvas aberto (o chat manda ao Jarvis: as ferramentas dele valem para este canvas). */
+/** Slug do canvas aberto. */
 export const canvasAberto = () => canvasAtual
 /** A nota é do produto se tem uma tag que começa por um dos prefixos dele. */
 export const ehDoProduto = (tags: string[] | undefined, p: Produto) => (tags ?? []).some((t) => p.tags.some((x) => t.replace(/^#/, '').startsWith(x)))
@@ -89,29 +90,14 @@ export const tudoEmCache = () => tudoCache
 export const carregarTudo = () => fetch('/api/canvas', { headers: { 'X-Canvas': 'todos' } }).then((r) => r.json() as Promise<EstadoCanvas>).then((e) => { tudoCache = e; return e })
 export const carregarCanvas = () => fetch('/api/canvas', { headers: cabecalhoCanvas() }).then((r) => r.json() as Promise<EstadoCanvas>)
 
-/** Pedido pronto para o Jarvis escrever uma saída nova a partir das irmãs. */
+/** Pedido pronto para o Claude Code escrever uma saída nova a partir das irmãs. */
 export const pedidoSaida = (ideia: string, nota: string, formato: string, nomeFormato: string) =>
-  `Escreva a versão ${formato} ${nomeFormato} da ideia [[${ideia}]] direto na nota [[${nota}]] (1 Copies/1 Priorizar, ela já existe e está vazia). ` +
-  `Leia a 💡 ideia, as entradas dela e as outras saídas já escritas, adapte a copy para o formato (use a minha skill desse formato quando houver) e responda só com um resumo de 2 linhas.`
+  `Escreva a versão ${formato} ${nomeFormato} de [[${ideia}]] direto na nota [[${nota}]] (1 Copies/1 Priorizar, ela já existe e está vazia). ` +
+  `Leia as outras versões já escritas (mesmo ideia:) e as entradas delas, adapte a copy para o formato (use a minha skill desse formato quando houver) e me responda com um resumo de 2 linhas.`
 
-/** Onde o Rodrigo está no app agora: o App e o canvas atualizam, o chat manda junto com cada mensagem (o Jarvis
- *  recebe no contexto e ajuda direto dali). */
+/** Onde o Rodrigo está no app agora: o App e o canvas atualizam e porta.vigiarOnde manda ao backend (o Claude Code
+ *  lê em GET /api/onde). */
 export const onde: {
   pagina: string; canvas?: { nome: string; icone: string } | null; vista?: string
   nota?: Alvo | null; selecao?: string[]; tipos?: string[]; filtro?: string; produtos?: string[] | null
 } = { pagina: '' }
-export function descreverOnde() {
-  const l = [`- Tela: ${onde.pagina || '?'}`]
-  if (onde.pagina === 'Canvas') {
-    l.push(onde.canvas ? `- Canvas: ${onde.canvas.icone} ${onde.canvas.nome}` : '- Canvas: página inicial (lista dos canvas)')
-    if (onde.canvas) {
-      if (onde.vista && onde.vista !== 'principal') l.push(`- Vista: ${onde.vista}`)
-      if (onde.produtos) l.push(`- Filtro de produto: ${onde.produtos.join(', ') || 'nenhum'}`)
-      if (onde.filtro && onde.filtro !== 'todos') l.push(`- Filtro de status: ${onde.filtro}`)
-      if (onde.tipos && onde.tipos.length < 3) l.push(`- Tipos de card visíveis: ${onde.tipos.join(', ') || 'nenhum'}`)
-      if (onde.selecao?.length) l.push(`- Cards selecionados (${onde.selecao.length}): ${onde.selecao.slice(0, 12).join(' · ')}`)
-    }
-  }
-  if (onde.nota) l.push(`- Nota aberta no modal: [[${onde.nota.nome}]] (${onde.nota.raiz})`)
-  return l.join('\n')
-}

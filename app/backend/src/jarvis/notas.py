@@ -115,6 +115,9 @@ def ler(raiz: str, nome: str) -> dict | None:
 
 
 def _escrever(p: Path, texto: str):
+    if not p.exists() and p.suffix == ".md" and p.parent in TODAS.values():   # nota nova do canvas nasce com código
+        from . import porta
+        texto = porta.carimbar(texto)
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".jarvis-", suffix=".md")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(texto)

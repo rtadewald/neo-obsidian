@@ -1,4 +1,5 @@
-import { EVENTO_PINS, lerPins, pinavel, usePins } from './pins'
+import { EVENTO_PINS, lerPins, pinavel, trocarPin, usePins } from './pins'
+import { codigoDe, copiar } from './porta'
 import { EVENTO_DESFEITO, desfazerUltima, mudarStatus, registrarAcao } from './desfazer'
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -9,14 +10,13 @@ import '@xyflow/react/dist/style.css'
 import { createPortal } from 'react-dom'
 import { Icone, IconeCanvas } from './Icone'
 import { Desenho, TECLAS_FERRAMENTA, type ControleDesenho } from './Desenho'
-import { MenuDoCanvas } from './Canvases'
 import { NovoRapido, type Criado } from './NovoRapido'
-import { ModalTabela, tabelaNova, type EstadoTabela } from './Tabela'
+import { ModalTabela, tabelaSalva, type EstadoTabela } from './Tabela'
 import { PASTA, type Raiz, type Trecho } from './notas'
 import {
   STATUS, carregarCanvas, pedidoSaida, porFormato, post, INBOX, produtosDe,
   type Alvo, type Voltar, type Entrada, type EstadoCanvas, type Ideia, type Producao, type Midia, type StatusProd, type Produto,
-  chaveProd, ideiaDaChave, SEP_PROD, cabecalhoCanvas, carregarTudo, listarCanvases, moverNaLista, onde, ordenarCanvases, type ResumoCanvas,
+  chaveProd, ideiaDaChave, SEP_PROD, cabecalhoCanvas, carregarTudo, listarCanvases, onde, type ResumoCanvas,
 } from './canvasApi'
 
 /** O canvas do Neo-Obsidian: 💡 ideias (um nome, ou já com link/texto/imagem dentro) e as saídas delas,
@@ -31,7 +31,7 @@ type DadosEntrada = { entrada: Entrada }
 type DadosProd = { prod: Producao; novo?: boolean }
 /** A produção: as saídas de uma ideia (📱 💰 🏞️…) num card só; no vault continuam notas separadas. */
 type DadosGrupo = { ideia: Ideia; saidas: Producao[]; destaque: StatusProd | null }
-type DadosCategoria = { nome: string; n: number }   // só no mapa mental: a raiz (card preto) de uma categoria
+type DadosCategoria = { nome: string; n: number; raiz?: boolean; icone?: string }   // só no mapa mental: o card preto de uma categoria; `raiz` = o card do canvas, de onde tudo sai
 type No = Node<DadosIdeia, 'ideia'> | Node<DadosEntrada, 'entrada'> | Node<DadosProd, 'producao'> | Node<DadosGrupo, 'grupo'> | Node<DadosCategoria, 'categoria'>
 /** O que o canvas principal mostra: tudo o que não saiu, ou só um status. */
 type Filtro = 'todos' | 'ideia' | 'gravar' | 'edicao' | 'agendado'
@@ -90,16 +90,18 @@ function MidiaX({ url }: { url: string }) {
   return null
 }
 
-/** Imagem da nota (ou capa do YouTube / post do X do primeiro link) e os links, clicáveis. */
-function MidiaCard({ m }: { m: Partial<Midia> }) {
+/** Vídeo ou imagem da nota (ou capa do YouTube / post do X do primeiro link) e os links, clicáveis. `soMidia`: sem os links. */
+const temMidia = (m: Partial<Midia>) => !!(m.video || m.imagem || (m.links ?? []).some((u) => ehX(u) || ytId(u)))
+function MidiaCard({ m, soMidia }: { m: Partial<Midia>; soMidia?: boolean }) {
   const links = m.links ?? []
-  const x = !m.imagem ? links.find(ehX) : undefined
-  const yt = !m.imagem && !x ? links.map(ytId).find(Boolean) : undefined
+  const x = !m.imagem && !m.video ? links.find(ehX) : undefined
+  const yt = !m.imagem && !m.video && !x ? links.map(ytId).find(Boolean) : undefined
   return <>
-    {m.imagem ? <img className="cartao-midia" src={m.imagem} alt="" referrerPolicy="no-referrer" loading="lazy" />
+    {m.video ? <video className="cartao-midia nodrag" src={m.video} muted loop playsInline controls preload="metadata" />
+      : m.imagem ? <img className="cartao-midia" src={m.imagem} alt="" referrerPolicy="no-referrer" loading="lazy" />
       : x ? <MidiaX url={x} />
       : yt ? <img className="cartao-midia" src={`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`} alt="" loading="lazy" /> : null}
-    {links.length > 0 && <div className="cartao-links">{links.slice(0, 3).map((u) => (
+    {!soMidia && links.length > 0 && <div className="cartao-links">{links.slice(0, 3).map((u) => (
       <a key={u} className="nodrag" href={u} target="_blank" rel="noreferrer" title={u}>{u.replace(/^https?:\/\/(www\.)?/, '')}</a>
     ))}</div>}
   </>
@@ -111,9 +113,9 @@ const CardIdeia = memo(({ id, data, selected }: NodeProps<Node<DadosIdeia, 'idei
   const pinado = usePinado(id)
   return (
     <div className={`cartao cartao--ideia ${selected ? 'is-sel' : ''} ${novo ? 'is-novo' : ''} ${pinado ? 'is-pinado' : ''}`}>
-      <Alcas /><BotaoChat id={id} /><PinCanto on={pinado} /><BotaoColapso id={id} />
+      <Alcas /><PinCanto on={pinado} /><BotaoColapso id={id} />
       {novo && <button type="button" className="selo-novo nodrag" onClick={(e) => { e.stopPropagation(); ver?.([ideia.nome]) }}
-        title="Chegou agora (radar, link ou Jarvis). Some quando você gera uma saída. Clique para marcar como visto.">Novo</button>}
+        title="Chegou agora (radar, link ou Claude). Some quando você gera uma saída. Clique para marcar como visto.">Novo</button>}
       <header><span className="cartao-tipo">💡</span><b>{ideia.nome.replace(/^💡\s*/, '')}</b></header>
       <MidiaCard m={ideia} />
       {ideia.previa && !ideia.links?.length && <p className="cartao-previa">{ideia.previa}</p>}
@@ -148,19 +150,31 @@ const TIPOS_ARESTA = { default: ArestaApagavel }
 
 /** Produtos (FIA, FID…): a lista vem da mesa por contexto. A bolinha de cor saiu do card; o produto continua como filtro. */
 const ProdutosUI = createContext<Produto[]>([])
+/** Ações dos cards de categoria no mapa: + nova copy na categoria, + nova categoria (na raiz do canvas). */
+const CategoriaUI = createContext<{ novaCopy: (id: string, cat: string) => void; novaCategoria: (id: string) => void } | null>(null)
+/** Detalhes dos cards de copy: os formatos (📱 💰…), as imagens e os vídeos (botão da barra de baixo; desligado por padrão). */
+const MidiaUI = createContext(false)
 
-/** Botão que aparece no hover do card: leva a nota para o chat do Jarvis (a mesa passa a ação por contexto). */
-const ChatUI = createContext<((id: string) => void) | null>(null)
 /** Card pinado na barra: borda vermelha (classe is-pinado) e um 📌 no canto. */
 function usePinado(id: string) { return usePins().includes(id) }
 const PinCanto = ({ on }: { on: boolean }) => on ? <span className="cartao-pin" title="Pinado na barra" aria-label="Pinado">📌</span> : null
 
-function BotaoChat({ id }: { id: string }) {
-  const levar = useContext(ChatUI)
-  if (!levar) return null
-  return <button type="button" className="cartao-chat nodrag" title="Levar para o chat do Jarvis" aria-label="Levar para o chat do Jarvis"
-    onClick={(e) => { e.stopPropagation(); levar(id) }}><span className="orb orb--msg" /></button>
+/** Código da nota (NEO-042): clicar copia, para colar no Claude Code. */
+function Codigo({ c }: { c?: string | null }) {
+  if (!c) return null
+  return <button type="button" className="cartao-codigo nodrag" title="Copiar o código para colar no Claude Code"
+    onClick={(e) => { e.stopPropagation(); copiar(c) }}>{c}</button>
 }
+
+/** Códigos de um card 🎬: o da primeira versão e "+N"; clicar copia os de todas as versões. */
+function Codigos({ cs }: { cs: string[] }) {
+  if (!cs.length) return null
+  if (cs.length === 1) return <Codigo c={cs[0]} />
+  const todos = cs.join(' ')
+  return <button type="button" className="cartao-codigo nodrag" title={`Copiar os ${cs.length} códigos: ${todos}`}
+    onClick={(e) => { e.stopPropagation(); copiar(todos, `${cs.length} códigos copiados`) }}>{cs[0]} <em>+{cs.length - 1}</em></button>
+}
+
 
 /** A cor do card segue o status: o menos avançado entre as notas dele (o que ainda falta fazer). */
 const statusDoCard = (ns: Producao[]) => STATUS.find((x) => ns.some((n) => n.status === x.k))?.k ?? 'ideia'
@@ -172,24 +186,25 @@ const Fogo = () => <span className="cartao-fogo" title="Winner 🔥 (tag na nota
  *  Só existem dois tipos de card no canvas: 💡 ideia e 🎬 produção. */
 function CartaoProducao({ id, titulo, saidas, destaque, selected, novo }: { id: string; titulo: string; saidas: Producao[]; destaque: StatusProd | null; selected?: boolean; novo?: boolean }) {
   const ver = useContext(VistoUI)
+  const verMidia = useContext(MidiaUI)
   const winner = saidas.some((s) => s.winner)
-  const sozinha = saidas.length === 1 ? saidas[0] : null
   const st = statusDoCard(saidas)
   const pinado = usePinado(id)
   return (
     <div className={`cartao cartao--grupo st-${st} ${selected ? 'is-sel' : ''} ${winner ? 'is-winner' : ''} ${novo ? 'is-novo' : ''} ${pinado ? 'is-pinado' : ''}`}>
-      <Alcas /><BotaoChat id={id} /><PinCanto on={pinado} /><BotaoColapso id={id} />
+      <Alcas /><PinCanto on={pinado} /><BotaoColapso id={id} />
       {novo && <button type="button" className="selo-novo nodrag" onClick={(e) => { e.stopPropagation(); ver?.(saidas.map((x) => x.nome)) }}
         title="Criada agora. Some quando você abre a copy. Clique para marcar como vista.">Novo</button>}
-      <header><span className="cartao-tipo">{ICONE_GRUPO}</span><b>{titulo}</b>{winner && <Fogo />}</header>
-      <div className="cartao-formatos">
+      <header><span className="cartao-tipo">{ICONE_GRUPO}</span><b title={titulo}>{titulo}</b>{winner && <Fogo />}
+        <span className="cartao-codigos"><Codigos cs={saidas.map((x) => x.codigo).filter((c): c is string => !!c)} /></span></header>
+      {verMidia && (() => { const m = saidas.find(temMidia); return m ? <MidiaCard m={m} soMidia /> : null })()}
+      {verMidia && <div className="cartao-formatos">
         {saidas.map((s) => (
-          <button key={s.nome} type="button" data-raiz={s.raiz} data-nome={s.nome} className={`cartao-formato ${destaque && s.status !== destaque ? 'is-apagada' : ''}`} title={`Abrir ${s.nome} · ${STATUS.find((x) => x.k === s.status)?.nome}`}>
+          <button key={s.nome} type="button" data-raiz={s.raiz} data-nome={s.nome} className={`cartao-formato ${destaque && s.status !== destaque ? 'is-apagada' : ''}`} title={`Abrir ${s.nome} · ${STATUS.find((x) => x.k === s.status)?.nome}${s.codigo ? ` · ${s.codigo}` : ''}`}>
             {s.formato || '📄'}<i className={`ponto is-${s.status}`} />
           </button>
         ))}
-      </div>
-      {sozinha && <footer><i className={`ponto is-${sozinha.status}`} />{STATUS.find((x) => x.k === sozinha.status)?.nome}</footer>}
+      </div>}
     </div>
   )
 }
@@ -206,7 +221,7 @@ const CardEntrada = memo(({ id, data, selected }: NodeProps<Node<DadosEntrada, '
       {e.thumb && <img className="cartao-thumb" src={e.thumb} alt="" referrerPolicy="no-referrer" loading="lazy" />}
       <header><span className="cartao-tipo">{ICONE_ENTRADA[e.tipo] ?? '🔗'}</span><b>{e.nome.replace(/^\S+\s/, '')}</b></header>
       {e.previa && !e.thumb && <p className="cartao-previa">{e.previa}</p>}
-      {e.url && <footer>{e.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}</footer>}
+      {(e.url || e.codigo) && <footer>{e.url?.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}<Codigo c={e.codigo} /></footer>}
       <Alcas />
     </div>
   )
@@ -222,21 +237,37 @@ function CartaoVSL({ id, p, selected }: { id: string; p: Producao; selected?: bo
   const pinado = usePinado(id)
   return (
     <div className={`cartao cartao--vsl st-${p.status} ${selected ? 'is-sel' : ''} ${p.winner ? 'is-winner' : ''} ${pinado ? 'is-pinado' : ''}`}>
-      <Alcas /><BotaoChat id={id} /><PinCanto on={pinado} /><BotaoColapso id={id} />
+      <Alcas /><PinCanto on={pinado} /><BotaoColapso id={id} />
       <header><span className="cartao-tipo">📺</span><b>{p.nome.replace(/^[^\p{L}\p{N}]+/u, '').replace(/^VSL\s*[-·:]?\s*/i, '')}</b>
         <span className="cartao-selo">VSL</span>{p.winner && <Fogo />}</header>
-      <footer><i className={`ponto is-${p.status}`} />{STATUS.find((s) => s.k === p.status)?.nome}{p.palavras ? ` · ${Math.round(p.palavras / 150)} min` : ''}</footer>
+      <footer><i className={`ponto is-${p.status}`} />{STATUS.find((s) => s.k === p.status)?.nome}{p.palavras ? ` · ${Math.round(p.palavras / 150)} min` : ''}<Codigo c={p.codigo} /></footer>
     </div>
   )
 }
 
 /** Mapa mental: a categoria (`categoria:` da nota 💡) é a raiz, um card preto. Dela saem as ideias com material e,
  *  direto, as copies das ideias sem material. */
-const CardCategoria = memo(({ id, data }: NodeProps<Node<DadosCategoria, 'categoria'>>) => (
+function MaisCategoria({ id, data }: { id: string; data: DadosCategoria }) {
+  const acoes = useContext(CategoriaUI)
+  if (!acoes) return null
+  return <button type="button" className="cartao-mais nodrag" title={data.raiz ? 'Nova categoria' : `Nova copy em ${data.nome}`} aria-label={data.raiz ? 'Nova categoria' : 'Nova copy nesta categoria'}
+    onClick={(e) => { e.stopPropagation(); if (data.raiz) acoes.novaCategoria(id); else acoes.novaCopy(id, data.nome) }}>+</button>
+}
+
+const CardCategoria = memo(({ id, data }: NodeProps<Node<DadosCategoria, 'categoria'>>) => data.raiz ? (
+  // o ponto de saída único do canvas: dele saem todas as categorias
+  <div className="cartao-categoria cartao-raiz">
+    <Handle id="r" type="source" position={Position.Right} className="cartao-alca" isConnectable={false} />
+    <span className="cartao-raiz-icone">{data.icone}</span>
+    <b>{data.nome}</b><em>{data.n} {data.n === 1 ? 'categoria' : 'categorias'}</em>
+    <MaisCategoria id={id} data={data} /><BotaoColapso id={id} />
+  </div>
+) : (
   <div className="cartao-categoria">
+    <Handle id="l" type="target" position={Position.Left} className="cartao-alca" isConnectable={false} />
     <Handle id="r" type="source" position={Position.Right} className="cartao-alca" isConnectable={false} />
     <b>{data.nome}</b><em>{data.n} {data.n === 1 ? 'item' : 'itens'}</em>
-    <BotaoColapso id={id} />
+    {data.nome !== SEM_CAT && <MaisCategoria id={id} data={data} />}<BotaoColapso id={id} />
   </div>
 ))
 
@@ -284,7 +315,7 @@ export function cardNoCanvas(est: EstadoCanvas, a: Alvo): string | null {
   return candidatos.find((c) => ids.has(c)) ?? null
 }
 
-function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arestas: Edge[]; novos: Record<string, { x: number; y: number }> } {
+function montar(est: EstadoCanvas, v: Visao, filtro: Filtro, semPub = false): { nos: No[]; arestas: Edge[]; novos: Record<string, { x: number; y: number }> } {
   const arq = new Set(est.arquivados)
   const nomesIdeias = new Set(est.ideias.map((i) => i.nome))
   const novas = new Set(est.novas ?? [])
@@ -300,7 +331,8 @@ function montar(est: EstadoCanvas, v: Visao, filtro: Filtro): { nos: No[]; arest
   const foco = v.startsWith('foco:') ? ligados(est, v.slice(5)) : null
   // publicada: num canvas temático fica (é o lugar dela); no Inbox conta como arquivada (vai para a pasta Publicado)
   const noInbox = (est.canvas?.slug ?? INBOX) === INBOX
-  const pubArquivada = (p: Producao) => p.status === 'publicado' && noInbox
+  // `semPub`: o canvas pediu para esconder os publicados (o ✓ da barra de baixo, por canvas)
+  const pubArquivada = (p: Producao) => p.status === 'publicado' && (noInbox || semPub)
   const casa = (p: Producao) => v === 'principal' ? (filtro === 'todos' ? !pubArquivada(p) : p.status === filtro) : v.startsWith('pub-') ? p.status === 'publicado' && p.ano === v.slice(4) : p.status === v
   const destaque: StatusProd | null = foco ? null : v === 'principal' ? (filtro === 'todos' ? null : filtro) : v.startsWith('pub-') ? 'publicado' : (v as StatusProd)
   const forcados = new Set(est.visiveis ?? [])
@@ -550,19 +582,8 @@ export function Canvas(p: Props) {
   return <ReactFlowProvider><Mesa {...p} /></ReactFlowProvider>
 }
 
-function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, onTrocarCanvas, onCaminho }: Props) {
+function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, onCaminho }: Props) {
   const [todosCanvas, setTodosCanvasBruto] = useState<ResumoCanvas[]>(listaCanvasGuardada)
-  // arrastar as pastas da esquerda muda a ordem dos canvas (a mesma da página Todos os canvas)
-  const [arrastaPasta, setArrastaPasta] = useState<string | null>(null)
-  const [alvoPasta, setAlvoPasta] = useState<string | null>(null)
-  const soltarPasta = (de: string, para: string) => {
-    const slugs = moverNaLista(todosCanvas.filter((c) => c.slug !== INBOX).map((c) => c.slug), de, para)
-    const porSlug = new Map(todosCanvas.map((c) => [c.slug, c]))
-    setTodosCanvas([...slugs.map((sl) => porSlug.get(sl)!), ...todosCanvas.filter((c) => c.slug === INBOX)])
-    setArrastaPasta(null); setAlvoPasta(null)
-    ordenarCanvases(slugs).then(() => listarCanvases().then(setTodosCanvas)).catch(() => {})
-  }
-  const [menuPasta, setMenuPasta] = useState<{ x: number; y: number; c: ResumoCanvas } | null>(null)
   const setTodosCanvas = useCallback((l: ResumoCanvas[]) => { listaCanvasGuardada = l; setTodosCanvasBruto(l) }, [])
   // as pastas da esquerda: a lista dos canvas com as contagens (relida quando algo muda no vault)
   useEffect(() => { listarCanvases().then(setTodosCanvas).catch(() => {}) }, [versao, setTodosCanvas])
@@ -616,10 +637,6 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     window.setTimeout(() => enquadrarRef.current(350), 450)   // o canvas próprio abre enquadrado, com tudo à mostra
     setVistas((v) => v.pinados.includes(id) ? v : { ...v, historico: [id, ...v.historico.filter((x) => x !== id)].slice(0, MAX_HIST) })
   }, [])
-  // arrastar um pinado (na lista da esquerda) muda a ordem deles
-  const [arrastaPin, setArrastaPin] = useState<string | null>(null)
-  const [alvoPin, setAlvoPin] = useState<string | null>(null)
-  // pinado/último aberto da lista da esquerda: volta ao canvas, enquadra e seleciona o card e abre a nota dele
   const irAoCard = (id: string) => {
     const antes = visaoRef.current
     if (antes !== 'principal') setVisao('principal')
@@ -656,6 +673,13 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [colapsadas, setColapsadas] = useState<Set<string>>(() => new Set())
   // organização do mapa (por canvas): 0 = cada pai com os filhos numa coluna só; N = grade N×N (nunca mais de N empilhados)
   const [grade, setGrade] = useState(0)
+  // ver os publicados neste canvas (os arquivados à mão continuam fora); por canvas, ligado por padrão
+  const [verPub, setVerPub] = useState(true)
+  const mudarVerPub = (v: boolean) => {
+    setVerPub(v)
+    try { localStorage.setItem(`canvas-publicados#${canvas}`, v ? 'sim' : 'nao') } catch { /* sem storage */ }
+    avisar(v ? 'Mostrando os publicados' : 'Publicados escondidos neste canvas')
+  }
   const [menuGrade, setMenuGrade] = useState(false)
   useEffect(() => {
     if (!menuGrade) return
@@ -672,6 +696,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   useEffect(() => {
     try {
       setGrade(Number(localStorage.getItem(`canvas-grade#${canvas}`)) || 0)
+      setVerPub(localStorage.getItem(`canvas-publicados#${canvas}`) !== 'nao')
       setArvore(localStorage.getItem(`canvas-modo#${canvas}`) !== 'livre')   // o mapa mental é o padrão
       setColapsadas(new Set(JSON.parse(localStorage.getItem(`canvas-colapsadas#${canvas}`) || '[]')))
     } catch { setArvore(true); setColapsadas(new Set()) }
@@ -699,15 +724,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const base = useRef<{ nos: No[]; arestas: Edge[] }>({ nos: [], arestas: [] })
   const [infoArvore, setInfoArvore] = useState<Map<string, number>>(() => new Map())
   // linhas: dá para esconder todas; as do card selecionado aparecem sempre, em destaque
-  const [linhas, setLinhas] = useState(() => { try { return localStorage.getItem('canvas-linhas') !== 'nao' } catch { return true } })
-  // destaque vermelho dos winners 🔥: liga e desliga pelo foguinho da barra de baixo (fica guardado)
-  const [destaqueWinner, setDestaqueWinner] = useState(() => { try { return localStorage.getItem('canvas-winner') !== 'nao' } catch { return true } })
+  const linhas = true   // o botão de esconder as linhas saiu da barra
+  const destaqueWinner = false   // sem a borda vermelha dos winners (o 🔥 no canto do card continua)
   useEffect(() => { try { localStorage.setItem('canvas-winner', destaqueWinner ? 'sim' : 'nao') } catch { /* sem storage */ } }, [destaqueWinner])
   useEffect(() => { try { localStorage.setItem('canvas-linhas', linhas ? 'sim' : 'nao') } catch { /* sem storage */ } }, [linhas])
   // a seleção só muda quando muda quem está selecionado: arrastar (que troca `nos` a cada quadro) não recalcula as linhas
   const chaveSel = nos.filter((n) => n.selected).map((n) => n.id).join('|')
   const selecionados = useMemo(() => new Set(chaveSel ? chaveSel.split('|') : []), [chaveSel])
-  // conta ao chat onde o Rodrigo está (canvas, vista, filtros, seleção): o Jarvis recebe isso em toda mensagem
+  // conta onde o Rodrigo está (canvas, vista, filtros, seleção): vai para GET /api/onde, o Claude Code lê
   useEffect(() => {
     onde.canvas = est?.canvas ? { nome: est.canvas.nome, icone: est.canvas.icone } : null
     onde.vista = visao
@@ -728,16 +752,15 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const ocultar = useCallback((nomes: string[], sim: boolean) => setOcultos((o) => { const n = new Set(o); for (const x of nomes) { if (sim) n.add(x); else n.delete(x) } return n }), [])
   const [moverAberto, setMoverAberto] = useState(false)   // submenu "Mover para ›" do botão direito (abre ao lado, no hover)
   const [moverLado, setMoverLado] = useState<'dir' | 'esq'>('dir')
+  const [categoriaAberta, setCategoriaAberta] = useState(false)
   const [produtoAberto, setProdutoAberto] = useState(false)   // submenu "Produto ›"
   const [novoProduto, setNovoProduto] = useState<string | null>(null)   // "＋ Novo produto": o campo aberto no submenu
-  useEffect(() => { setProdutoAberto(false); if (menu) listarCanvases().then(setTodosCanvas).catch(() => {}) }, [menu])
+  useEffect(() => { setProdutoAberto(false); setCategoriaAberta(false); if (menu) listarCanvases().then(setTodosCanvas).catch(() => {}) }, [menu])
   useEffect(() => setMoverAberto(false), [menu])
   const [pergunta, setPergunta] = useState<Pergunta | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   // modal de tabela das pastas; ao abrir uma copy dali ele some e o "voltar" do modal da nota o traz de volta como estava
   const [tabela, setTabela] = useState<EstadoTabela | null>(null)
-  const [arqAberto, setArqAberto] = useState<{ left: number; top: number } | null>(null)   // dropdown dos canvas arquivados (lista da esquerda)
-  const fecharArq = useRef<number | null>(null)
   const [verArquivados, setVerArquivados] = useState(false)   // modal com os cards arquivados deste canvas
   // modo desenho: a camada do Excalidraw vem para a frente (só na vista principal, que é onde os desenhos moram)
   const [desenhando, setDesenhando] = useState(false)
@@ -817,12 +840,21 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     }
     for (const [id, k] of filhosCat)
       n.push({ id, type: 'categoria', position: { x: 0, y: 0 }, data: { nome: id.slice(2), n: k }, deletable: false, connectable: false } as No)
+    // o canvas tem um ponto de saída só: o card dele (ícone e nome), pai de todas as categorias e de qualquer card solto
+    if (visao === 'principal' && est?.canvas) {
+      const idRaiz = `r:${canvas}`
+      const comPai = new Set(a.filter((e) => e.className !== 'aresta-fonte').map((e) => e.target))
+      const soltos = n.filter((x) => !comPai.has(x.id) && x.type !== 'entrada')
+      for (const x of soltos) a.push({ id: `${idRaiz}→${x.id}`, source: idRaiz, target: x.id, className: 'aresta-categoria', deletable: false })
+      n.push({ id: idRaiz, type: 'categoria', position: { x: 0, y: 0 }, draggable: true, deletable: false, connectable: false,
+        data: { nome: est.canvas.nome, icone: est.canvas.icone, n: soltos.filter((x) => x.type === 'categoria').length, raiz: true } } as No)
+    }
     // no canvas próprio (pinado), a raiz abre já expandida, com os filhos à mostra
     const raizFoco = visao.startsWith('foco:') ? visao.slice(5) : null
     const colRaiz = raizFoco && colapsadas.has(raizFoco) ? new Set([...colapsadas].filter((x) => x !== raizFoco)) : colapsadas
     const medidas = new Map(rf.getNodes().map((x) => [x.id, x.measured?.height]))
     // a categoria que já foi arrastada tem lugar próprio (`mapa|c:<nome>` nas posições do layout)
-    const fixas = new Map(Object.entries(est?.pos ?? {}).filter(([k]) => k.startsWith('mapa|c:')).map(([k, v]) => [k.slice(5), v]))
+    const fixas = new Map(Object.entries(est?.pos ?? {}).filter(([k]) => k.startsWith('mapa|c:') || k.startsWith('mapa|r:')).map(([k, v]) => [k.slice(5), v]))
     const r = emArvore(n, a, colRaiz, (id) => medidas.get(id) ?? 150, est?.ordem ?? {}, fixas, grade)
     ultimaArvore.current = r
     setInfoArvore(r.filhos)
@@ -847,7 +879,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const soltouMapa = (n: No) => {
     const a = arrasteMapa.current
     arrasteMapa.current = null
-    if (n.type === 'categoria') {
+    if (n.type === 'categoria' && !ultimaArvore.current?.pai.get(n.id)) {
       const d = { [`mapa|${n.id}`]: { x: Math.round(n.position.x), y: Math.round(n.position.y) } }
       post('posicoes', d, 'PUT').catch(() => {})
       setEst((e) => e && { ...e, pos: { ...e.pos, ...d } })
@@ -977,7 +1009,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     if (!est) return
     // notas que acabaram de sair deste canvas: ficam fora mesmo se uma recarga chegar antes de a gravação terminar
     const e0 = ocultos.size ? { ...est, ideias: est.ideias.filter((x) => !ocultos.has(x.nome)), producoes: est.producoes.filter((x) => !ocultos.has(x.nome)), entradas: est.entradas.filter((x) => !ocultos.has(x.nome)) } : est
-    const m = montar(e0, visao, filtro)
+    const m = montar(e0, visao, filtro, !verPub)
     const prods = est.produtos ?? []
     const passaProduto = (x: No) => {
       if (!prodFora.length) return true
@@ -1000,7 +1032,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     setArestas(a)
     if (Object.keys(novos).length) post('posicoes', novos, 'PUT').then(() => setEst((e) => e && { ...e, pos: { ...e.pos, ...novos } })).catch(() => {})
     if (visaoAntes.current !== visao) { visaoAntes.current = visao; enquadrar.current = true }
-  }, [est, visao, filtro, setNos, setArestas, rf, tiposVer, prodFora, ocultos, arvore])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [est, visao, filtro, setNos, setArestas, rf, tiposVer, prodFora, ocultos, arvore, verPub])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // cada visão abre onde você parou nela; na primeira vez, enquadra tudo (depois que os cards têm tamanho)
   useEffect(() => {
@@ -1020,7 +1052,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   }, [iniciados, nos, visao, rf])  // eslint-disable-line react-hooks/exhaustive-deps
   // enquadra pela área livre da página (o canvas vai por baixo da navbar e do chat)
   const enquadrarTudo = (dur = 350, ids?: string[]) => {
-    const lista = ids ? rf.getNodes().filter((n) => ids.includes(n.id)) : rf.getNodes().filter((n) => !n.hidden)   // o colapsado não conta
+    const lista = ids ? rf.getNodes().filter((n) => ids.includes(n.id) && !n.hidden) : rf.getNodes().filter((n) => !n.hidden)   // o colapsado não conta
     const r = caixa.current?.getBoundingClientRect()
     if (!lista.length || !r) return
     const b = { ...rf.getNodesBounds(lista) }
@@ -1029,6 +1061,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     rf.setViewport({ x: r.left + (r.width - b.width * z) / 2 - b.x * z, y: r.top + (r.height - b.height * z) / 2 - b.y * z, zoom: z }, { duration: dur })
   }
   enquadrarRef.current = enquadrarTudo
+
   const lembrarVista = useCallback(() => { try { localStorage.setItem(chaveLocal(`canvas-vp-${visao}`), JSON.stringify(rf.getViewport())) } catch { /* sem storage */ } }, [visao, rf])
 
   // as pastas (Em edição, Agendado, Publicado) são globais: contam e listam as notas de todos os canvas
@@ -1175,13 +1208,19 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     if (!est || !copias.length) return null
     const atual = categoriaDe(est, copias[0])
     const mudar = (c: string) => tentar(() => post('categoria', { nomes: copias.map((x) => x.nome), categoria: c }), `Foi para ${c}`)
-    return <>
-      <hr /><p className="menu-ctx-t">Categoria</p>
-      <div className="menu-categorias">
-        {[...categoriasAqui(), SEM_CAT].filter((c) => c !== atual).map((c) => <button key={c} data-fecha onClick={() => { setMenu(null); mudar(c) }}>{c}</button>)}
-        <button data-fecha className="is-nova" onClick={() => { setMenu(null); perguntar({ titulo: 'Nova categoria', dica: 'Comece com um emoji, como as outras', ok: (c) => c.trim() && mudar(c.trim()) }) }}>+ Nova categoria</button>
+    return (
+      <div className="menu-sub-caixa" onMouseEnter={(e) => abreAoLado(e, setCategoriaAberta)} onMouseLeave={() => setCategoriaAberta(false)}>
+        <button role="menuitem" className={`menu-sub ${categoriaAberta ? 'is-aberto' : ''}`} onClick={() => setCategoriaAberta((v) => !v)}>
+          <Icone n="pasta" t={15} />Categoria<span className="menu-seta">›</span></button>
+        {categoriaAberta && <div className={`menu-caixas menu-lateral is-${moverLado} glass glass--light`} role="menu">
+          {[...categoriasAqui(), SEM_CAT].map((c) => <button key={c} role="menuitemradio" aria-checked={c === atual} className="menu-check" disabled={c === atual}
+            onClick={() => { setMenu(null); mudar(c) }}><i className={`menu-caixinha ${c === atual ? 'is-on' : ''}`}>{c === atual ? '✓' : ''}</i>{c}</button>)}
+          <hr />
+          <button role="menuitem" className="menu-check" onClick={() => { setMenu(null); perguntar({ titulo: 'Nova categoria', dica: 'Comece com um emoji, como as outras', ok: (c) => c.trim() && mudar(c.trim()) }) }}>
+            <i className="menu-caixinha menu-caixinha--mais">＋</i>Nova categoria</button>
+        </div>}
       </div>
-    </>
+    )
   }
   const subProduto = (cards: ReturnType<typeof notasDoCard>[]) => {
     const prods = est?.produtos ?? []
@@ -1246,16 +1285,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   alvoDeRef.current = alvoDe
   const existe = useCallback((id: string) => !!est && notasDoId(est, id).length > 0, [est])
   // pinados globais (botão da barra de baixo, ligado por padrão): a lista da esquerda mostra os pinados de todos os canvas
-  const [pinGlobal, setPinGlobal] = useState(() => { try { return localStorage.getItem('canvas-pinados-globais') !== 'nao' } catch { return true } })
-  useEffect(() => { try { localStorage.setItem('canvas-pinados-globais', pinGlobal ? 'sim' : 'nao') } catch { /* sem storage */ } }, [pinGlobal])
-  /** O canvas onde vive um card que não está neste (o primeiro ativo; sem nenhum, o Inbox). */
-  const canvasDoCard = (id: string): ResumoCanvas | null => {
-    if (!estTudo) return null
-    const nomes = notasDoId(estTudo, id).flatMap((x) => (x as { canvases?: string[] }).canvases ?? [])
-    if (!notasDoId(estTudo, id).length) return null
-    const ativos = todosCanvas.filter((c) => !c.arquivado && c.slug !== INBOX)
-    return ativos.find((c) => nomes.includes(c.nome)) ?? (nomes.length ? null : todosCanvas.find((c) => c.slug === INBOX) ?? null)
-  }
+  // imagens e vídeos dentro dos cards de copy: escondidos por padrão (o botão da barra de baixo mostra)
+  const [verMidia, setVerMidia] = useState(() => { try { return localStorage.getItem('canvas-midia') === 'sim' } catch { return false } })
+  useEffect(() => { try { localStorage.setItem('canvas-midia', verMidia ? 'sim' : 'nao') } catch { /* sem storage */ } }, [verMidia])
   // chegou aqui vindo de um pinado de outro canvas: vai até o card assim que ele existir
   useEffect(() => {
     if (!cardPendente || !est || !existe(cardPendente)) return
@@ -1436,6 +1468,20 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     ? perguntar({ titulo: `Nova copy em ${categoria}`, dica: 'Um nome, ou cole um link (YouTube, Instagram, X, matéria) ou um texto', longo: true, ok: (t) => novaCopy(t, pos, categoria) })
     : perguntar({ titulo: 'Categoria da copy', dica: `Uma que já existe (${categoriasAqui().slice(0, 6).join(', ') || 'nenhuma ainda'}) ou um nome novo`, ok: (c) => window.setTimeout(() => pedirCopy(pos, c.trim() || SEM_CAT), 50) })
 
+  // o + dos cards de categoria: nova copy nela; o + da raiz: nova categoria (ela nasce com a primeira copy)
+  const perto = (id: string) => { const n = rf.getNode(id); return n ? { x: Math.round(n.position.x + LARG + 120), y: Math.round(n.position.y) } : { x: 0, y: 0 } }
+  const acoesCategoria = {
+    novaCopy: (id: string, cat: string) => pedirCopy(perto(id), cat),
+    novaCategoria: (id: string) => perguntar({ titulo: 'Nova categoria', dica: 'Comece com um emoji, como as outras. Ela nasce com a primeira copy, que você nomeia em seguida.',
+      ok: (c) => { const cat = c.trim(); if (cat) window.setTimeout(() => pedirCopy(perto(id), cat), 50) } }),
+  }
+  const excluirCategoria = (nome: string) => {
+    const copias = (est?.producoes ?? []).filter((p) => categoriaDe(est!, p) === nome)
+    perguntar({ titulo: `Excluir a categoria ${nome}?`, confirmar: 'Excluir',
+      dica: `${copias.length === 1 ? 'A copy dela vai' : `As ${copias.length} copies dela vão`} para "Sem categoria". Nenhuma copy é apagada.`,
+      ok: () => tentar(() => post('categoria', { nomes: copias.map((x) => x.nome), categoria: SEM_CAT }), 'Categoria excluída') })
+  }
+
   async function novaSaida(ideia: string, formato: string, nome: string) {
     try {
       const d = await post<Alvo>('saida', { ideia, formato })
@@ -1594,7 +1640,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const [roda, setRoda] = useState<'mouse' | 'trackpad'>(() => { try { return localStorage.getItem('canvas-roda') === 'mouse' ? 'mouse' : 'trackpad' } catch { return 'trackpad' } })
   useEffect(() => { try { localStorage.setItem('canvas-roda', roda) } catch { /* sem storage */ } }, [roda])
   // minimapa: liga e desliga no botão da barra (lembrado); começa desligado
-  const [mapa, setMapa] = useState(() => { try { return localStorage.getItem('canvas-mapa') === 'sim' } catch { return false } })
+  const mapa = false   // o minimapa saiu da barra
   useEffect(() => { try { localStorage.setItem('canvas-mapa', mapa ? 'sim' : 'nao') } catch { /* sem storage */ } }, [mapa])
   const rodaRef = useRef(roda)
   rodaRef.current = roda
@@ -1650,15 +1696,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
   const marcarWinner = useCallback((alvos: Alvo[], sim: boolean) => {
     tentarRef.current(async () => { await post('winner', { notas: alvos, sim }); await recarregarRef.current() }, sim ? 'Winner 🔥' : 'Tirou o 🔥')
   }, [])
-  const levarAoChat = useCallback((id: string) => {
-    const n = rf.getNode(id) as No | undefined
-    if (!n || !onTrecho) return
-    const a = alvoDeRef.current(n)
-    onTrecho({ texto: '', linhaIni: 1, linhaFim: 999, raiz: a.raiz, nome: a.nome, caminho: `${PASTA[a.raiz as Raiz]}/${a.nome}.md` })
-  }, [rf, onTrecho])
 
   return (
-    <ProdutosUI.Provider value={est?.produtos ?? []}><ChatUI.Provider value={onTrecho ? levarAoChat : null}><VistoUI.Provider value={marcarVisto}><DesligarUI.Provider value={(e) => { antesDeApagar({ nodes: [], edges: [e] }) }}><ArvoreUI.Provider value={arvore ? { filhos: infoArvore, colapsadas, alternar: alternarColapso } : null}>
+    <ProdutosUI.Provider value={est?.produtos ?? []}><MidiaUI.Provider value={verMidia}><CategoriaUI.Provider value={acoesCategoria}><VistoUI.Provider value={marcarVisto}><DesligarUI.Provider value={(e) => { antesDeApagar({ nodes: [], edges: [e] }) }}><ArvoreUI.Provider value={arvore ? { filhos: infoArvore, colapsadas, alternar: alternarColapso } : null}>
     <div className={`canvas ${desenhando ? 'is-desenhando' : ''} ${mapa ? 'com-mapa' : ''} ${destaqueWinner ? '' : 'sem-winner'}`} ref={caixa}>
       <div className="canvas-fundo" ref={fundo}
         onDoubleClick={(e) => { if (!desenhando && !(e.target as Element).closest('.react-flow__node, .react-flow__controls, .react-flow__minimap')) enquadrarTudo() }}
@@ -1681,7 +1721,12 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           onNodeDragStart={(_, n, ns) => { if (arvore) comecouMapa(n as No); else comecouArraste(ns) }} onSelectionDragStart={(_, ns) => comecouArraste(ns as No[])}
           onNodeDrag={(_, n, ns) => { if (arvore) arrastandoMapa(n.type === 'categoria' ? guiar(n as No, ns as No[], new Set(descendentes(n.id))) : n as No); else arrastarDesenhos(guiar(n as No, ns as No[])) }} onSelectionDrag={(_, ns) => arrastarDesenhos(ns[0] as No)}
           onNodeDragStop={(e, n0, ns0) => { const n = fimGuia(n0 as No); const ns = (ns0 as No[]).map((x) => (x.id === n.id ? n : x)); if (arvore) { soltouMapa(n); return } arrastarDesenhos(n, true); soltou(e, n, ns) }} onSelectionDragStop={(_, ns) => { arrastarDesenhos(ns[0] as No, true); registrar(ns as No[]); guardarPos(ns as No[]) }} onConnect={conectou} onConnectEnd={soltouLinha} connectionMode={ConnectionMode.Loose} onMove={(_, v) => { fundo.current?.style.setProperty('--z', String(v.zoom)); controleDesenho.current?.vista(v) }} onMoveEnd={lembrarVista} onInit={(i) => fundo.current?.style.setProperty('--z', String(i.getZoom()))} onBeforeDelete={antesDeApagar}
-          // um clique só seleciona o card (aí o ⌫ tira ele do canvas); dois cliques abrem a nota
+          // 1 clique abre a nota (⌘/⇧ clique só seleciona, para ⌫ e seleção múltipla)
+          onNodeClick={(e, n) => {
+            if (n.type === 'categoria' || desenhando || e.metaKey || e.ctrlKey || e.shiftKey || (e.target as HTMLElement).closest('a, video, button:not(.cartao-formato)')) return
+            const chip = (e.target as HTMLElement).closest<HTMLElement>('.cartao-formato[data-nome]')
+            onAbrir(chip ? { raiz: chip.dataset.raiz as Alvo['raiz'], nome: chip.dataset.nome! } : alvoDe(n as No))
+          }}
           onNodeDoubleClick={(e, n) => {
             if (n.type === 'categoria') { alternarColapso(n.id); return }
             if (e.metaKey || e.ctrlKey || e.shiftKey || (e.target as HTMLElement).closest('a, video')) return
@@ -1718,91 +1763,20 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       </div>
 
 
-      {/* botão direito numa pasta: o mesmo menu da página Todos os canvas (editar, arquivar, excluir) */}
-      {menuPasta && <MenuDoCanvas m={menuPasta} onFechar={() => setMenuPasta(null)}
-        onMudou={() => { listarCanvases().then(setTodosCanvas).catch(() => {}); if (menuPasta.c.slug === canvas) recarregar() }}
-        onExcluido={(slug) => { if (slug === canvas) onTrocarCanvas?.(INBOX); else listarCanvases().then(setTodosCanvas).catch(() => {}) }} />}
-      {/* os canvas como pastas na esquerda: clicar troca de canvas ali mesmo */}
-      {onTrocarCanvas && todosCanvas.length > 0 && (
-        <nav className="canvas-lista" aria-label="Canvas">
-          {todosCanvas.filter((c) => (!c.arquivado && c.slug !== INBOX) || c.slug === canvas).map((c) => (
-            <button key={c.slug} type="button" className={`pastinha ${c.slug === canvas ? 'is-ativa' : ''} ${arrastaPasta && alvoPasta === c.slug && arrastaPasta !== c.slug ? 'is-alvo' : ''} ${arrastaPasta === c.slug ? 'is-arrastando' : ''}`} style={{ '--cor': c.cor } as React.CSSProperties}
-              draggable={c.slug !== INBOX} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setArrastaPasta(c.slug) }}
-              onDragOver={(e) => { if (!arrastaPasta || c.slug === INBOX) return; e.preventDefault(); setAlvoPasta(c.slug) }}
-              onDragEnd={() => { setArrastaPasta(null); setAlvoPasta(null) }}
-              onDrop={(e) => { e.preventDefault(); if (arrastaPasta && c.slug !== INBOX) soltarPasta(arrastaPasta, c.slug) }}
-              onClick={() => { if (c.slug !== canvas) onTrocarCanvas(c.slug); else if (visao !== 'principal') setVisao('principal') }}   // o canvas aberto: volta do card/pasta para o canvas
-              onContextMenu={(e) => { if (c.slug === INBOX) return; e.preventDefault(); e.stopPropagation(); setMenuPasta({ x: e.clientX, y: e.clientY, c }) }} title={`${c.nome}: ${c.producoes} produções, ${c.vsls} VSLs, ${c.ideias} ideias`}>
-              <span className="pastinha-aba" />
-              <span className="pastinha-frente">{c.icone !== '🗂️' && <span className="pastinha-ic">{c.icone}</span>}<em>{c.producoes + c.vsls}</em></span>
-              <span className="pastinha-nome">{c.nome}</span>
-            </button>
-          ))}
-          {/* canvas arquivados: um ícone discreto de arquivo; hover ou clique abre a lista à direita */}
-          {(() => {
-            const arquivados = todosCanvas.filter((c) => c.arquivado && c.slug !== canvas)
-            if (!arquivados.length) return null
-            const abrir = (el: HTMLElement) => { if (fecharArq.current) window.clearTimeout(fecharArq.current); const r = el.getBoundingClientRect(); setArqAberto({ left: r.right + 10, top: r.top }) }
-            const fechar = () => { fecharArq.current = window.setTimeout(() => setArqAberto(null), 260) }
-            return <>
-              <button type="button" className={`canvas-arquivo ${arqAberto ? 'is-on' : ''}`} title={`${arquivados.length} canvas arquivado${arquivados.length > 1 ? 's' : ''}`} aria-label="Canvas arquivados"
-                onMouseEnter={(e) => abrir(e.currentTarget)} onMouseLeave={fechar} onClick={(e) => (arqAberto ? setArqAberto(null) : abrir(e.currentTarget))}>
-                <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="4" rx="1" /><path d="M4 7.5v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8M8 11h4" /></svg>
-              </button>
-              {arqAberto && createPortal(
-                <div className="menu-ctx glass glass--light canvas-arquivo-menu" role="menu" style={arqAberto}
-                  onMouseEnter={() => { if (fecharArq.current) window.clearTimeout(fecharArq.current) }} onMouseLeave={fechar}>
-                  <p className="menu-ctx-t">Arquivados</p>
-                  {arquivados.map((c) => (
-                    <button key={c.slug} role="menuitem" onClick={() => { setArqAberto(null); onTrocarCanvas(c.slug) }}>
-                      <span className="menu-emoji">{c.icone !== '🗂️' ? c.icone : '🗂️'}</span>{c.nome}<kbd>{c.producoes + c.vsls}</kbd>
-                    </button>
-                  ))}
-                </div>, document.body)}
-            </>
-          })()}
-          {/* abaixo das pastas, separados por uma linha: os cards pinados e os últimos abertos (antes ficavam numa barra à parte) */}
-          {(() => {
-            const pins = vistas.pinados.filter((id) => existe(id) || (pinGlobal && !!canvasDoCard(id))), hist = vistas.historico.filter(existe)
-            if (!pins.length && !hist.length) return null
-            const item = (id: string, pinado: boolean) => { const fora = !existe(id) ? canvasDoCard(id) : null
-              const gravar = !!global && (notasDoId(global, id) as { status?: string }[]).some((x) => x.status === 'gravar')   // 🔴 falta gravar: borda vermelha
-              return (
-              <div key={id} className={`trilho-item ${pinado ? 'is-pinado' : 'trilho-hist'} ${fora ? 'is-fora' : ''} ${gravar ? 'is-gravar' : ''} ${visao === `foco:${id}` ? 'is-on' : ''} ${pinado && arrastaPin && alvoPin === id && arrastaPin !== id ? 'is-alvo' : ''} ${arrastaPin === id ? 'is-arrastando' : ''}`}
-                draggable={pinado} onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); setArrastaPin(id) }}
-                onDragOver={(e) => { if (!pinado || !arrastaPin) return; e.preventDefault(); setAlvoPin(id) }}
-                onDragEnd={() => { setArrastaPin(null); setAlvoPin(null) }}
-                onDrop={(e) => { e.preventDefault(); if (pinado && arrastaPin) setVistas((v) => ({ ...v, pinados: moverNaLista(v.pinados, arrastaPin, id) })); setArrastaPin(null); setAlvoPin(null) }}>
-                <button className="trilho-abrir" onClick={() => { if (!fora) return pinado ? abrirVista(id) : irAoCard(id); if (pinado) focoPendente = id; else cardPendente = id; onTrocarCanvas?.(fora.slug) }}
-                  title={pinado ? `${nomeDoId(id)}: abre isolado, num canvas próprio, com os filhos${fora ? ` (está em ${fora.nome})` : ''}` : fora ? `${nomeDoId(id)}: está em ${fora.nome}; abre lá, com a nota` : `${nomeDoId(id)}: abre a nota e mostra o card no canvas`}>
-                  {(() => { const [ic, ...resto] = nomeDoId(id).split(' '); return <><span className="trilho-ic">{ic}</span><span className="trilho-nome">{resto.join(' ')}</span></> })()}
-                </button>
-                <button className="trilho-pin" onClick={() => pinar(id, !pinado)} title={pinado ? 'Despinar (volta ao histórico)' : 'Pinar'}><Icone n={pinado ? 'fechar' : 'pin'} t={11} /></button>
-              </div>
-            ) }
-            return <>
-              <span className="trilho-sep trilho-sep--pastas" />
-              {pins.length > 0 && <><span className="trilho-secao" title="Pinados"><Icone n="pin" t={13} /></span>{pins.map((id) => item(id, true))}</>}
-              {pins.length > 0 && hist.length > 0 && <span className="trilho-sep trilho-hist" />}
-              {hist.length > 0 && <><span className="trilho-secao trilho-hist" title="Últimos abertos"><Icone n="atualizar" t={13} /></span>{hist.map((id) => item(id, false))}</>}
-            </>
-          })()}
-        </nav>
-      )}
 
 
       <aside className="canvas-pastas" aria-label="Pastas">
         {/* status: botões discretos (abrem a tabela) e os winners 🔥 com as datas de postagem */}
         <div className="canvas-status" role="group" aria-label="Pastas de status">
-          {canvas !== INBOX && <><Pasta nome="Criação" n={est?.producoes.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaNova('ideias'))} /><span className="status-sep" aria-hidden="true" /></>}
-          <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
+          {canvas !== INBOX && <><Pasta nome="Criação" n={est?.producoes.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaSalva('ideias'))} /><span className="status-sep" aria-hidden="true" /></>}
+          <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaSalva('winner'))} />
           {/* os pinados de todos os canvas, em tabela (vale mesmo com o botão de pinados globais desligado) */}
-          <Pasta nome="Pinados" n={global ? vistas.pinados.filter((id) => notasDoId(global, id).length > 0).length : 0} ativa={tabela?.pasta === 'pinados'} cor="pinados" onClick={() => setTabela(tabelaNova('pinados'))} />
+          <Pasta nome="Pinados" n={global ? vistas.pinados.filter((id) => notasDoId(global, id).length > 0).length : 0} ativa={tabela?.pasta === 'pinados'} cor="pinados" onClick={() => setTabela(tabelaSalva('pinados'))} />
           <span className="status-sep" aria-hidden="true" />
-          <Pasta nome="Gravar" n={contagem.gravar} ativa={visao === 'gravar' || tabela?.pasta === 'gravar'} cor="gravar" onClick={() => setTabela(tabelaNova('gravar'))} />
-          <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao' || tabela?.pasta === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaNova('edicao'))} />
-          <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado' || tabela?.pasta === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaNova('agendado'))} />
-          <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-') || tabela?.pasta === 'publicado'} cor="publicado" onClick={() => setTabela(tabelaNova('publicado'))} />
+          <Pasta nome="Gravar" n={contagem.gravar} ativa={visao === 'gravar' || tabela?.pasta === 'gravar'} cor="gravar" onClick={() => setTabela(tabelaSalva('gravar'))} />
+          <Pasta nome="Em edição" n={contagem.edicao} ativa={visao === 'edicao' || tabela?.pasta === 'edicao'} cor="edicao" onClick={() => setTabela(tabelaSalva('edicao'))} />
+          <Pasta nome="Agendado" n={contagem.agendado} ativa={visao === 'agendado' || tabela?.pasta === 'agendado'} cor="agendado" onClick={() => setTabela(tabelaSalva('agendado'))} />
+          <Pasta nome="Publicado" n={contagem.publicado} ativa={visao.startsWith('pub-') || tabela?.pasta === 'publicado'} cor="publicado" onClick={() => setTabela(tabelaSalva('publicado'))} />
           <span className="status-sep" aria-hidden="true" />
           <div className="canvas-barra">
             {visao !== 'principal' && <button className="pilula glass glass--light" onClick={() => setVisao('principal')}><Icone n="seta" t={12} /> Canvas</button>}
@@ -1815,21 +1789,23 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             <span className="canvas-sep" />
             <div className="canvas-zoom" role="group" aria-label="Zoom e linhas">
               {/* + e − de zoom saíram (zoom pelo mouse/trackpad e ⌘+/⌘−) */}
-              <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
-                data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
-              <button className="btn-icone" data-dica="Ajustar o canvas à tela (ou 2× clique no vazio)" aria-label="Ajustar o canvas à tela" onClick={() => enquadrarTudo()}>
-                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></svg></button>
-              <button className="btn-icone canvas-roda" onClick={() => setRoda((r) => (r === 'mouse' ? 'trackpad' : 'mouse'))}
-                data-dica={roda === 'mouse' ? 'Modo mouse: rolar dá zoom (M ou T troca para trackpad)' : 'Modo trackpad: dois dedos movem, pinça dá zoom (M ou T troca para mouse)'}
-                aria-label={roda === 'mouse' ? 'Modo mouse' : 'Modo trackpad'}>
-                {roda === 'mouse'
-                  ? <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="2.5" width="9" height="15" rx="4.5" /><path d="M10 5.5v3" /></svg>
-                  : <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.5" /><path d="M7 16v-3.5M13 16v-3.5" /></svg>}
-              </button>
-              <button className={`canvas-modo ${arvore ? 'is-on' : ''}`} onClick={() => mudarModo(!arvore)} aria-label="Mapa mental" aria-pressed={arvore}
-                data-dica={arvore ? 'Mapa mental: cada copy segue a ideia, tudo se arruma sozinho (G volta ao canvas livre)' : 'Canvas livre: você posiciona os cards (G liga o mapa mental)'}>
-                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="8" width="5" height="4" rx="1.2" /><rect x="13" y="3" width="5" height="4" rx="1.2" /><rect x="13" y="13" width="5" height="4" rx="1.2" /><path d="M7 10h3M10 5v10M10 5h3M10 15h3" /></svg>
-                {arvore ? 'Mapa mental' : 'Livre'}</button>
+              <div className="canvas-alinhar">
+                <button className={`btn-icone ${menuAlinhar ? 'is-on' : ''}`} onClick={() => setMenuAlinhar((v) => !v)} aria-label="Alinhar e distribuir" aria-expanded={menuAlinhar}
+                  data-dica={arvore ? 'Alinhar e distribuir as categorias selecionadas' : 'Alinhar e distribuir os cards selecionados'}>
+                  <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2v16"/><rect x="6" y="4" width="11" height="4" rx="1"/><rect x="6" y="12" width="7" height="4" rx="1"/></svg></button>
+                {menuAlinhar && (
+                  <div className="menu-alinhar" role="menu" onMouseDown={(e) => e.preventDefault()}>
+                    <button className="btn-icone" role="menuitem" data-dica="Alinhar à esquerda" aria-label="Alinhar à esquerda" onClick={() => alinhar('esq')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2v16"/><rect x="6" y="4" width="10" height="4" rx="1"/><rect x="6" y="12" width="6" height="4" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Centralizar na horizontal" aria-label="Centralizar na horizontal" onClick={() => alinhar('centro')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16"/><rect x="4" y="4" width="12" height="4" rx="1"/><rect x="6.5" y="12" width="7" height="4" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Alinhar à direita" aria-label="Alinhar à direita" onClick={() => alinhar('dir')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M17 2v16"/><rect x="4" y="4" width="10" height="4" rx="1"/><rect x="8" y="12" width="6" height="4" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Alinhar no topo" aria-label="Alinhar no topo" onClick={() => alinhar('topo')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3h16"/><rect x="4" y="6" width="4" height="10" rx="1"/><rect x="12" y="6" width="4" height="6" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Centralizar na vertical" aria-label="Centralizar na vertical" onClick={() => alinhar('meio')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10h16"/><rect x="4" y="4" width="4" height="12" rx="1"/><rect x="12" y="6.5" width="4" height="7" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Alinhar na base" aria-label="Alinhar na base" onClick={() => alinhar('base')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 17h16"/><rect x="4" y="4" width="4" height="10" rx="1"/><rect x="12" y="8" width="4" height="6" rx="1"/></svg></button><span className="menu-alinhar-sep" />
+                    <button className="btn-icone" role="menuitem" data-dica="Distribuir na horizontal" aria-label="Distribuir na horizontal" onClick={() => alinhar('distH')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3v14M18 3v14"/><rect x="7.5" y="6" width="5" height="8" rx="1"/></svg></button>
+                    <button className="btn-icone" role="menuitem" data-dica="Distribuir na vertical" aria-label="Distribuir na vertical" onClick={() => alinhar('distV')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2h14M3 18h14"/><rect x="6" y="7.5" width="8" height="5" rx="1"/></svg></button>
+                  </div>
+                )}
+              </div>
               {arvore && (
                 <div className="canvas-organizar">
                   <button className={`btn-icone ${menuGrade || grade ? 'is-on' : ''}`} onClick={() => setMenuGrade((v) => !v)} aria-label="Organizar o mapa" aria-expanded={menuGrade}
@@ -1856,36 +1832,27 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
                   })()}
                 </div>
               )}
+              <button className="btn-icone canvas-roda" onClick={() => setRoda((r) => (r === 'mouse' ? 'trackpad' : 'mouse'))}
+                data-dica={roda === 'mouse' ? 'Modo mouse: rolar dá zoom (M ou T troca para trackpad)' : 'Modo trackpad: dois dedos movem, pinça dá zoom (M ou T troca para mouse)'}
+                aria-label={roda === 'mouse' ? 'Modo mouse' : 'Modo trackpad'}>
+                {roda === 'mouse'
+                  ? <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="2.5" width="9" height="15" rx="4.5" /><path d="M10 5.5v3" /></svg>
+                  : <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.5" /><path d="M7 16v-3.5M13 16v-3.5" /></svg>}
+              </button>
+              <span className="status-sep" aria-hidden="true" />
+              <button className={`btn-icone canvas-desenhar ${desenhando ? 'is-ativo' : ''}`} disabled={visao !== 'principal'}
+                data-dica={desenhando ? 'Sair do modo desenho (Esc ou ⌥E)' : 'Desenhar (E): ou aperte R, O, D, A, L, P…'} onClick={() => setDesenhando((d) => !d)}><Icone n="editar" t={13} /></button>
               <button className={`btn-icone ${autoAjuste ? 'is-on' : 'is-desligado'}`} onClick={() => setAutoAjuste((v) => !v)} aria-label="Ajuste automático" aria-pressed={autoAjuste}
                 data-dica={autoAjuste ? 'Ajuste automático ligado: abrir e fechar no mapa enquadram tudo na tela (clique para desligar)' : 'Ajuste automático desligado (clique para ligar)'}>
                 <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /><path d="M10 7v6M7 10h6" /></svg></button>
-              <div className="canvas-alinhar">
-                <button className={`btn-icone ${menuAlinhar ? 'is-on' : ''}`} onClick={() => setMenuAlinhar((v) => !v)} aria-label="Alinhar e distribuir" aria-expanded={menuAlinhar}
-                  data-dica={arvore ? 'Alinhar e distribuir as categorias selecionadas' : 'Alinhar e distribuir os cards selecionados'}>
-                  <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2v16"/><rect x="6" y="4" width="11" height="4" rx="1"/><rect x="6" y="12" width="7" height="4" rx="1"/></svg></button>
-                {menuAlinhar && (
-                  <div className="menu-alinhar" role="menu" onMouseDown={(e) => e.preventDefault()}>
-                    <button className="btn-icone" role="menuitem" data-dica="Alinhar à esquerda" aria-label="Alinhar à esquerda" onClick={() => alinhar('esq')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2v16"/><rect x="6" y="4" width="10" height="4" rx="1"/><rect x="6" y="12" width="6" height="4" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Centralizar na horizontal" aria-label="Centralizar na horizontal" onClick={() => alinhar('centro')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16"/><rect x="4" y="4" width="12" height="4" rx="1"/><rect x="6.5" y="12" width="7" height="4" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Alinhar à direita" aria-label="Alinhar à direita" onClick={() => alinhar('dir')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M17 2v16"/><rect x="4" y="4" width="10" height="4" rx="1"/><rect x="8" y="12" width="6" height="4" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Alinhar no topo" aria-label="Alinhar no topo" onClick={() => alinhar('topo')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3h16"/><rect x="4" y="6" width="4" height="10" rx="1"/><rect x="12" y="6" width="4" height="6" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Centralizar na vertical" aria-label="Centralizar na vertical" onClick={() => alinhar('meio')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10h16"/><rect x="4" y="4" width="4" height="12" rx="1"/><rect x="12" y="6.5" width="4" height="7" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Alinhar na base" aria-label="Alinhar na base" onClick={() => alinhar('base')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 17h16"/><rect x="4" y="4" width="4" height="10" rx="1"/><rect x="12" y="8" width="4" height="6" rx="1"/></svg></button><span className="menu-alinhar-sep" />
-                    <button className="btn-icone" role="menuitem" data-dica="Distribuir na horizontal" aria-label="Distribuir na horizontal" onClick={() => alinhar('distH')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3v14M18 3v14"/><rect x="7.5" y="6" width="5" height="8" rx="1"/></svg></button>
-                    <button className="btn-icone" role="menuitem" data-dica="Distribuir na vertical" aria-label="Distribuir na vertical" onClick={() => alinhar('distV')}><svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 2h14M3 18h14"/><rect x="6" y="7.5" width="8" height="5" rx="1"/></svg></button>
-                  </div>
-                )}
-              </div>
-              <button className={`btn-icone ${mapa ? 'is-on' : 'is-desligado'}`} onClick={() => setMapa((v) => !v)} aria-label="Minimapa"
-                data-dica={mapa ? 'Esconder o minimapa' : 'Mostrar o minimapa'}>
-                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.6" y="4" width="14.8" height="12" rx="2.2" /><rect x="9.6" y="9.4" width="5.4" height="4.2" rx="1" /></svg></button>
-              <button className={`btn-icone ${pinGlobal ? 'is-on' : 'is-desligado'}`} onClick={() => setPinGlobal((v) => !v)} aria-label="Pinados globais"
-                data-dica={pinGlobal ? 'Pinados globais: a esquerda mostra os de todos os canvas (clique para só os deste)' : 'Mostrar os pinados de todos os canvas'}><Icone n="pin" t={13} /></button>
-              <button className={`btn-icone ${linhas ? 'is-on' : 'is-desligado'}`} data-dica={linhas ? 'Esconder as linhas (as do card selecionado continuam)' : 'Mostrar as linhas'}
-                onClick={() => setLinhas((l) => !l)}><Icone n="grafo" t={13} /></button>
-              <button className={`btn-icone ${destaqueWinner ? 'is-on' : 'is-desligado'}`} onClick={() => setDestaqueWinner((v) => !v)} aria-label="Destaque dos winners"
-                data-dica={destaqueWinner ? 'Esconder o destaque vermelho dos winners 🔥' : 'Mostrar o destaque vermelho dos winners 🔥'}>
-                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.6c-3.1 0-5.4-2.2-5.4-5.2 0-2.6 1.6-4.3 3-5.8.9-1 1.8-2.1 2-3.6 1.9 1.3 3 3.1 3.1 5 .6-.4 1-1.1 1.2-1.9 1.3 1.4 2 3.3 2 5 0 3.3-2.5 6.5-5.9 6.5z" /><path d="M10 17.6c-1.4 0-2.4-1-2.4-2.4 0-1.5 1.2-2.4 2.3-3.6.9 1 2.5 2.2 2.5 3.7 0 1.3-1 2.3-2.4 2.3z" /></svg></button>
+              <button className="btn-icone" data-dica="Ajustar o canvas à tela (ou 2× clique no vazio)" aria-label="Ajustar o canvas à tela" onClick={() => enquadrarTudo()}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" /></svg></button>
+              <button className={`btn-icone ${verPub ? 'is-on' : 'is-desligado'}`} onClick={() => mudarVerPub(!verPub)} aria-label="Ver os publicados" aria-pressed={verPub}
+                data-dica={verPub ? 'Mostrando os publicados deste canvas (clique para esconder)' : 'Publicados escondidos neste canvas (clique para mostrar)'}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10.5l3.6 3.6 7.4-8.2" /></svg></button>
+              <button className={`btn-icone ${verMidia ? 'is-on' : 'is-desligado'}`} onClick={() => setVerMidia((v) => !v)} aria-label="Detalhes dos cards" aria-pressed={verMidia}
+                data-dica={verMidia ? 'Esconder os formatos, as imagens e os vídeos dos cards' : 'Mostrar os formatos, as imagens e os vídeos dos cards'}>
+                <svg className="i" width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2.2" /><path d="m3 14 4.2-4.2 3.3 3.3 2.2-2.2L17 15" /><circle cx="13.2" cy="7.8" r="1.3" /></svg></button>
             </div>
           </div>
         </div>
@@ -1938,8 +1905,23 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
           })() : menu.no ? (() => {
             const n = menu.no!
             const pinOp = pinavel(n.id) && <Op icone="pin" onClick={() => pinar(n.id, !vistas.pinados.includes(n.id))}>{vistas.pinados.includes(n.id) ? 'Despinar' : 'Pinar na barra'}</Op>
+            if (n.type === 'categoria' && n.data.raiz) return <>
+              <Op emoji="🗂️" onClick={() => acoesCategoria.novaCategoria(n.id)}>Nova categoria</Op>
+              <Op emoji="💡" onClick={() => pedirCopy(livre(menu.flow))}>Nova copy numa categoria</Op>
+            </>
             if (n.type === 'categoria') return <>
               <Op emoji="📄" onClick={() => pedirCopy(livre(menu.flow), n.data.nome)}>Nova copy aqui</Op>
+              {n.data.nome !== SEM_CAT && <Op icone="editar" onClick={() => perguntar({ titulo: 'Renomear categoria', inicial: n.data.nome,
+                dica: 'Muda o campo categoria: de todas as copies dela neste canvas.',
+                ok: (t) => tentar(async () => {
+                  const para = t.trim()
+                  if (!para || para === n.data.nome) return
+                  await post('categoria/renomear', { de: n.data.nome, para })
+                  const de = n.id, novo = `c:${para}`
+                  trocarPin(de, novo)
+                  setColapsadas((c) => { if (!c.has(de)) return c; const x = new Set(c); x.delete(de); x.add(novo); try { localStorage.setItem(`canvas-colapsadas#${canvas}`, JSON.stringify([...x])) } catch { /* sem storage */ } return x })
+                }, 'Categoria renomeada') })}>Renomear</Op>}
+              {n.data.nome !== SEM_CAT && <Op icone="lixeira" onClick={() => excluirCategoria(n.data.nome)}>Excluir categoria</Op>}
               {visao !== `foco:${n.id}` && <Op icone="grafo" onClick={() => abrirVista(n.id)}>Abrir em canvas próprio</Op>}
               {pinOp}
             </>
@@ -1964,7 +1946,9 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
                 return <Op emoji="🔥" onClick={() => marcarWinner(notas.map((x) => ({ raiz: x.raiz, nome: x.nome })), !on)}>{on ? 'Tirar o 🔥 winner' : 'Marcar como winner 🔥'}</Op>
               })()}
               <hr />
-              {onTrecho && <Op icone="chat" onClick={() => onTrecho({ texto: '', linhaIni: 1, linhaFim: 999, raiz: alvo.raiz, nome: alvo.nome, caminho: `${PASTA[alvo.raiz as Raiz]}/${alvo.nome}.md` })}>Perguntar ao Jarvis</Op>}
+              {(() => { const cs = (ehCard(n) ? notasDoCard(n) : []).map((x) => codigoDe(x.nome)).filter(Boolean).join(' ')
+                return cs ? <Op icone="link" onClick={() => { setMenu(null); copiar(cs, `${cs} copiado`) }}>Copiar código{cs.includes(' ') ? 's' : ''} <code className="menu-codigo">{cs}</code></Op> : null })()}
+              {onTrecho && <Op icone="chat" onClick={() => onTrecho({ texto: '', linhaIni: 1, linhaFim: 999, raiz: alvo.raiz, nome: alvo.nome, caminho: `${PASTA[alvo.raiz as Raiz]}/${alvo.nome}.md` })}>Mandar ao Claude</Op>}
               {n.type !== 'grupo' && <Op icone="editar" onClick={() => perguntar({ titulo: 'Renomear', inicial: alvo.nome, ok: (t) => tentar(async () => {
                 const r = await fetch(`/api/notas/${alvo.raiz}/${encodeURIComponent(alvo.nome)}/acao`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'renomear', novo: t }) })
                 if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Não consegui renomear.')
@@ -2002,7 +1986,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
         onFechar={() => setDaLinha(null)} onCriado={(_, msg, nota) => criadoDaLinha(msg, nota)} />}
       {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
     </div>
-    </ArvoreUI.Provider></DesligarUI.Provider></VistoUI.Provider></ChatUI.Provider></ProdutosUI.Provider>
+    </ArvoreUI.Provider></DesligarUI.Provider></VistoUI.Provider></CategoriaUI.Provider></MidiaUI.Provider></ProdutosUI.Provider>
   )
 }
 

@@ -24,6 +24,14 @@ export function alternarPin(id: string, sim?: boolean) {
   window.dispatchEvent(new Event(EVENTO_PINS))
 }
 
+/** Um card pinado mudou de id (categoria renomeada): o pin vai junto, no mesmo lugar da lista. */
+export function trocarPin(de: string, para: string) {
+  const l = lerPins()
+  if (!l.includes(de)) return
+  try { localStorage.setItem(CHAVE, JSON.stringify(l.map((x) => (x === de ? para : x)))) } catch { /* sem storage */ }
+  window.dispatchEvent(new Event(EVENTO_PINS))
+}
+
 /** O card onde a nota aparece no canvas: a 💡 ideia, a entrada, o card da produção (copies da mesma ideia) ou a copy solta. */
 export function idDoCard(est: EstadoCanvas, a: Alvo): string {
   if (a.raiz === 'ideias') return `i:${a.nome}`

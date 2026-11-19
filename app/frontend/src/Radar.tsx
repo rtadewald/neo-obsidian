@@ -24,10 +24,10 @@ function quando(ts?: number) {
 
 let ultimoIr = 0
 
-export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes = FONTES }: {
+export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', fontes = FONTES }: {
   titulo?: string; fontes?: string[]   // cada aba do radar mostra só as suas fontes (X sozinho; GitHub, HF e HN em Sites)
-  foco: Sinal | null; onConversar: (s: Sinal) => void; onModo?: (emFoco: boolean) => void
-  ir?: { id?: number; url?: string | null; n: number }   // pedido do chat: mostrar este sinal no foco
+  foco?: Sinal | null; onConversar: (s: Sinal) => void; onModo?: (emFoco: boolean) => void
+  ir?: { id?: number; url?: string | null; n: number }   // mostrar este sinal no foco
 }) {
   const [sinais, setSinais] = useState<Sinal[]>([])
   const [menu, setMenu] = useState<{ x: number; y: number; s: Sinal } | null>(null)   // botão direito num card: adicionar ao canvas
@@ -127,7 +127,7 @@ export function Radar({ foco, onConversar, onModo, ir, titulo = 'Radar', fontes 
   const atualRef = useRef(atual)
   atualRef.current = atual
 
-  // F entra e sai do foco; no foco, ← → navegam, R sorteia e ⌘I manda o sinal da tela para o chat
+  // F entra e sai do foco; no foco, ← → navegam, R sorteia e ⌘I manda o sinal da tela ao Claude Code
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
       if (modo === 'foco' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i' && atualRef.current) {
@@ -326,9 +326,9 @@ function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal };
 }
 
 const LISTA_ATALHOS: [string, [string, string][]][] = [
-  ['Em qualquer lugar', [['⌘1 … ⌘4', 'Radar, Ideias, Desempenho, Calendário'], ['⌘P', 'Buscar notas'], ['Esc', 'Sair do campo do chat']]],
-  ['Radar · Foco', [['← →', 'Anterior e próximo'], ['R', 'Embaralhar de novo'], ['⌘I', 'Levar o sinal ao Jarvis'], ['F', 'Entrar e sair do foco'], ['?', 'Esta lista']]],
-  ['Ideias', [['⌘B', 'Mostrar e esconder a lista de notas'], ['⌘I', 'Mandar o trecho ao Jarvis'], ['⌘S', 'Salvar agora'], ['⌘ clique', 'Abrir um [[link]]']]],
+  ['Em qualquer lugar', [['⌃1 … ⌃8', 'As abas da navbar, na ordem'], ['⌘P', 'Buscar notas'], ['⌘J', 'Pedido ao Claude Code']]],
+  ['Radar · Foco', [['← →', 'Anterior e próximo'], ['R', 'Embaralhar de novo'], ['⌘I', 'Mandar o sinal ao Claude'], ['F', 'Entrar e sair do foco'], ['?', 'Esta lista']]],
+  ['Ideias', [['⌘B', 'Mostrar e esconder a lista de notas'], ['⌘I', 'Mandar o trecho ao Claude'], ['⌘S', 'Salvar agora'], ['⌘ clique', 'Abrir um [[link]]']]],
 ]
 
 function Atalhos({ onFechar }: { onFechar: () => void }) {
@@ -457,7 +457,7 @@ function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>)
       <button className={`btn-icone ${feita ? 'is-on' : ''}`} aria-label="Virar ideia" disabled={criando}
         title={feita ? 'Já virou 💡 ideia no canvas' : 'Transformar em 💡 ideia no Inbox (botão direito no card escolhe o canvas)'}
         onClick={virarIdeia}><Icone n="ideia" t={16} /></button>
-      <button className="btn-icone acoes-jarvis" aria-label="Perguntar ao Jarvis" title="Perguntar ao Jarvis sobre este card (⌘I)" onClick={() => onConversar(s)}>
+      <button className="btn-icone acoes-jarvis" aria-label="Mandar ao Claude" title="Mandar este card ao Claude Code (⌘I)" onClick={() => onConversar(s)}>
         <span className="orb orb--msg" /></button>
     </span>
   )

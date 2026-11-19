@@ -27,8 +27,6 @@ export type VideoX = { url: string; w?: number; h?: number; dur?: number; gif?: 
 
 export type Coleta = { inicio: number; fim: number; status: string; detalhes: Record<string, unknown> } | null
 
-export type Msg = { papel: 'usuario' | 'jarvis'; texto: string; ferramentas?: string[]; erro?: string }
-
 const j = async <T,>(r: Response): Promise<T> => {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
   return r.json()
@@ -47,35 +45,6 @@ export const api = {
   gosto: () => fetch('/api/radar/gosto').then(j<Gosto>),
   reavaliar: () => fetch('/api/radar/reavaliar', { method: 'POST' }).then(j<{ status: string }>),
   video: (id: number) => fetch(`/api/sinais/${id}/video`).then(j<{ video: VideoX }>),
-  historico: (conversa: string) => fetch(`/api/chat/${conversa}`).then(j<{ papel: Msg['papel']; texto: string }[]>),
   metricool: () => fetch('/api/metricool/estado').then(j<{ conectado: boolean; motivo: string }>),
 }
 
-export type EventoChat =
-  | { t: 'texto'; v: string }
-  | { t: 'ferramenta'; nome: string; alvo: string }
-  | { t: 'fim'; sessao: string; custo: number | null }
-  | { t: 'erro'; v: string }
-  | { t: 'mudou' }   // uma ferramenta do Jarvis mudou o vault/app: o canvas recarrega na hora
-  | { t: 'tela'; acao: string; pagina?: string; canvas?: string | null; raiz?: string; nome?: string }   // o Jarvis mexe na tela
-
-/** POST /api/chat e lê o SSE linha a linha. */
-export async function conversar(corpo: { conversa: string; texto: string; sinal?: number | null; onde?: string; canvas?: string; nota?: { raiz: string; nome: string } | null }, cb: (e: EventoChat) => void, parar?: AbortSignal) {
-  // parar (o botão ⏹ do chat) corta a conexão: o servidor cancela a resposta do agente
-  const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: parar })
-  if (!r.ok || !r.body) throw new Error(`${r.status}`)
-  const leitor = r.body.getReader()
-  const dec = new TextDecoder()
-  let buf = ''
-  for (;;) {
-    const { done, value } = await leitor.read()
-    if (done) break
-    buf += dec.decode(value, { stream: true })
-    let i
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const bloco = buf.slice(0, i)
-      buf = buf.slice(i + 2)
-      if (bloco.startsWith('data: ')) cb(JSON.parse(bloco.slice(6)))
-    }
-  }
-}
