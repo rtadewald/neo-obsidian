@@ -53,15 +53,15 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
     const cab = { 'Content-Type': 'application/json', 'X-Canvas': canvas }
     try {
       if (tipo === 'ideia' && plugar) {
-        if (!alvo) throw new Error('Escolha a ideia onde isso entra.')
+        if (!alvo) throw new Error('Escolha a copy onde isso entra.')
         const r = await fetch('/api/canvas/entrada', { method: 'POST', headers: cab, body: JSON.stringify({ conteudo: t, ideia: alvo }) })
         const d = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(d.detail || 'Não consegui plugar na ideia.')
-        onCriado(canvas, `Entrou em ${alvo}`, { raiz: 'ideias', nome: alvo, tipo })
+        if (!r.ok) throw new Error(d.detail || 'Não consegui plugar na copy.')
+        onCriado(canvas, `Entrou em ${alvo}`, { raiz: d.raiz || 'priorizar', nome: alvo, tipo })
         return
       }
       const r = tipo === 'ideia'
-        ? await fetch('/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, ...(pos ? { pos } : {}) }) })
+        ? await fetch(/https?:\/\//.test(t) || t.length > 90 ? '/api/canvas/entrada' : '/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, conteudo: t, ...(pos ? { pos } : {}) }) })
         : ligar?.ideia
           ? await fetch('/api/canvas/saida', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: ligar.ideia, formato, titulo: `${formato} ${t}` }) })
           : await fetch('/api/notas/priorizar', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: `${formato} ${t}` }) })
@@ -70,7 +70,7 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
       if (tipo === 'ideia' && ligar?.fonte)   // a entrada de onde a flecha saiu vira fonte da ideia nova
         await fetch('/api/canvas/fonte', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: d.nome, entrada: ligar.fonte }) }).catch(() => {})
       const nomeCanvas = canvases.find((c) => c.slug === canvas)?.nome
-      onCriado(canvas, `${tipo === 'ideia' ? '💡 Ideia criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`,
+      onCriado(canvas, `${tipo === 'ideia' ? '📄 Copy criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`,
         { raiz: d.raiz, nome: d.nome, tipo, formato: tipo === 'producao' ? formato : undefined })
     } catch (x) { setErro((x as Error).message); setIndo(false) }
   }
@@ -82,24 +82,24 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
         {alternar && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Criar">
             {ligar?.de && <span className="novo-rapido-rotulo">de {ligar.de}</span>}
-            {([['ideia', '💡 Ideia'], ['producao', '🎬 Copy']] as const).map(([k, nome]) => (
+            {([['ideia', '🔗 Link ou texto'], ['producao', '🎬 Copy']] as const).map(([k, nome]) => (
               <button key={k} type="button" role="radio" aria-checked={k === tipo} className={k === tipo ? 'is-on' : ''} onClick={() => setTipo(k)}>{nome}</button>
             ))}
           </div>
         )}
         <label className="paleta-campo">
-          <span className="novo-rapido-emoji">{tipo === 'ideia' ? '💡' : icone(formato)}</span>
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? (plugar ? 'Link ou texto para a ideia…' : 'Nova ideia…') : ligar?.ideia ? 'Nova copy desta ideia…' : 'Nova criação…'} />
+          <span className="novo-rapido-emoji">{tipo === 'ideia' ? '🔗' : icone(formato)}</span>
+          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={tipo === 'ideia' ? (plugar ? 'Link ou texto para a copy…' : 'Nome, link ou texto da copy nova…') : ligar?.ideia ? 'Nova copy desta ideia…' : 'Nova criação…'} />
         </label>
         {tipo === 'ideia' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Onde">
-            {([[false, 'Nova ideia'], [true, 'Plugar numa ideia']] as const).map(([k, nome]) => (
+            {([[false, 'Copy nova'], [true, 'Plugar numa copy']] as const).map(([k, nome]) => (
               <button key={nome} type="button" role="radio" aria-checked={k === plugar} className={k === plugar ? 'is-on' : ''} onClick={() => setPlugar(k)}>{nome}</button>
             ))}
             {plugar && alvo && <span className="novo-rapido-rotulo">em {alvo}</span>}
           </div>
         )}
-        {tipo === 'ideia' && plugar && <EscolherIdeia onEscolher={setAlvo} placeholder="Em qual ideia isso entra?" />}
+        {tipo === 'ideia' && plugar && <EscolherIdeia onEscolher={setAlvo} placeholder="Em qual copy isso entra?" />}
         {tipo === 'producao' && (
           <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
             {FORMATOS.map(([f, nome]) => (

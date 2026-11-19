@@ -8,7 +8,15 @@ este arquivo precisa ser corrigido no mesmo commit.
 
 O Neo-Obsidian é um app web local por cima do vault do Obsidian do Rodrigo (`/Users/rtadewald/Obsidian Notes`).
 Ele não tem banco de notas próprio: **lê e escreve os mesmos `.md` do vault**. Por cima deles monta um canvas em que
-cada 💡 ideia de conteúdo é um card e as produções dela (📱 Reels, 💰 Ad, 🏞️ Carrossel, 📺 VSL…) se penduram nela.
+cada copy vive numa **categoria** (`categoria:` no frontmatter) e as versões da mesma copy (📱 Reels, 💰 Ad, 🏞️
+Carrossel…, com o mesmo `ideia:`) se juntam num card 🎬.
+
+> **Desde 18/11/2026 não existe mais 💡 ideia separada.** As 48 notas 💡 vazias foram para a `.trash` do vault, as
+> 37 com material viraram copies em `1 Priorizar/` (frontmatter do T-Copy, com `ideia: "[[💡 Nome]]"` para entrar no
+> mesmo card 🎬 das versões dela) e 160 copies ganharam a `categoria:` da 💡 delas. A chave `ideia:` ficou só como a
+> chave do card 🎬. "Nova ideia", link colado e radar criam copies em Priorizar (`canvas._nova_copy`); a versão nova
+> (`criar_saida`) herda a categoria das irmãs. Copy sem `grupo:` vive onde as irmãs de `ideia:` vivem. O que ainda
+> fala de 💡 ideia abaixo é legado (o código aceita, mas o vault não tem mais nenhuma).
 Ao lado, um chat com o Claude Code (o "Jarvis") que roda dentro do vault, com as skills de copy.
 
 - `app/backend/` — FastAPI em Python 3.12, rodado com `uv` (porta **8740**). O pacote Python ainda se chama `jarvis`
@@ -224,9 +232,9 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
 - Vistas (`Visao` em `Canvas.tsx`): `principal`, `foco:<id>` (um card e
   tudo que está ligado a ele), além de `edicao`, `agendado` e `pub-<ano>`. A barra lateral guarda as vistas pinadas e
   o histórico.
-- **Pinados**: só 💡 ideias (`i:`) e categorias (`c:<nome>`) se pinam (`pinavel` em `pins.ts`; o resto sai da lista).
-  Clicar num pinado abre o `foco:` dele, isolado, com os filhos: a categoria parte de todas as ideias com aquela
-  `categoria:`; no mapa mental a raiz do foco abre expandida e a tela se enquadra. A categoria pina pelo botão direito.
+- **Pinados**: categorias (`c:<nome>`), cards 🎬 (`g:`) e copies (`p:`) se pinam (`pinavel` em `pins.ts`; o pin
+  antigo `i:💡 X` vira `p:priorizar/X`, a copy que nasceu dela). Clicar num pinado abre o `foco:` dele, isolado, com os
+  filhos: a categoria parte de todas as copies com aquela `categoria:`; no mapa mental a raiz do foco abre expandida e a tela se enquadra. A categoria pina pelo botão direito.
 - **Guias de alinhamento**: arrastando um card sozinho, bordas e meio encaixam (7 px de tela) nos dos outros cards
   visíveis, com uma linha rosa (`canvas-guia`, no `ViewportPortal`). No mapa, só a categoria encaixa.
 - **Alinhar e distribuir** (botão na barra de baixo): esquerda, centro, direita, topo, meio, base e distribuir na
@@ -236,9 +244,9 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
   cada um com o bloco do seu galho. Fica no localStorage `canvas-grade#<canvas>`. Arrastar muda a ordem coluna a coluna.
   As grades que dariam o mesmo resultado (nenhum card com mais de N filhos) ficam apagadas no menu.
 - **Criação** (💡 na barra de baixo, separado por um pipe dos 🔥/📌; também a primeira aba da tabela, com pipe antes de
-  Priorizar): a tabela das ideias do canvas em grupos categoria › 💡 ideia › copy. Tudo começa fechado (Expandir tudo /
-  Recolher tudo ao lado dos filtros; a seta da ideia abre as copies, com o ponto do status). A coluna Canvas mostra o emoji e o nome do canvas de
-  cada linha; a linha da categoria junta os canvas das ideias dela.
+  Priorizar): as copies do canvas em grupos categoria › card 🎬 (2+ versões da mesma `ideia:`) › copies; a copy
+  sozinha fica direto na categoria, com o ponto do status. Tudo começa fechado (Expandir tudo / Recolher tudo ao lado
+  dos filtros). A coluna Canvas mostra o emoji e o nome do canvas de cada linha; a linha da categoria junta os canvas.
 - A bolinha de cada canvas (pastas da esquerda) não conta o que foi tirado dele à mão (`arquivados` do layout).
 
 ### Mapa mental (modo do canvas)
@@ -250,7 +258,9 @@ uma nota por fora do app, migre a chave em `pos` também**, senão o card perde 
   de outra (`origem:`) depois da de origem. Card sem pai vira raiz, depois das ideias. A altura de cada card vem do que
   o React Flow mediu; a relayout só troca `position`/`hidden` no mesmo objeto (trocar o objeto faz o React Flow medir
   de novo, sem fim).
-- **Categorias**: cada 💡 ideia tem `categoria: "<emoji> <nome>"` no frontmatter (8 categorias por tipo de projeto, de
+- **Categorias**: cada copy tem `categoria: "<emoji> <nome>"` no frontmatter (a copy sem ela usa a de uma irmã da
+  mesma `ideia:`; sem nenhuma, "Sem categoria"). Botão direito no card → Categoria muda (`POST /api/canvas/categoria`
+  `{nomes, categoria}`, `canvas.definir_categoria`); na categoria, "Nova copy aqui". Antes era a 💡 ideia que tinha (8 categorias por tipo de projeto, de
   17/11/2026: Skills e plugins do Claude, Ferramentas e repos open source, Design e sites com IA, 3D e vídeo com IA,
   Projetos que eu construí, Começar em IA e opinião, Vendas, Referências de outros players).
 - **Hierarquia do mapa** (`emArvoreNos`): **categoria** (card preto `categoria`, id `c:<nome>`, só existe no mapa) →

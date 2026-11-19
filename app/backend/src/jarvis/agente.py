@@ -36,12 +36,13 @@ def _falha(e: Exception) -> dict:
     return {"content": [{"type": "text", "text": f"Não consegui: {type(e).__name__}: {e}"}], "is_error": True}
 
 
-@tool("criar_ideia", "Cria uma 💡 ideia no canvas (nota em 1 Copies/0 Ideias). `fontes` são nomes de notas de entrada "
-      "já existentes, separados por vírgula (pode ser vazio).", {"titulo": str, "brief": str, "fontes": str})
+@tool("criar_ideia", "Cria uma copy nova em 1 Copies/1 Priorizar, na `categoria` dada (a caixa do mapa mental; vazio = "
+      "Sem categoria). Não existe mais 💡 ideia à parte: tudo é copy numa categoria. `fontes` são nomes de notas, separados "
+      "por vírgula (pode ser vazio).", {"titulo": str, "brief": str, "fontes": str, "categoria": str})
 async def _criar_ideia(args: dict) -> dict:
     try:
         fontes = [f.strip() for f in (args.get("fontes") or "").split(",") if f.strip()]
-        d = canvas.criar_ideia(args["titulo"], args.get("brief", ""), fontes)
+        d = canvas.criar_ideia(args["titulo"], args.get("brief", ""), fontes, categoria=args.get("categoria") or None)
         return _ok(f"Criada: [[{d['nome']}]]")
     except Exception as e:
         return _falha(e)
@@ -313,10 +314,11 @@ atual). O app não tem banco de notas: ele lê e escreve os mesmos `.md` do vaul
 - Publicada fica no canvas dela; no Inbox, publicada some (fica na pasta Publicado). As pastas do rodapé (Em edição,
   Agendado, Publicado) são globais e abrem tabelas.
 - 🔥 winner = tag `🔥` nas tags: o card ganha borda vermelha.
-- As abas X e Sites são o radar (sinais da internet); 👍 ensina o gosto dele e 💡 vira ideia no canvas.
+- As abas X e Sites são o radar (sinais da internet); 👍 ensina o gosto dele e 💡 vira copy no canvas.
 
 ## Como agir (use as ferramentas: elas mantêm links, pins do Obsidian e o lugar do card no canvas)
-- Criar ideia: `criar_ideia` (ou `criar_entrada` com um link/texto, que lê a página ou a transcrição).
+- Criar copy nova: `criar_ideia` com a categoria (ou `criar_entrada` com um link/texto, que lê a página ou a transcrição).
+  Não existe mais 💡 ideia separada: toda copy vive numa categoria (`categoria:` no frontmatter).
 - Criar uma versão de uma ideia: `criar_saida` (já com o texto). Juntar copies que já existem numa produção:
   `ligar_ao_canvas` com tipo=producao.
 - Mudar status ou publicar: `mudar_status`. Data: `agendar`. Canvas: `listar_canvas` e `mover_para_canvas`. Produto: `marcar_produto`.

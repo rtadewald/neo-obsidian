@@ -420,7 +420,8 @@ def _todas() -> dict:
                               "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
                               "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "origem": _alvo(_valor(fm, "origem")), "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"),
                               "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
-                              "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"), **_midia(t)})
+                              "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"),
+                              "categoria": _valor(fm, "categoria") or None, **_midia(t)})
     # `grupo:` pode ter vários canvas (a nota vive em todos). `canvases` = os válidos; `canvas` = o primeiro (ou None)
     nomes = {c["nome"] for c in lista_canvases() if c["slug"] != "inbox"}
     validos = lambda gs: [g for g in dict.fromkeys(gs) if g in nomes]
@@ -431,8 +432,8 @@ def _todas() -> dict:
     for i in ideias:   # ideia sem grupo vive onde as copies dela vivem
         i["canvases"] = validos(i["grupos"]) or list(dict.fromkeys(por_ideia.get(i["nome"], [])))
     da_ideia = {i["nome"]: i["canvases"] for i in ideias}
-    for pr in producoes:   # copy sem grupo vive onde a ideia dela vive
-        pr["canvases"] = validos(pr["grupos"]) or da_ideia.get(pr["ideia"] or "", [])
+    for pr in producoes:   # copy sem grupo vive onde a ideia dela vive (ou, sem nota 💡, onde as irmãs de `ideia:` vivem)
+        pr["canvases"] = validos(pr["grupos"]) or da_ideia.get(pr["ideia"] or "", []) or list(dict.fromkeys(por_ideia.get(pr["ideia"] or "", [])))
     for e in entradas:
         e["canvases"] = validos(e["grupos"])
     for x in (*ideias, *producoes, *entradas):
@@ -540,20 +541,26 @@ def _livre(pasta: Path, nome: str) -> Path:
     return p
 
 
-def criar_ideia(titulo: str, brief: str = "", fontes: list[str] | None = None, pos: dict | None = None) -> dict:
-    titulo = _limpo(re.sub(r"^💡\s*", "", titulo)) or "Nova ideia"
-    notas.IDEIAS.mkdir(parents=True, exist_ok=True)
-    p = notas.IDEIAS / f"💡 {titulo}.md"
-    if p.exists():
-        raise FileExistsError(p.name)
-    links = [f"[[{f}]]" for f in (fontes or [])]
-    texto = _definir("---\norigin:\ntags:\n---\n", "fontes", links or None) + (f"\n{brief.strip()}\n" if brief.strip() else "\n")
-    notas._escrever(p, texto)
-    marcar_no_canvas("ideias", p.stem)
-    marcar_nova(p.stem)   # toda ideia nova nasce com o selo NOVO (criada à mão, pelo Jarvis, pela busca)
+def _nova_copy(titulo: str, corpo: str, categoria: str | None = None, extras: dict | None = None) -> Path:
+    """Copy nova em Priorizar com o frontmatter do T-Copy, a `categoria:` (a caixa do mapa) e o que vier em `extras`
+    (url, tipo, thumb do material). Não há mais 💡 ideia à parte: tudo nasce copy, numa categoria."""
+    p = _livre(notas.PRIORIZAR, _limpo(titulo) or "Nova copy")
+    cab = ["publicado: false", "scheduled:", "ideia:", "grupo:", "notion:", "tags:", f'categoria: "{categoria}"' if categoria else "categoria:"]
+    cab += [f'{k}: "{v}"' for k, v in (extras or {}).items() if v]
+    notas._escrever(p, "---\n" + "\n".join(cab) + "\n---\n\n" + (corpo.strip() + "\n" if corpo.strip() else ""))
+    marcar_no_canvas("priorizar", p.stem)
+    marcar_nova(p.stem)   # nasce com o selo NOVO até ser vista
+    return p
+
+
+def criar_ideia(titulo: str, brief: str = "", fontes: list[str] | None = None, pos: dict | None = None, categoria: str | None = None) -> dict:
+    """(Nome antigo.) Cria uma copy em Priorizar, na categoria dada."""
+    titulo = _limpo(re.sub(r"^💡\s*", "", titulo)) or "Nova copy"
+    links = "\n".join(f"[[{f}]]" for f in (fontes or []))
+    p = _nova_copy(titulo, "\n\n".join(x for x in [brief.strip(), links] if x), categoria)
     if pos:
-        posicoes({f"i:{p.stem}": pos})
-    return {"nome": p.stem, "raiz": "ideias"}
+        posicoes({f"p:priorizar/{p.stem}": pos})
+    return {"nome": p.stem, "raiz": "priorizar"}
 
 
 def _texto_pagina(url: str) -> dict:
@@ -570,17 +577,17 @@ def _texto_pagina(url: str) -> dict:
             "corpo": corpo}
 
 
-def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = None, pronto: dict | None = None) -> dict:
+def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = None, pronto: dict | None = None, categoria: str | None = None) -> dict:
     """Link ou texto colado no canvas vira uma 💡 ideia já com o material dentro.
     Com `ideia`, o link/texto entra no fim daquela ideia em vez de virar outra.
     Com `pronto` ({titulo, url, thumb}), a ideia vem de um card do radar: usa o que o card já tem, sem ler a página."""
     conteudo = conteudo.strip()
     if not conteudo:
         raise ValueError("ideia vazia")
-    if ideia:   # plugar numa ideia que já existe: vira uma entrada na seção "## Entradas" da nota
+    if ideia:   # plugar numa copy que já existe: vira uma entrada na seção "## Entradas" da nota
         p = _caminho_ideia(ideia)
         notas._escrever(p, _com_entrada(_ler(p, None), conteudo, (pronto or {}).get("titulo") or ""))
-        return {"nome": p.stem, "raiz": "ideias"}
+        return {"nome": p.stem, "raiz": achar(p.stem)[0]}
     url = conteudo if re.fullmatch(r"https?://\S+", conteudo) else ""
     fm = {"url": url, "tipo": "texto", "thumb": ""}
     corpo, titulo, emoji = conteudo, conteudo.split("\n")[0][:70], "💭"
@@ -611,16 +618,11 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
         except Exception as e:
             titulo = re.sub(r"^https?://(www\.)?", "", url)[:60]
             corpo = f"{url}\n\n(não consegui ler a página: {type(e).__name__})"
-    titulo = _limpo(re.sub(r"\s+", " ", titulo))[:80] or "Nova ideia"
-    notas.IDEIAS.mkdir(parents=True, exist_ok=True)
-    p = _livre(notas.IDEIAS, f"💡 {titulo}")
-    cab = "---\n" + "".join(f'{k}: "{v}"\n' for k, v in fm.items() if v or k in ("url", "tipo")) + "tags:\n---\n\n"
-    notas._escrever(p, cab + corpo.strip() + "\n")
-    marcar_no_canvas("ideias", p.stem)
-    marcar_nova(p.stem)
+    titulo = _limpo(re.sub(r"\s+", " ", titulo))[:80] or "Nova copy"
+    p = _nova_copy(titulo, corpo, categoria, fm)
     if pos:
-        posicoes({f"i:{p.stem}": pos})
-    return {"nome": p.stem, "raiz": "ideias"}
+        posicoes({f"p:priorizar/{p.stem}": pos})
+    return {"nome": p.stem, "raiz": "priorizar"}
 
 
 def _com_entrada(texto: str, conteudo: str, titulo: str = "", data: bool = True) -> str:
@@ -696,10 +698,12 @@ def _tem_material(texto: str) -> bool:
 
 
 def _caminho_ideia(ideia: str) -> Path:
+    """A nota de uma 💡 antiga ou, agora que tudo é copy, a copy com esse nome."""
     p = notas.IDEIAS / f"{ideia}.md"
-    if not p.is_file():
-        raise FileNotFoundError(ideia)
-    return p
+    if p.is_file():
+        return p
+    raiz, nome = achar(ideia)
+    return notas.TODAS[raiz] / f"{nome}.md"
 
 
 def ligar_fonte(ideia: str, entrada: str, sim: bool):
@@ -763,7 +767,9 @@ def criar_saida(ideia: str, formato: str, titulo: str = "", texto: str = "") -> 
     if not nome.startswith(formato):
         nome = f"{formato} {nome}"
     p = _livre(notas.PRIORIZAR, nome)
-    cab = f'---\npublicado: false\nscheduled:\nideia: "[[{ideia}]]"\ngrupo:\nnotion:\ntags:\n---\n\n'   # o mesmo de T-Copy.md
+    # a versão nova entra na categoria das irmãs (a mesma `ideia:`)
+    cat = next((x.get("categoria") for x in _todas()["producoes"] if x["ideia"] == ideia and x.get("categoria")), None)
+    cab = f'---\npublicado: false\nscheduled:\nideia: "[[{ideia}]]"\ngrupo:\nnotion:\ntags:\n' + (f'categoria: "{cat}"\n' if cat else "") + '---\n\n'   # o de T-Copy.md
     notas._escrever(p, cab + (texto.strip() + "\n" if texto.strip() else ""))
     marcar_no_canvas("priorizar", p.stem)
     return {"nome": p.stem, "raiz": "priorizar"}
@@ -1139,3 +1145,19 @@ def importar(nome: str) -> dict:
     mover_para_canvas([nome], info["nome"])
     raiz, nome = achar(nome)
     return {"card": _id_do_card(raiz, nome), "raiz": raiz, "nome": nome, "canvas": info["nome"]}
+
+
+def definir_categoria(nomes: list[str], categoria: str | None) -> int:
+    """Põe as copies numa categoria (a caixa do mapa mental): `categoria:` no frontmatter. Vazio tira (Sem categoria)."""
+    cat = (categoria or "").strip()
+    cat = None if not cat or cat == "Sem categoria" else cat
+    n = 0
+    for nome in nomes:
+        raiz, nome = achar(nome)
+        p = notas.TODAS[raiz] / f"{nome}.md"
+        t = _ler(p, None)
+        if _valor(_fm(t), "categoria") == cat:
+            continue
+        notas._escrever(p, _definir(t, "categoria", cat))
+        n += 1
+    return n

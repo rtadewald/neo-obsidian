@@ -10,6 +10,7 @@ export type Producao = {
   palavras?: number; criado?: number
   winner?: boolean   // tag 🔥 na nota: performou acima da média
   tags?: string[]
+  categoria?: string | null   // `categoria:` da copy: a caixa do mapa mental onde ela vive
 } & Midia
 export type Formato = { emoji: string; nome: string }
 /** A produção 🎬 de uma copy: as copies com a mesma chave viram um card só. Normalmente é a ideia; quando uma ideia

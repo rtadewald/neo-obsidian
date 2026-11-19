@@ -618,11 +618,23 @@ class NovaIdeia(BaseModel):
     titulo: str
     brief: str = ""
     pos: Pos | None = None
+    categoria: str | None = None
+
+
+class Categoria(BaseModel):
+    nomes: list[str]
+    categoria: str | None = None
+
+
+@app.post("/api/canvas/categoria")
+def canvas_categoria(corpo: Categoria):
+    """Mapa mental: muda a categoria das copies (a caixa onde elas vivem)."""
+    return _erros(lambda: {"mudadas": canvas.definir_categoria(corpo.nomes, corpo.categoria)})
 
 
 @app.post("/api/canvas/ideia")
 def canvas_ideia(corpo: NovaIdeia):
-    return _erros(lambda: canvas.criar_ideia(corpo.titulo, corpo.brief, pos=corpo.pos and corpo.pos.model_dump()))
+    return _erros(lambda: canvas.criar_ideia(corpo.titulo, corpo.brief, pos=corpo.pos and corpo.pos.model_dump(), categoria=corpo.categoria))
 
 
 class NovaEntrada(BaseModel):
@@ -630,11 +642,12 @@ class NovaEntrada(BaseModel):
     ideia: str | None = None
     pos: Pos | None = None
     pronto: dict | None = None   # {titulo, url, thumb}: ideia vinda de um card do radar
+    categoria: str | None = None
 
 
 @app.post("/api/canvas/entrada")
 def canvas_entrada(corpo: NovaEntrada):
-    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump(), corpo.pronto))
+    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump(), corpo.pronto, corpo.categoria))
 
 
 class Fonte(BaseModel):

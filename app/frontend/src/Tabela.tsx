@@ -85,9 +85,9 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
     return { nome: i.nome, raiz: 'ideias' as Producao['raiz'], status: 'ideia', scheduled: null, ano: '', formato: '💡', ideia: n ? `${n} ${n === 1 ? 'versão' : 'versões'}` : null,
       previa: i.previa, mtime: i.mtime, criado: i.mtime, canvas: i.canvas, categoria: i.categoria || 'Sem categoria', canvases: i.canvases, tags: i.tags, links: i.links ?? [], imagem: i.imagem ?? null, copia: i.copia ?? null } as Producao & { categoria: string }
   }, [est])
-  const ideiasDoCanvas = useMemo(() => est.ideias
-    .filter((i) => !canvasNome || (i.canvases ?? (i.canvas ? [i.canvas] : [])).includes(canvasNome))
-    .map(linhaIdeia), [est, canvasNome, linhaIdeia])
+  // Criação: as copies do canvas aberto (cada uma numa categoria; as versões da mesma `ideia:` juntas num card 🎬)
+  const ideiasDoCanvas = useMemo(() => est.producoes
+    .filter((p) => !canvasNome || (p.canvases ?? (p.canvas ? [p.canvas] : [])).includes(canvasNome)), [est, canvasNome])
   // os pinados viram linhas: a 💡 ideia, cada copy de uma produção 🎬 e as copies soltas (entradas ficam de fora)
   const linhasPinadas = useMemo(() => {
     const vistos = new Set<string>(), out: Producao[] = []
@@ -123,13 +123,22 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const [catAbertas, setCatAbertas] = useState<Set<string>>(() => new Set())
   const [ideiasAbertas, setIdeiasAbertas] = useState<Set<string>>(() => new Set())
   const trocar = (set: (f: (s: Set<string>) => Set<string>) => void, k: string) => set((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
-  const copiasDe = useCallback((ideia: string) => est.producoes.filter((p) => p.ideia === ideia).sort((a, b) => ORDEM_FORMATO.indexOf(a.formato) - ORDEM_FORMATO.indexOf(b.formato) || b.mtime - a.mtime), [est])
+  // a categoria de uma copy: a dela, ou a de uma irmã da mesma `ideia:`
+  const catDe = useCallback((p: Producao) => p.categoria || est.producoes.find((x) => p.ideia && x.ideia === p.ideia && x.categoria)?.categoria || 'Sem categoria', [est])
+  type Item = { chave: string; nome: string; copias: Producao[] }   // card 🎬 (2+ versões) ou copy solta (1)
   const categorias = useMemo(() => {
-    if (t.pasta !== 'ideias') return []
-    const m = new Map<string, Producao[]>()
-    for (const p of linhas) { const c = (p as Producao & { categoria?: string }).categoria || 'Sem categoria'; m.set(c, [...(m.get(c) ?? []), p]) }
-    return [...m.entries()].sort((a, b) => (a[0] === 'Sem categoria' ? 1 : b[0] === 'Sem categoria' ? -1 : b[1].length - a[1].length || a[0].localeCompare(b[0])))
-  }, [linhas, t.pasta])
+    if (t.pasta !== 'ideias') return [] as [string, Item[]][]
+    const m = new Map<string, Map<string, Producao[]>>()
+    for (const p of linhas) {
+      const c = catDe(p), k = p.ideia ? `g:${p.ideia}` : `p:${p.raiz}/${p.nome}`
+      const g = m.get(c) ?? new Map<string, Producao[]>(); g.set(k, [...(g.get(k) ?? []), p]); m.set(c, g)
+    }
+    const itens = (g: Map<string, Producao[]>): Item[] => [...g.entries()].flatMap(([k, ps]) => ps.length > 1
+      ? [{ chave: k, nome: k.slice(2).replace(/^💡\s*/, ''), copias: ps.sort((a, b) => ORDEM_FORMATO.indexOf(a.formato) - ORDEM_FORMATO.indexOf(b.formato) || b.mtime - a.mtime) }]
+      : ps.map((p) => ({ chave: `p:${p.raiz}/${p.nome}`, nome: p.nome, copias: [p] })))
+    return [...m.entries()].map(([c, g]) => [c, itens(g)] as [string, Item[]])
+      .sort((a, b) => (a[0] === 'Sem categoria' ? 1 : b[0] === 'Sem categoria' ? -1 : b[1].length - a[1].length || a[0].localeCompare(b[0])))
+  }, [linhas, t.pasta, catDe])
   const chipCanvas = (nome?: string | null) => nome
     ? <span className="tabela-caixa" title={`No canvas ${nome}`}>{icones[nome] ? <span className="tabela-caixa-ic">{icones[nome]}</span> : null}{nome}</span>
     : <span className="mudo">{INBOX_NOME}</span>
@@ -162,6 +171,21 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
   const contagem = (k: StatusProd) => est.producoes.filter((p) => p.status === k).length
   const alvo = document.querySelector('section.pagina')
   type Galho = { nivel: number; n?: number; aberta?: boolean; alternar?: () => void }
+  /** A linha do card 🎬: as versões da mesma `ideia:` (clicar abre e fecha; as versões vêm embaixo). */
+  const linhaProducao = (i: { chave: string; nome: string; copias: Producao[] }, abre: boolean) => (
+    <tr key={i.chave} className="tabela-grupo tabela-nivel-1 is-prod" onClick={() => trocar(setIdeiasAbertas, i.chave)}>
+      {onApagar && <td className="col-sel" />}
+      <td className="col-formato">🎬</td>
+      <td className="col-nome"><div className="tabela-galho">
+        <span className={`tabela-seta-grupo ${abre ? 'is-aberta' : ''}`}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+        <div><b>{semEmoji(i.nome)}<em className="tabela-n">{i.copias.length}</em></b><span>{i.copias.map((c) => c.formato || '📄').join(' ')}</span></div></div></td>
+      <td className="col-data"><span className="mudo">{dataBr(dia(i.copias[0]))}</span></td>
+      <td />
+      <td className="col-grupo">{chipCanvas(i.copias[0].canvas)}</td>
+      <td className="col-palavras">{i.copias.reduce((n, c) => n + (c.palavras ?? 0), 0) || <span className="mudo">0</span>}</td>
+      <td className="col-mtime">{relativo(Math.max(...i.copias.map((c) => c.mtime)))}</td>
+    </tr>
+  )
   const linha = (p: Producao, g?: Galho) => (
                 <tr key={`${p.raiz}/${p.nome}`} onClick={() => onAbrir({ raiz: p.raiz, nome: p.nome })} tabIndex={0} className={`${sel.has(chaveDe(p)) ? 'is-sel' : ''} ${g?.nivel ? `tabela-nivel-${g.nivel}` : ''}`}
                   onContextMenu={(e) => { e.preventDefault(); setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 280), p: { raiz: p.raiz, nome: p.nome } }) }}
@@ -170,7 +194,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
                     <input type="checkbox" aria-label={`Marcar ${p.nome}`} checked={sel.has(chaveDe(p))} onChange={() => {}} /></td>}
                   <td className="col-formato">{p.formato || '📄'}</td>
                   <td className="col-nome">{g?.nivel ? <div className="tabela-galho">
-                    {g.nivel === 1 ? (g.n ? <button className={`tabela-seta-grupo ${g.aberta ? 'is-aberta' : ''}`} aria-label={g.aberta ? 'Fechar as copies' : `Mostrar ${g.n} copies`} onClick={(e) => { e.stopPropagation(); g.alternar?.() }}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button> : <span className="tabela-seta-grupo is-vazia" />)
+                    {g.nivel === 1 && g.n ? (g.n ? <button className={`tabela-seta-grupo ${g.aberta ? 'is-aberta' : ''}`} aria-label={g.aberta ? 'Fechar as copies' : `Mostrar ${g.n} copies`} onClick={(e) => { e.stopPropagation(); g.alternar?.() }}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button> : <span className="tabela-seta-grupo is-vazia" />)
                       : <i className={`ponto is-${p.status}`} title={STATUS.find((x) => x.k === p.status)?.nome} />}
                     <div><b>{semEmoji(p.nome)}{g.nivel === 1 && g.n ? <em className="tabela-n">{g.n}</em> : null}</b>{p.previa && <span>{p.previa}</span>}</div></div>
                     : <><b>{semEmoji(p.nome)}</b>{p.previa && <span>{p.previa}</span>}</>}</td>
@@ -190,7 +214,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
         <header className="modal-tabs">
           <nav role="tablist">
             {canvasNome && <button role="tab" aria-selected={t.pasta === 'ideias'} className={`modal-tab ${t.pasta === 'ideias' ? 'is-ativa' : ''}`} onClick={() => onMudar(tabelaNova('ideias'))}
-              title={`Criação: as categorias e 💡 ideias de ${canvasNome}, com as copies de cada uma`}>
+              title={`Criação: as copies de ${canvasNome} por categoria`}>
               <span className="tabela-fogo">💡</span><span>Criação</span><em className="tabela-n">{ideiasDoCanvas.length}</em>
             </button>}
             {canvasNome && <span className="modal-tab-sep" aria-hidden="true" />}
@@ -243,11 +267,11 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
           )}
           {t.pasta === 'ideias' && categorias.length > 0 && (() => {
             // tudo aberto = nenhuma categoria fechada e toda ideia com copies aberta; o botão alterna entre os dois
-            const tudoAberto = categorias.every(([c, is]) => catAbertas.has(c) && is.every((i) => !copiasDe(i.nome).length || ideiasAbertas.has(i.nome)))
+            const tudoAberto = categorias.every(([c, is]) => catAbertas.has(c) && is.every((i) => i.copias.length < 2 || ideiasAbertas.has(i.chave)))
             return <button className="tabela-select tabela-tudo" onClick={() => {
               if (tudoAberto) { setCatAbertas(new Set()); setIdeiasAbertas(new Set()) }
-              else { setCatAbertas(new Set(categorias.map(([c]) => c))); setIdeiasAbertas(new Set(categorias.flatMap(([, is]) => is.map((i) => i.nome)))) }
-            }} title={tudoAberto ? 'Fechar todas as categorias' : 'Abrir todas as categorias e as copies de cada ideia'}>
+              else { setCatAbertas(new Set(categorias.map(([c]) => c))); setIdeiasAbertas(new Set(categorias.flatMap(([, is]) => is.map((i) => i.chave)))) }
+            }} title={tudoAberto ? 'Fechar todas as categorias' : 'Abrir todas as categorias e as versões de cada produção'}>
               <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 {tudoAberto ? <path d="M3 2.5l3 3 3-3M3 9.5l3-3 3 3" /> : <path d="M3 5l3-3 3 3M3 7l3 3 3-3" />}</svg>
               {tudoAberto ? 'Recolher tudo' : 'Expandir tudo'}</button>
@@ -270,20 +294,21 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onCanvas, onAp
             <tbody>
               {t.pasta !== 'ideias' ? linhas.map((p) => linha(p)) : categorias.map(([cat, ideias]) => {
                 const aberta = catAbertas.has(cat) || !!t.busca.trim()
-                const canvases = [...new Set(ideias.map((i) => i.canvas).filter(Boolean))] as string[]
+                const todas = ideias.flatMap((i) => i.copias)
+                const canvases = [...new Set(todas.map((i) => i.canvas).filter(Boolean))] as string[]
                 return [
                   <tr key={`cat:${cat}`} className="tabela-grupo is-cat" onClick={() => trocar(setCatAbertas, cat)}>
                     {onApagar && <td className="col-sel" />}
                     <td className="col-formato"><span className={`tabela-seta-grupo ${aberta ? 'is-aberta' : ''}`}><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></span></td>
-                    <td className="col-nome"><b>{cat}</b><span>{ideias.length} {ideias.length === 1 ? 'ideia' : 'ideias'} · {ideias.reduce((n, i) => n + copiasDe(i.nome).length, 0)} copies</span></td>
+                    <td className="col-nome"><b>{cat}</b><span>{todas.length} {todas.length === 1 ? 'copy' : 'copies'}{todas.length !== ideias.length ? ` · ${ideias.filter((i) => i.copias.length > 1).length} produções 🎬` : ''}</span></td>
                     <td /><td />
                     <td className="col-grupo"><div className="tabela-caixas">{canvases.map((c) => <span key={c}>{chipCanvas(c)}</span>)}</div></td>
                     <td /><td />
                   </tr>,
                   ...(aberta ? ideias.flatMap((i) => {
-                    const cs = copiasDe(i.nome), abre = ideiasAbertas.has(i.nome)
-                    return [linha(i, { nivel: 1, n: cs.length, aberta: abre, alternar: () => trocar(setIdeiasAbertas, i.nome) }),
-                      ...(abre ? cs.map((c) => linha(c, { nivel: 2 })) : [])]
+                    if (i.copias.length === 1) return [linha(i.copias[0], { nivel: 1 })]
+                    const abre = ideiasAbertas.has(i.chave)
+                    return [linhaProducao(i, abre), ...(abre ? i.copias.map((c) => linha(c, { nivel: 2 })) : [])]
                   }) : []),
                 ]
               })}

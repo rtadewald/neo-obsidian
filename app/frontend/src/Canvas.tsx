@@ -1,4 +1,4 @@
-import { EVENTO_PINS, pinavel, usePins } from './pins'
+import { EVENTO_PINS, lerPins, pinavel, usePins } from './pins'
 import { EVENTO_DESFEITO, desfazerUltima, mudarStatus, registrarAcao } from './desfazer'
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -244,6 +244,14 @@ const TIPOS_NO = { ideia: CardIdeia, entrada: CardEntrada, producao: CardProd, g
 
 /* ---------- montagem dos nós de cada visão ---------- */
 
+const SEM_CAT = 'Sem categoria'
+/** A categoria (caixa do mapa mental) de uma copy: a `categoria:` dela, ou a de uma irmã da mesma `ideia:`. */
+function categoriaDe(est: EstadoCanvas, p: Producao): string {
+  if (p.categoria) return p.categoria
+  const irma = p.ideia ? est.producoes.find((x) => x.ideia === p.ideia && x.categoria) : null
+  return irma?.categoria || SEM_CAT
+}
+
 /** De que lado sai e entra a seta, pela posição relativa dos dois cards. */
 function lados(a: { x: number; y: number }, b: { x: number; y: number }): [string, string] {
   const dx = b.x - a.x, dy = b.y - a.y
@@ -259,7 +267,8 @@ function ligados(est: EstadoCanvas, raiz: string): Set<string> {
   for (const p of est.producoes) if (p.ideia) { liga(`g:${chaveProd(p)}`, `p:${p.raiz}/${p.nome}`); if (ideias.has(p.ideia)) liga(`i:${p.ideia}`, `g:${chaveProd(p)}`) }
   for (const i of est.ideias) for (const f of i.fontes) liga(`e:${f}`, `i:${i.nome}`)
   // a categoria (`c:`) não é nó: o canvas próprio dela parte de todas as ideias que têm essa `categoria:`
-  const sementes = raiz.startsWith('c:') ? est.ideias.filter((i) => (i.categoria || 'Sem categoria') === raiz.slice(2)).map((i) => `i:${i.nome}`) : [raiz]
+  const sementes = raiz.startsWith('c:') ? [...est.ideias.filter((i) => (i.categoria || SEM_CAT) === raiz.slice(2)).map((i) => `i:${i.nome}`),
+    ...est.producoes.filter((p) => categoriaDe(est, p) === raiz.slice(2)).flatMap((p) => [`p:${p.raiz}/${p.nome}`, ...(p.ideia ? [`g:${chaveProd(p)}`] : [])])] : [raiz]
   const vistos = new Set([raiz, ...sementes]), fila = [...sementes]
   while (fila.length) for (const v of viz.get(fila.shift()!) ?? []) if (!vistos.has(v)) { vistos.add(v); fila.push(v) }
   return vistos
@@ -586,7 +595,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     try {
       localStorage.setItem(chaveLocal('canvas-vistas'), JSON.stringify({ pinados: [], historico: vistas.historico }))
       // grava os pinados globais sem perder os de cards que não estão neste canvas
-      const daqui = new Set(est ? [...est.ideias.map((i) => `i:${i.nome}`), ...est.producoes.map((p) => `p:${p.raiz}/${p.nome}`), ...est.producoes.filter((p) => p.ideia).map((p) => `g:${p.ideia}`), ...est.entradas.map((e) => `e:${e.nome}`), ...est.ideias.map((i) => `c:${i.categoria || 'Sem categoria'}`)] : [])
+      const daqui = new Set(est ? [...est.ideias.map((i) => `i:${i.nome}`), ...est.producoes.map((p) => `p:${p.raiz}/${p.nome}`), ...est.producoes.filter((p) => p.ideia).map((p) => `g:${p.ideia}`), ...est.entradas.map((e) => `e:${e.nome}`), ...est.ideias.map((i) => `c:${i.categoria || SEM_CAT}`), ...est.producoes.map((p) => `c:${categoriaDe(est, p)}`)] : [])
       const outros = pinadosGlobais().filter((id) => !daqui.has(id) && !vistas.pinados.includes(id))
       const antes = localStorage.getItem('canvas-pinados'), depois = JSON.stringify([...vistas.pinados, ...outros])
       if (antes !== depois) { localStorage.setItem('canvas-pinados', depois); window.dispatchEvent(new Event(EVENTO_PINS)) }
@@ -795,6 +804,14 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     for (const x of n0) {
       const c = catDaIdeia(x)
       if (!c || some.has(x.id)) continue
+      a.push({ id: `c:${c}→${x.id}`, source: `c:${c}`, target: x.id, className: 'aresta-categoria', deletable: false })
+      filhosCat.set(`c:${c}`, (filhosCat.get(`c:${c}`) ?? 0) + 1)
+    }
+    // sem 💡: o card 🎬 e a copy solta que não saem de outro card penduram na categoria das copies deles
+    const temPai = new Set(a.filter((e) => e.className !== 'aresta-fonte').map((e) => e.target))
+    for (const x of n) {
+      if ((x.type !== 'grupo' && x.type !== 'producao') || temPai.has(x.id) || !est) continue
+      const c = categoriaDe(est, x.type === 'grupo' ? x.data.saidas[0] : x.data.prod)
       a.push({ id: `c:${c}→${x.id}`, source: `c:${c}`, target: x.id, className: 'aresta-categoria', deletable: false })
       filhosCat.set(`c:${c}`, (filhosCat.get(`c:${c}`) ?? 0) + 1)
     }
@@ -1153,6 +1170,19 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     )
   }
   /** Produto ›: de quais produtos os cards são (as tags da nota). Na seleção, "–" quando só parte é. */
+  /** Botão direito num card: muda a categoria (a caixa do mapa) das copies dele. */
+  const subCategoria = (copias: Producao[]) => {
+    if (!est || !copias.length) return null
+    const atual = categoriaDe(est, copias[0])
+    const mudar = (c: string) => tentar(() => post('categoria', { nomes: copias.map((x) => x.nome), categoria: c }), `Foi para ${c}`)
+    return <>
+      <hr /><p className="menu-ctx-t">Categoria</p>
+      <div className="menu-categorias">
+        {[...categoriasAqui(), SEM_CAT].filter((c) => c !== atual).map((c) => <button key={c} data-fecha onClick={() => { setMenu(null); mudar(c) }}>{c}</button>)}
+        <button data-fecha className="is-nova" onClick={() => { setMenu(null); perguntar({ titulo: 'Nova categoria', dica: 'Comece com um emoji, como as outras', ok: (c) => c.trim() && mudar(c.trim()) }) }}>+ Nova categoria</button>
+      </div>
+    </>
+  }
   const subProduto = (cards: ReturnType<typeof notasDoCard>[]) => {
     const prods = est?.produtos ?? []
     const copias = cards.map((ns) => ns.filter((x): x is Producao => 'raiz' in x)).map((ns, i) => (ns.length ? ns : cards[i]))
@@ -1396,10 +1426,15 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
     avisar('Lendo o material…', 20000)
     await tentar(() => post('entrada', { conteudo, pos, ideia }), ideia ? 'Adicionado à ideia' : 'Ideia criada')
   }
-  // 💡 ideia: um nome curto vira a nota; link ou texto maior vira a ideia já com o material dentro
-  const novaIdeia = (t: string, pos: { x: number; y: number }) =>
-    /https?:\/\//.test(t) || t.includes('\n') || t.length > 90 ? novaEntrada(t, pos) : tentar(() => post('ideia', { titulo: t, pos }), 'Ideia criada')
-  const pedirIdeia = (pos: { x: number; y: number }) => perguntar({ titulo: 'Nova ideia', dica: 'Um nome, ou cole um link (YouTube, Instagram, X, matéria) ou um texto', longo: true, ok: (t) => novaIdeia(t, pos) })
+  // copy nova: um nome curto vira a nota; link ou texto maior vira a copy já com o material. Sempre numa categoria
+  const categoriasAqui = () => [...new Set((est?.producoes ?? []).map((p) => categoriaDe(est!, p)))].filter((c) => c !== SEM_CAT).sort()
+  const novaCopy = (t: string, pos: { x: number; y: number }, categoria?: string) =>
+    /https?:\/\//.test(t) || t.includes('\n') || t.length > 90
+      ? (avisar('Lendo o material…', 20000), tentar(() => post('entrada', { conteudo: t, pos, categoria }), 'Copy criada'))
+      : tentar(() => post('ideia', { titulo: t, pos, categoria }), 'Copy criada')
+  const pedirCopy = (pos: { x: number; y: number }, categoria?: string) => categoria
+    ? perguntar({ titulo: `Nova copy em ${categoria}`, dica: 'Um nome, ou cole um link (YouTube, Instagram, X, matéria) ou um texto', longo: true, ok: (t) => novaCopy(t, pos, categoria) })
+    : perguntar({ titulo: 'Categoria da copy', dica: `Uma que já existe (${categoriasAqui().slice(0, 6).join(', ') || 'nenhuma ainda'}) ou um nome novo`, ok: (c) => window.setTimeout(() => pedirCopy(pos, c.trim() || SEM_CAT), 50) })
 
   async function novaSaida(ideia: string, formato: string, nome: string) {
     try {
@@ -1759,7 +1794,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
       <aside className="canvas-pastas" aria-label="Pastas">
         {/* status: botões discretos (abrem a tabela) e os winners 🔥 com as datas de postagem */}
         <div className="canvas-status" role="group" aria-label="Pastas de status">
-          {canvas !== INBOX && <><Pasta nome="Criação" n={est?.ideias.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaNova('ideias'))} /><span className="status-sep" aria-hidden="true" /></>}
+          {canvas !== INBOX && <><Pasta nome="Criação" n={est?.producoes.length ?? 0} ativa={tabela?.pasta === 'ideias'} cor="ideias" onClick={() => setTabela(tabelaNova('ideias'))} /><span className="status-sep" aria-hidden="true" /></>}
           <Pasta nome="Winners" n={(global?.producoes ?? []).filter((p) => p.winner).length} ativa={tabela?.pasta === 'winner'} cor="winner" onClick={() => setTabela(tabelaNova('winner'))} />
           {/* os pinados de todos os canvas, em tabela (vale mesmo com o botão de pinados globais desligado) */}
           <Pasta nome="Pinados" n={global ? vistas.pinados.filter((id) => notasDoId(global, id).length > 0).length : 0} ativa={tabela?.pasta === 'pinados'} cor="pinados" onClick={() => setTabela(tabelaNova('pinados'))} />
@@ -1904,6 +1939,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
             const n = menu.no!
             const pinOp = pinavel(n.id) && <Op icone="pin" onClick={() => pinar(n.id, !vistas.pinados.includes(n.id))}>{vistas.pinados.includes(n.id) ? 'Despinar' : 'Pinar na barra'}</Op>
             if (n.type === 'categoria') return <>
+              <Op emoji="📄" onClick={() => pedirCopy(livre(menu.flow), n.data.nome)}>Nova copy aqui</Op>
               {visao !== `foco:${n.id}` && <Op icone="grafo" onClick={() => abrirVista(n.id)}>Abrir em canvas próprio</Op>}
               {pinOp}
             </>
@@ -1913,6 +1949,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               {visao !== `foco:${n.id}` && <Op icone="grafo" onClick={() => abrirVista(n.id)}>Abrir em canvas próprio</Op>}
               {pinOp}
               {(n.type === 'grupo' || n.type === 'producao') && subStatus(n.type === 'grupo' ? n.data.saidas : [n.data.prod])}
+              {(n.type === 'grupo' || n.type === 'producao') && subCategoria(n.type === 'grupo' ? n.data.saidas : [n.data.prod])}
               {ehCard(n) && subMover([notasDoCard(n)])}
               {ehCard(n) && subProduto([notasDoCard(n)])}
               {(n.type === 'ideia' || n.type === 'grupo') && <>
@@ -1940,7 +1977,7 @@ function Mesa({ onAbrir, onTrecho, onPedido, versao, mostrar, canvas = INBOX, on
               <Op icone="lixeira" perigo onClick={() => deletar(n)}>{n.type === 'grupo' ? `Deletar produção (${n.data.saidas.length})` : 'Deletar'}</Op>
             </>
           })() : <>
-            <Op emoji="💡" onClick={() => pedirIdeia(livre(menu.flow))}>Nova ideia</Op>
+            <Op emoji="💡" onClick={() => pedirCopy(livre(menu.flow))}>Nova copy numa categoria</Op>
             <Op emoji="📄" onClick={() => perguntar({ titulo: 'Nova copy solta (em Priorizar)', inicial: '📱 ', ok: (t) => tentar(async () => {
               const r = await fetch('/api/notas/priorizar', { method: 'POST', headers: { 'Content-Type': 'application/json', ...cabecalhoCanvas() }, body: JSON.stringify({ titulo: t }) })
               if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : 'Não consegui criar.')
@@ -2031,7 +2068,7 @@ function notasDoId(e: EstadoCanvas, id: string): unknown[] {
   if (id.startsWith('i:')) return e.ideias.filter((i) => i.nome === r)
   if (id.startsWith('g:')) return e.producoes.filter((p) => chaveProd(p) === r)
   if (id.startsWith('e:')) return e.entradas.filter((x) => x.nome === r)
-  if (id.startsWith('c:')) return e.ideias.filter((i) => (i.categoria || 'Sem categoria') === r)
+  if (id.startsWith('c:')) return [...e.ideias.filter((i) => (i.categoria || SEM_CAT) === r), ...e.producoes.filter((p) => categoriaDe(e, p) === r)]
   return e.producoes.filter((p) => `${p.raiz}/${p.nome}` === r)
 }
 
@@ -2039,7 +2076,7 @@ function notasDoId(e: EstadoCanvas, id: string): unknown[] {
 function pinadosGlobais(): string[] {
   try {
     const g = localStorage.getItem('canvas-pinados')
-    if (g) return (JSON.parse(g) as string[]).filter(pinavel)   // só ideias e categorias se pinam
+    if (g) return lerPins()   // as 💡 antigas viram a copy que nasceu delas
     const juntos = Object.keys(localStorage).filter((k) => k.startsWith('canvas-vistas'))
       .flatMap((k) => { try { return (JSON.parse(localStorage.getItem(k) || '{}').pinados ?? []) as string[] } catch { return [] } })
     const l = [...new Set(juntos)]
@@ -2079,7 +2116,7 @@ function Pasta({ nome, n, ativa, cor, onClick }: { nome: string; n: number; ativ
   const soIcone = cor === 'winner' || cor === 'pinados'
   return (
     <button className={`status-botao is-${cor} ${ativa ? 'is-ativa' : ''} ${soIcone ? 'so-icone' : ''}`} onClick={onClick} aria-label={`${nome} (${n})`}
-      title={cor === 'winner' ? `Winners (${n}): os 🔥, com as datas de postagem` : cor === 'ideias' ? `Criação: as categorias e 💡 ideias deste canvas, com as copies (${n})` : soIcone ? `${nome} (${n})` : `Tabela: ${nome.toLowerCase()}`}>
+      title={cor === 'winner' ? `Winners (${n}): os 🔥, com as datas de postagem` : cor === 'ideias' ? `Criação: as ${n} copies deste canvas, por categoria` : soIcone ? `${nome} (${n})` : `Tabela: ${nome.toLowerCase()}`}>
       {cor === 'winner' ? <span className="status-fogo">🔥</span> : cor === 'ideias' ? <span className="status-fogo">💡</span> : cor === 'pinados' ? <span className="status-fogo">📌</span> : <i className={`ponto is-${cor}`} />}
       {!soIcone && <><span>{nome}</span><em>{n}</em></>}
     </button>

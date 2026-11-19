@@ -6,11 +6,13 @@ import { chaveProd, type Alvo, type EstadoCanvas } from './canvasApi'
 const CHAVE = 'canvas-pinados'
 export const EVENTO_PINS = 'pinados-mudou'
 
-/** Só 💡 ideias (`i:`) e categorias (`c:`) vão para a barra: o pinado abre num canvas próprio, com os filhos. */
-export const pinavel = (id: string) => id.startsWith('i:') || id.startsWith('c:')
+/** Vão para a barra as categorias (`c:`), os cards de produção 🎬 (`g:`) e as copies (`p:`); o pinado abre num canvas
+ *  próprio, com os filhos. As 💡 (`i:`) não existem mais: o pin antigo vira a copy que nasceu dela (em Priorizar). */
+export const pinavel = (id: string) => id.startsWith('c:') || id.startsWith('g:') || id.startsWith('p:')
+const daIdeia = (id: string) => (id.startsWith('i:') ? `p:priorizar/${id.slice(2).replace(/^💡\s*/, '')}` : id)
 
 export function lerPins(): string[] {
-  try { return (JSON.parse(localStorage.getItem(CHAVE) || '[]') as string[]).filter(pinavel) } catch { return [] }
+  try { return [...new Set((JSON.parse(localStorage.getItem(CHAVE) || '[]') as string[]).map(daIdeia))].filter(pinavel) } catch { return [] }
 }
 
 export function alternarPin(id: string, sim?: boolean) {

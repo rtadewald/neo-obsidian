@@ -1800,3 +1800,7 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .tabela-caixas { display: flex; flex-wrap: wrap; gap: 4px; }
 .tabela-caixa-ic { margin-right: 4px; }
 .tabela-tudo { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.menu-categorias { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.menu-categorias button { text-align: left; padding: 6px 10px; border-radius: 7px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-categorias button:hover { background: rgba(23, 24, 27, .06); }
+.menu-categorias .is-nova { color: var(--ink-2); }
