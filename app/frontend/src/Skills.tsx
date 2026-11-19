@@ -3,10 +3,9 @@ import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
 import { PainelNota } from './ModalNota'
 import type { Alvo } from './canvasApi'
-import type { Trecho } from './notas'
 
 /** Editor de skills: as pastas de `3 Skills` à esquerda (cada skill com os arquivos de apoio dela), o texto no meio
- *  O editor é o mesmo da nota: salva sozinho, ⌘I manda o trecho ao Claude Code. */
+ *  O editor é o mesmo da nota: salva sozinho. */
 type Skill = { nome: string; descricao: string; categoria: string; mtime: number; arquivos: string[] }
 /** Ordem das categorias na lista (as outras vêm depois, em ordem alfabética). */
 const ORDEM_CAT = ['Copywriting', 'Pesquisa', 'Operações']
@@ -15,9 +14,8 @@ const ler = (k: string, padrao: string) => { try { return localStorage.getItem(k
 const gravar = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* sem storage */ } }
 const semAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-export function Skills({ versao, onTrecho, onAbrirNota }: {
+export function Skills({ versao, onAbrirNota }: {
   versao?: number
-  onTrecho?: (t: Trecho, pedido?: string) => void
   onAbrirNota?: (a: Alvo) => void   // [[link]] para uma nota fora das skills abre no modal
 }) {
   const [lista, setLista] = useState<Skill[] | null>(null)
@@ -147,7 +145,7 @@ export function Skills({ versao, onTrecho, onAbrirNota }: {
 
       <section className="skills-nota glass glass--light">
         {aberta
-          ? <PainelNota key={aberta} alvo={{ raiz: 'skills', nome: aberta }} fixo versao={versao} onTrecho={onTrecho} avisar={avisar} onLink={abrirLink}
+          ? <PainelNota key={aberta} alvo={{ raiz: 'skills', nome: aberta }} fixo versao={versao} avisar={avisar} onLink={abrirLink}
               onMudou={() => { carregar() }} />
           : <p className="mudo skills-vazio">Escolha uma skill na lista.</p>}
       </section>

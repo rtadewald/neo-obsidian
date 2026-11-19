@@ -1,9 +1,8 @@
 import { EscolherIdeia } from './EscolherIdeia'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { listarCanvases, type ResumoCanvas } from './canvasApi'
 import { api, type Coleta, type Gosto, type Sinal, type VideoX } from './api'
-import { Fonte, Icone, IconeCanvas } from './Icone'
+import { Fonte, Icone } from './Icone'
 
 const TIPOS: [string, string][] = [
   ['', 'Tudo'], ['modelo', 'Modelos'], ['tecnica', 'Técnicas'], ['projeto', 'Projetos'],
@@ -26,11 +25,11 @@ let ultimoIr = 0
 
 export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', fontes = FONTES }: {
   titulo?: string; fontes?: string[]   // cada aba do radar mostra só as suas fontes (X sozinho; GitHub, HF e HN em Sites)
-  foco?: Sinal | null; onConversar: (s: Sinal) => void; onModo?: (emFoco: boolean) => void
+  foco?: Sinal | null; onConversar?: (s: Sinal) => void; onModo?: (emFoco: boolean) => void
   ir?: { id?: number; url?: string | null; n: number }   // mostrar este sinal no foco
 }) {
   const [sinais, setSinais] = useState<Sinal[]>([])
-  const [menu, setMenu] = useState<{ x: number; y: number; s: Sinal } | null>(null)   // botão direito num card: adicionar ao canvas
+  const [menu, setMenu] = useState<{ x: number; y: number; s: Sinal } | null>(null)   // botão direito num card: criar copy
   const tipo = ''   // o filtro de tipo saiu da tela; a classificação continua nos cards
   const [modo, setModo] = useState<'foco' | 'todos'>('todos')   // todos (padrão) ou foco: um sinal por vez
   const [pos, setPos] = useState(0)
@@ -131,7 +130,7 @@ export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', 
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
       if (modo === 'foco' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i' && atualRef.current) {
-        e.preventDefault(); onConversar(atualRef.current); return
+        e.preventDefault(); onConversar?.(atualRef.current); return
       }
       const alvo = e.target
       if (e.metaKey || e.ctrlKey || e.altKey || (alvo instanceof Element && alvo.closest('input, textarea, select, [contenteditable="true"]'))) return
@@ -199,7 +198,7 @@ export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', 
 
   return (
     <div className="radar" onContextMenu={(e) => {
-      // botão direito num card: menu "Adicionar ao canvas" (com texto selecionado fica o menu do navegador, para copiar)
+      // botão direito num card: menu "Nova copy" (com texto selecionado fica o menu do navegador, para copiar)
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-sinal]')
       const s = el && sinais.find((x) => String(x.id) === el.dataset.sinal)
       if (!s || window.getSelection()?.toString()) return
@@ -279,17 +278,15 @@ export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', 
   )
 }
 
-/** Botão direito num card do radar: "Adicionar ao canvas", com a lista dos canvas (como as notas no canvas). */
+/** Botão direito num card do radar: criar uma copy (em Priorizar) com o material do card, ou plugar numa copy que já existe. */
 function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal }; onFechar: () => void }) {
   const caixa = useRef<HTMLDivElement>(null)
-  const [lista, setLista] = useState<ResumoCanvas[]>([])
   const [pos, setPos] = useState({ x: m.x, y: m.y })
   const [estado, setEstado] = useState<{ ok?: string; erro?: string; indo?: boolean }>({})
-  useEffect(() => { listarCanvases().then(setLista).catch(() => setEstado({ erro: 'Não consegui ler os canvas.' })) }, [])
   useEffect(() => {
     const r = caixa.current?.getBoundingClientRect()
     if (r) setPos({ x: Math.min(m.x, window.innerWidth - r.width - 8), y: Math.min(m.y, window.innerHeight - r.height - 8) })
-  }, [m, lista])
+  }, [m])
   useEffect(() => {
     const fora = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as HTMLElement)) onFechar() }
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onFechar()
@@ -299,34 +296,31 @@ function MenuAdicionar({ m, onFechar }: { m: { x: number; y: number; s: Sinal };
   const [plugar, setPlugar] = useState(false)   // escolher uma ideia que já existe em vez de criar outra
   const plugarEm = async (ideia: string) => {
     setEstado({ indo: true })
-    try { await criarIdeia(m.s, 'inbox', ideia); setEstado({ ok: `Entrou em ${ideia}` }); window.setTimeout(onFechar, 1300) }
+    try { await criarIdeia(m.s, ideia); setEstado({ ok: `Entrou em ${ideia}` }); window.setTimeout(onFechar, 1300) }
     catch (e) { setEstado({ erro: (e as Error).message }) }
   }
-  const adicionar = async (c: ResumoCanvas) => {
+  const adicionar = async () => {
     setEstado({ indo: true })
-    try { await criarIdeia(m.s, c.slug); setEstado({ ok: `💡 Virou ideia em ${c.icone} ${c.nome}` }); window.setTimeout(onFechar, 1100) }
+    try { await criarIdeia(m.s); setEstado({ ok: '📄 Virou copy em Priorizar' }); window.setTimeout(onFechar, 1100) }
     catch (e) { setEstado({ erro: (e as Error).message }) }
   }
   return createPortal(
     <div ref={caixa} className="menu-ctx glass glass--light menu-adicionar" role="menu" style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
-      <p className="menu-titulo">{plugar ? 'Plugar numa ideia' : 'Nova ideia no canvas'}</p>
+      <p className="menu-titulo">{plugar ? 'Plugar numa copy' : 'Nova copy'}</p>
       {estado.ok ? <p className="menu-aviso">{estado.ok}</p> : estado.erro ? <p className="menu-aviso is-erro">{estado.erro}</p> : plugar ? (
         <EscolherIdeia onEscolher={plugarEm} desligado={estado.indo} />
       ) : (
         <div className="menu-adicionar-lista">
-          {lista.filter((c) => !c.arquivado).map((c) => (
-            <button key={c.slug} role="menuitem" disabled={estado.indo} onClick={() => adicionar(c)}>
-              <span className="menu-emoji"><IconeCanvas c={c} /></span>{c.nome}</button>
-          ))}
+          <button role="menuitem" disabled={estado.indo} onClick={adicionar}><span className="menu-emoji">📄</span>Criar copy em Priorizar</button>
         </div>
       )}
       {!estado.ok && <button type="button" className="menu-plugar" onClick={() => setPlugar((v) => !v)}>
-        {plugar ? '← Criar uma ideia nova' : 'Plugar numa ideia que já existe ›'}</button>}
+        {plugar ? '← Criar uma copy nova' : 'Plugar numa copy que já existe ›'}</button>}
     </div>, document.body)
 }
 
 const LISTA_ATALHOS: [string, [string, string][]][] = [
-  ['Em qualquer lugar', [['⌃1 … ⌃8', 'As abas da navbar, na ordem'], ['⌘P', 'Buscar notas'], ['⌘J', 'Pedido ao Claude Code']]],
+  ['Em qualquer lugar', [['⌃1 … ⌃8', 'As abas da navbar, na ordem'], ['⌘O', 'Buscar notas'], ['W', 'Esconder a navbar']]],
   ['Radar · Foco', [['← →', 'Anterior e próximo'], ['R', 'Embaralhar de novo'], ['⌘I', 'Mandar o sinal ao Claude'], ['F', 'Entrar e sair do foco'], ['?', 'Esta lista']]],
   ['Ideias', [['⌘B', 'Mostrar e esconder a lista de notas'], ['⌘I', 'Mandar o trecho ao Claude'], ['⌘S', 'Salvar agora'], ['⌘ clique', 'Abrir um [[link]]']]],
 ]
@@ -385,7 +379,7 @@ function Mosaico({ itens, render }: { itens: Sinal[]; render: (s: Sinal) => Reac
 
 type PropsCard = {
   s: Sinal; grande?: boolean; ativo?: boolean
-  onMarcar: (s: Sinal, st: 'salvo' | 'descartado' | 'novo') => void; onVotar: (s: Sinal, v: number) => void; onConversar: (s: Sinal) => void
+  onMarcar: (s: Sinal, st: 'salvo' | 'descartado' | 'novo') => void; onVotar: (s: Sinal, v: number) => void; onConversar?: (s: Sinal) => void
 }
 
 const pts = (s: Sinal) => s.pontuacao ?? s.nota
@@ -423,13 +417,13 @@ const estadoNoX = (s: Sinal) => { const r = REDES[s.fonte] ?? 'X'
   return s.x_erro ? `Não consegui no ${r} (${s.x_erro}). Clique no like de novo para tentar.`
     : noXPendente(s) ? (s.x_quer ? `O like vai para o ${r} na próxima coleta` : `O like sai do ${r} na próxima coleta`) : s.x_feito === 1 ? `Curtido no ${r} também` : `O like também curte no ${r} (na próxima coleta)` }
 
-/** Card do radar → 💡 ideia no canvas, já com o título, o link, a imagem e o texto do card. */
-async function criarIdeia(s: Sinal, canvas = 'inbox', ideia?: string) {
+/** Card do radar → copy em Priorizar, já com o título, o link, a imagem e o texto do card. */
+async function criarIdeia(s: Sinal, ideia?: string) {
   const m = s.metricas as { texto?: string }
   const titulo = REDES[s.fonte] ? `${s.autor ?? REDES[s.fonte]}: ${(m.texto || s.titulo || '').replace(/\s+/g, ' ').slice(0, 60)}` : s.titulo
   const conteudo = [s.url, s.porque && `> ${s.porque}`, m.texto || s.resumo, s.autor && `Fonte: ${s.autor}`].filter(Boolean).join('\n\n')
-  const r = await fetch('/api/canvas/entrada', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Canvas': canvas },
+  const r = await fetch('/api/copies/entrada', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conteudo: conteudo || titulo, pronto: { titulo, url: s.url, thumb: s.imagem }, ...(ideia ? { ideia } : {}) }),
   })
   if (!r.ok) throw new Error(ideia ? 'Não consegui plugar na ideia.' : 'Não consegui criar a ideia.')
@@ -455,10 +449,10 @@ function Acoes({ s, onVotar, onConversar }: Omit<PropsCard, 'grande' | 'ativo'>)
         onClick={() => onVotar(s, -1)}><Icone n="deslike" t={16} /></button>
       <span className="acoes-sep" />
       <button className={`btn-icone ${feita ? 'is-on' : ''}`} aria-label="Virar ideia" disabled={criando}
-        title={feita ? 'Já virou 💡 ideia no canvas' : 'Transformar em 💡 ideia no Inbox (botão direito no card escolhe o canvas)'}
+        title={feita ? 'Já virou copy em Priorizar' : 'Transformar em copy (em Priorizar)'}
         onClick={virarIdeia}><Icone n="ideia" t={16} /></button>
-      <button className="btn-icone acoes-jarvis" aria-label="Mandar ao Claude" title="Mandar este card ao Claude Code (⌘I)" onClick={() => onConversar(s)}>
-        <span className="orb orb--msg" /></button>
+      {onConversar && <button className="btn-icone acoes-jarvis" aria-label="Mandar ao Claude" title="Mandar este card ao Claude Code (⌘I)" onClick={() => onConversar(s)}>
+        <span className="orb orb--msg" /></button>}
     </span>
   )
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { INBOX, listarCanvases, type ResumoCanvas } from './canvasApi'
+
 import { EscolherIdeia } from './EscolherIdeia'
+import { ehDivisor, listaCategorias } from './Categorias'
+import { tudoEmCache } from './canvasApi'
 
 /** Criação rápida de qualquer página: ⌘⇧I = 💡 nova ideia, ⌘⇧N = 🎬 nova produção (uma copy em Priorizar, Reels por padrão).
- *  Dentro de um canvas, vai para ele; nas outras páginas, um seletor escolhe o canvas (começa no último aberto).
+ *  A copy nasce em 1 Copies/1 Priorizar (não há mais canvas).
  *  O que nasce aqui ganha o selo NOVO no card. */
 export type TipoNovo = 'ideia' | 'producao'
 
@@ -14,63 +16,61 @@ const icone = (f: string) => ICONE[f] ?? f
 
 export type Criado = { raiz: string; nome: string; tipo: TipoNovo; formato?: string }
 
-export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFechar, onCriado, alternar, ligar, pos }: {
+export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, ligar }: {
   tipo: TipoNovo
-  canvasAtual: string | null          // o canvas aberto (ou o último), usado direto ou como padrão do seletor
-  comSeletor: boolean                 // fora de um canvas: mostra o seletor
   onFechar: () => void
   onCriado: (canvas: string, msg: string, nota: Criado) => void
   alternar?: boolean                  // mostra a escolha 💡 Ideia | 🎬 Copy (flecha solta no vazio)
   ligar?: { ideia?: string; fonte?: string; de?: string }   // a copy nasce na ideia; a ideia nasce com a entrada como fonte
-  pos?: { x: number; y: number }      // onde o card da ideia nasce no canvas
 }) {
   const [tipo, setTipo] = useState<TipoNovo>(tipoInicial)
   const [titulo, setTitulo] = useState('')
   const [formato, setFormato] = useState(() => { try { const f = localStorage.getItem('novo-formato'); return f && FORMATOS.some(([x]) => x === f) ? f : '📱' } catch { return '📱' } })
-  const [canvases, setCanvases] = useState<ResumoCanvas[]>([])
-  const [canvas, setCanvas] = useState(canvasAtual ?? INBOX)
+  const canvas = 'inbox'
   const [erro, setErro] = useState('')
   const [indo, setIndo] = useState(false)
   // 💡: criar uma ideia nova ou plugar o texto/link numa que já existe (vira entrada na seção Entradas dela)
   const [plugar, setPlugar] = useState(false)
   const [alvo, setAlvo] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!comSeletor) return
-    listarCanvases().then((l) => {
-      const ativos = l.filter((c) => !c.arquivado && c.slug !== INBOX)   // o Inbox não é destino
-      setCanvases(ativos)
-      if (!ativos.some((c) => c.slug === canvas)) setCanvas(ativos.find((c) => c.slug !== INBOX)?.slug ?? INBOX)
-    }).catch(() => {})
-  }, [comSeletor])  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { try { localStorage.setItem('novo-formato', formato) } catch { /* sem storage */ } }, [formato])
+  // categoria da copy nova: começa na escolhida no menu da Redação (se for uma só) ou na última usada aqui
+  const [cats, setCats] = useState<string[]>(() => listaCategorias(tudoEmCache()?.producoes ?? [], []))
+  useEffect(() => {
+    fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json())
+      .then((c) => setCats(listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? []))).catch(() => {})   // os divisores separam os grupos
+  }, [])
+  const [categoria, setCategoria] = useState<string>(() => {
+    try {
+      const sel = JSON.parse(localStorage.getItem('tabela-estado') || '{}')?.ideias?.t?.filtros?.categoria as string[] | undefined
+      return sel?.length === 1 && sel[0] && !sel[0].startsWith('\u0000') ? sel[0] : localStorage.getItem('novo-categoria') ?? ''
+    } catch { return '' }
+  })
+  useEffect(() => { try { localStorage.setItem('novo-categoria', categoria) } catch { /* sem storage */ } }, [categoria])
 
   async function criar(e: React.FormEvent) {
     e.preventDefault()
     const t = titulo.trim()
     if (!t || indo) return
     setIndo(true); setErro('')
-    const cab = { 'Content-Type': 'application/json', 'X-Canvas': canvas }
+    const cab = { 'Content-Type': 'application/json' }
     try {
       if (tipo === 'ideia' && plugar) {
         if (!alvo) throw new Error('Escolha a copy onde isso entra.')
-        const r = await fetch('/api/canvas/entrada', { method: 'POST', headers: cab, body: JSON.stringify({ conteudo: t, ideia: alvo }) })
+        const r = await fetch('/api/copies/entrada', { method: 'POST', headers: cab, body: JSON.stringify({ conteudo: t, ideia: alvo }) })
         const d = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(d.detail || 'Não consegui plugar na copy.')
         onCriado(canvas, `Entrou em ${alvo}`, { raiz: d.raiz || 'priorizar', nome: alvo, tipo })
         return
       }
       const r = tipo === 'ideia'
-        ? await fetch(/https?:\/\//.test(t) || t.length > 90 ? '/api/canvas/entrada' : '/api/canvas/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, conteudo: t, ...(pos ? { pos } : {}) }) })
-        : ligar?.ideia
-          ? await fetch('/api/canvas/saida', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: ligar.ideia, formato, titulo: `${formato} ${t}` }) })
-          : await fetch('/api/notas/priorizar', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: `${formato} ${t}` }) })
+        ? await fetch(/https?:\/\//.test(t) || t.length > 90 ? '/api/copies/entrada' : '/api/copies/ideia', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: t, conteudo: t }) })
+        : await fetch('/api/notas/priorizar', { method: 'POST', headers: cab, body: JSON.stringify({ titulo: `${formato} ${t}` }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(r.status === 409 ? 'Já existe uma nota com esse nome.' : d.detail || 'Não consegui criar.')
-      if (tipo === 'ideia' && ligar?.fonte)   // a entrada de onde a flecha saiu vira fonte da ideia nova
-        await fetch('/api/canvas/fonte', { method: 'POST', headers: cab, body: JSON.stringify({ ideia: d.nome, entrada: ligar.fonte }) }).catch(() => {})
-      const nomeCanvas = canvases.find((c) => c.slug === canvas)?.nome
-      onCriado(canvas, `${tipo === 'ideia' ? '📄 Copy criada' : `${icone(formato)} Criação criada`}${comSeletor && nomeCanvas ? ` em ${nomeCanvas}` : ''}`,
+      if (tipo === 'producao' && categoria && d.nome)   // a categoria vai no frontmatter (categoria:)
+        await fetch('/api/copies/categoria', { method: 'POST', headers: cab, body: JSON.stringify({ nomes: [d.nome], categoria }) }).catch(() => {})
+      onCriado(canvas, `${tipo === 'ideia' ? '📄 Copy criada' : `${icone(formato)} Criação criada`}`,
         { raiz: d.raiz, nome: d.nome, tipo, formato: tipo === 'producao' ? formato : undefined })
     } catch (x) { setErro((x as Error).message); setIndo(false) }
   }
@@ -101,19 +101,23 @@ export function NovoRapido({ tipo: tipoInicial, canvasAtual, comSeletor, onFecha
         )}
         {tipo === 'ideia' && plugar && <EscolherIdeia onEscolher={setAlvo} placeholder="Em qual copy isso entra?" />}
         {tipo === 'producao' && (
-          <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
-            {FORMATOS.map(([f, nome]) => (
-              <button key={f} type="button" role="radio" aria-checked={f === formato} className={f === formato ? 'is-on' : ''} onClick={() => setFormato(f)}>{icone(f)} {nome}</button>
-            ))}
+          <div className="novo-secao">
+            <span className="novo-secao-t">Formato</span>
+            <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Formato">
+              {FORMATOS.map(([f, nome]) => (
+                <button key={f} type="button" role="radio" aria-checked={f === formato} className={f === formato ? 'is-on' : ''} onClick={() => setFormato(f)}>{icone(f)} {nome}</button>
+              ))}
+            </div>
           </div>
         )}
-        {comSeletor && (
-          <div className="novo-rapido-opcoes" role="radiogroup" aria-label="Canvas">
-            <span className="novo-rapido-rotulo">Canvas</span>
-            {canvases.map((c) => (
-              <button key={c.slug} type="button" role="radio" aria-checked={c.slug === canvas} className={c.slug === canvas ? 'is-on' : ''} onClick={() => setCanvas(c.slug)}>
-                {c.icone !== '🗂️' ? `${c.icone} ` : ''}{c.nome}</button>
-            ))}
+        {tipo === 'producao' && cats.some((c) => !ehDivisor(c)) && (
+          <div className="novo-secao">
+            <span className="novo-secao-t">Categoria</span>
+            <div className="novo-rapido-opcoes novo-rapido-cats" role="radiogroup" aria-label="Categoria">
+              {cats.map((c, i) => ehDivisor(c) ? (i > 0 && i < cats.length - 1 ? <span key={c} className="novo-cats-sep" aria-hidden="true" /> : null) : (
+                <button key={c} type="button" role="radio" aria-checked={c === categoria} className={c === categoria ? 'is-on' : ''} onClick={() => setCategoria(c === categoria ? '' : c)}>{c}</button>
+              ))}
+            </div>
           </div>
         )}
         {erro && <p className="novo-rapido-erro">{erro}</p>}

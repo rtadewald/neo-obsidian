@@ -8,24 +8,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import anuncios, instagram_canais, auth, canvas, db, metricool, notas, planejamento, porta, preferencias, radar, videos_x
+from . import anuncios, instagram_canais, auth, copies, db, metricool, notas, planejamento, porta, preferencias, radar, videos_x
 from .config import FRONT_DIST
 
 MODO_AUTH = auth.preparar()
 db.iniciar()
 app = FastAPI(title="Neo-Obsidian")
-
-
-@app.middleware("http")
-async def canvas_da_requisicao(request, call_next):
-    """O app diz em qual canvas está (cabeçalho X-Canvas): o layout e o `grupo:` das notas novas seguem ele.
-    `todos` é o canvas interno com todas as notas (as pastas globais); o que não existir vira o Inbox."""
-    slug = request.headers.get("x-canvas") or "inbox"
-    marca = canvas._atual.set(slug if slug == "todos" or any(c["slug"] == slug for c in canvas.lista_canvases()) else "inbox")
-    try:
-        return await call_next(request)
-    finally:
-        canvas._atual.reset(marca)
 
 
 @app.get("/api/saude")
@@ -208,6 +196,30 @@ def ig_arquivo(tipo: str, nome: str):
     return FileResponse(p)
 
 
+class ArquivarNota(BaseModel):
+    raiz: str
+    nome: str
+    sim: bool = True
+
+
+@app.post("/api/copies/arquivar")
+def copies_arquivar(corpo: ArquivarNota):
+    """Arquiva (`arquivado: true` na nota) ou desarquiva: a arquivada sai da Criação da Redação."""
+    return _erros(lambda: copies.arquivar_nota(corpo.raiz, corpo.nome, corpo.sim))
+
+
+@app.get("/api/criacao")
+def criacao():
+    """A Criação da Redação: cor de cada categoria, ordem das categorias e a ordem das copies dentro de cada uma."""
+    return copies.criacao()
+
+
+@app.post("/api/criacao")
+def criacao_salvar(corpo: dict):
+    """Muda o que vier: `cores` ({categoria: cor}), `categorias` (a ordem) e/ou `ordem` ({categoria: [raiz/nome]})."""
+    return copies.salvar_criacao(corpo)
+
+
 # ---------- a porta para o Claude Code (ver porta.py) ----------
 
 @app.get("/api/eventos")
@@ -221,30 +233,24 @@ async def eventos():
 
 
 class Tela(BaseModel):
-    acao: str                  # pagina | abrir_canvas | mostrar | abrir_nota | fechar_nota | foco
+    acao: str                  # pagina | abrir_nota (abre numa aba da Redação; nova=True: aba nova) | fechar_nota
     pagina: str | None = None
-    canvas: str | None = None  # slug
+    nova: bool | None = None
     raiz: str | None = None
     nome: str | None = None
-    codigo: str | None = None  # no lugar de raiz + nome
 
 
 @app.post("/api/tela")
 def tela(t: Tela):
     """O Claude Code mexe na tela do Rodrigo, como ele faria com o mouse."""
     ev = {"t": "tela", **t.model_dump(exclude_none=True)}
-    if t.codigo:
-        n = porta.achar_codigo(t.codigo)
-        if not n:
-            raise HTTPException(404, f"nenhuma nota com o código {t.codigo}")
-        ev |= {"raiz": n["raiz"], "nome": n["nome"]}
     porta.publicar(ev)
     return {"ok": True, "app_aberto": bool(porta._filas)}
 
 
 @app.get("/api/onde")
 def onde_ler():
-    """Onde o Rodrigo está no app agora: tela, canvas, vista, filtros, cards selecionados (com código), nota aberta."""
+    """Onde o Rodrigo está no app agora: tela, nota aberta, abas da Redação."""
     return porta.onde
 
 
@@ -255,37 +261,8 @@ def onde_gravar(corpo: dict):
     return {"ok": True}
 
 
-@app.get("/api/codigo/{cod}")
-def codigo(cod: str):
-    """A nota de um código (NEO-042): raiz, nome, caminho no vault e o texto."""
-    if cod.upper().startswith("RAD-"):   # sinal do radar
-        s = db.sinal(int(cod[4:])) if cod[4:].isdigit() else None
-        if not s:
-            raise HTTPException(404, f"nenhum sinal com o código {cod}")
-        return {"codigo": cod.upper(), "sinal": s}
-    n = porta.achar_codigo(cod)
-    if not n:
-        raise HTTPException(404, f"nenhuma nota com o código {cod}")
-    return n
-
-
-class Pedido(BaseModel):
-    texto: str = ""
-    codigos: list[str] = []      # notas (NEO-042) ou sinais do radar (RAD-123) de que o pedido fala
-    trecho: dict | None = None   # {codigo, linhaIni, linhaFim, texto}: o trecho selecionado no editor
-    onde: dict | None = None
-
-
-@app.post("/api/fila")
-def fila(p: Pedido):
-    """Pedido do Rodrigo, feito no app, para o Claude Code (que escuta `dados/fila.jsonl`)."""
-    linha = porta.enfileirar({"texto": p.texto, "codigos": p.codigos, "trecho": p.trecho, "onde": p.onde or porta.onde})
-    return {"ok": True, "ouvindo": porta.ouvinte_vivo(), "ts": linha["ts"]}
-
-
 @app.on_event("startup")
 async def _ligar_porta():
-    await asyncio.to_thread(porta.garantir_codigos, None, True)
     asyncio.create_task(porta.vigiar_vault())
 
 
@@ -318,7 +295,7 @@ def notas_indice():
     Essas abrem na versão principal do grupo (o 📱 Reels quando houver)."""
     itens = notas.indice()
     try:
-        tudo = canvas._todas()
+        tudo = copies._todas()
         com_nota = {i["nome"] for i in tudo["ideias"]}
         grupos: dict[str, list[dict]] = {}
         for p in tudo["producoes"]:
@@ -332,6 +309,12 @@ def notas_indice():
     except Exception:   # a busca nunca quebra por causa dos grupos
         pass
     return {"itens": itens}
+
+
+@app.get("/api/notas-busca")
+def notas_busca(q: str = ""):
+    """Busca dentro do texto das notas (⌘O, depois dos nomes): o trecho com as palavras encontradas."""
+    return {"itens": notas.buscar_conteudo(q)}
 
 
 @app.get("/api/notas/agenda")
@@ -405,7 +388,7 @@ class Acao(BaseModel):
 def nota_acao(raiz: str, nome: str, corpo: Acao):
     d = _nota_acao(raiz, nome, corpo)
     if isinstance(d, dict) and d.get("nome") and (d["nome"] != nome or d.get("raiz") != raiz):
-        canvas.renomeou(raiz, nome, d["raiz"], d["nome"])
+        copies.renomeou(raiz, nome, d["raiz"], d["nome"])
     return d
 
 
@@ -480,14 +463,13 @@ class Nova(BaseModel):
 def nota_nova(corpo: Nova):
     try:
         d = notas.criar(corpo.titulo)
-        canvas.marcar_no_canvas(d["raiz"], d["nome"])
-        canvas.marcar_nova(d["nome"])   # copy nova também nasce com o selo NOVO
+        copies.marcar_nova(d["nome"])   # copy nova também nasce com o selo NOVO
         return d
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")
 
 
-# ---------- canvas ----------
+# ---------- copies (a Redação lista e mexe nelas) ----------
 
 def _erros(f):
     try:
@@ -505,95 +487,17 @@ class Pos(BaseModel):
     y: float
 
 
-@app.get("/api/canvases")
-def canvases():
-    """Os canvas, com quantos cards de cada tipo (e de cada produto) cada um tem: página inicial e seletor."""
-    return canvas.resumos()
-
-
-@app.get("/api/produtos")
-def produtos():
-    return canvas.lista_produtos()
-
-
-class NovoProduto(BaseModel):
-    nome: str
-    icone: str = ""
-
-
-@app.post("/api/produtos")
-def produto_novo(corpo: NovoProduto):
-    return _erros(lambda: canvas.novo_produto(corpo.nome, corpo.icone))
-
-
-class NovoCanvas(BaseModel):
-    slug: str | None = None
-    nome: str | None = None
-    icone: str | None = None
-    cor: str | None = None
-    arquivado: bool | None = None
-
-
-@app.post("/api/canvases")
-def canvases_salvar(corpo: NovoCanvas):
-    """Sem slug cria; com slug edita (renomear troca o `grupo:` das notas do canvas)."""
-    return _erros(lambda: canvas.salvar_canvas(corpo.model_dump()))
-
-
-class OrdemCanvases(BaseModel):
-    slugs: list[str]
-
-
-@app.post("/api/canvases/ordem")
-def canvases_ordem(corpo: OrdemCanvases):
-    """Muda a ordem dos canvas (arrastar nas pastas da esquerda ou na página Todos os canvas). O Inbox fica no fim."""
-    return _erros(lambda: canvas.ordenar_canvases(corpo.slugs))
-
-
-@app.delete("/api/canvases/{slug}")
-def canvases_apagar(slug: str):
-    """As notas do canvas voltam para o Inbox (perdem o `grupo:`)."""
-    return {"notas": _erros(lambda: canvas.apagar_canvas(slug))}
-
-
-@app.get("/api/canvas")
-def canvas_estado():
-    return canvas.estado()
+@app.get("/api/copies")
+def copies_estado():
+    return copies.estado()
 
 
 @app.get("/api/anexo/{nome:path}")
 def anexo(nome: str):
-    p = canvas.anexo(nome)
+    p = copies.anexo(nome)
     if not p:
         raise HTTPException(404, "anexo não encontrado")
     return FileResponse(p)
-
-
-@app.get("/api/canvas/x")
-def canvas_x(url: str):
-    return canvas.video_x(url) or {}
-
-
-class MoverCanvas(BaseModel):
-    notas: list[str]             # nomes das notas (uma por card basta: a ideia e as copies dela vão junto)
-    canvas: str | None = None    # nome do canvas; vazio ou "Inbox" tira o grupo
-
-
-class CanvasDaNota(BaseModel):
-    notas: list[str]
-    canvas: str
-    sim: bool = True
-
-
-@app.post("/api/canvas/canvas")
-def canvas_canvas(corpo: CanvasDaNota):
-    """Canvas › do menu: a nota (com a família) passa a viver também neste canvas (sim) ou sai dele."""
-    return _erros(lambda: canvas.canvas_da_nota(corpo.notas, corpo.canvas, corpo.sim))
-
-
-@app.post("/api/canvas/mover")
-def canvas_mover(corpo: MoverCanvas):
-    return _erros(lambda: canvas.mover_para_canvas(corpo.notas, corpo.canvas))
 
 
 class StatusNotas(BaseModel):
@@ -601,40 +505,10 @@ class StatusNotas(BaseModel):
     status: str   # ideia | edicao | agendado | publicado
 
 
-@app.post("/api/canvas/status")
-def canvas_status(corpo: StatusNotas):
+@app.post("/api/copies/status")
+def copies_status(corpo: StatusNotas):
     """Muda o status de várias copies (tabela das pastas: seleção múltipla e botão direito)."""
-    return {"notas": _erros(lambda: [canvas.mudar_status(n, corpo.status) for n in corpo.notas])}
-
-
-class Importar(BaseModel):
-    nome: str
-
-
-@app.post("/api/canvas/importar")
-def canvas_importar(corpo: Importar):
-    return _erros(lambda: canvas.importar(corpo.nome))
-
-
-class NoProduto(BaseModel):
-    notas: list[str]
-    produto: str   # slug do produto (fia, fid…)
-    sim: bool = True
-
-
-@app.post("/api/canvas/produto")
-def canvas_produto(corpo: NoProduto):
-    return {"mudou": _erros(lambda: canvas.no_produto(corpo.notas, corpo.produto, corpo.sim))}
-
-
-class JuntarIdeias(BaseModel):
-    destino: str          # ideia que já existe ou nome novo
-    origens: list[str]    # as que somem (o conteúdo vai para o destino)
-
-
-@app.post("/api/canvas/juntar")
-def canvas_juntar(corpo: JuntarIdeias):
-    return _erros(lambda: canvas.juntar_ideias(corpo.destino, corpo.origens))
+    return {"notas": _erros(lambda: [copies.mudar_status(n, corpo.status) for n in corpo.notas])}
 
 
 class TagsNota(BaseModel):
@@ -642,10 +516,10 @@ class TagsNota(BaseModel):
     tags: list[str]
 
 
-@app.post("/api/canvas/tags")
-def canvas_tags(corpo: TagsNota):
+@app.post("/api/copies/tags")
+def copies_tags(corpo: TagsNota):
     """Coluna Tags da tabela: grava a lista inteira e devolve a de antes (o ⌘Z volta para ela)."""
-    return {"antes": _erros(lambda: canvas.definir_tags(corpo.nome, corpo.tags))}
+    return {"antes": _erros(lambda: copies.definir_tags(corpo.nome, corpo.tags))}
 
 
 class Winner(BaseModel):
@@ -653,63 +527,9 @@ class Winner(BaseModel):
     sim: bool = True
 
 
-@app.post("/api/canvas/winner")
-def canvas_winner(corpo: Winner):
-    return {"mudou": _erros(lambda: canvas.marcar_winner(corpo.notas, corpo.sim))}
-
-
-@app.get("/api/canvas/desenho")
-def canvas_desenho():
-    """A camada de desenho (Excalidraw) do canvas do X-Canvas: elementos e arquivos."""
-    return _erros(canvas.desenho)
-
-
-@app.put("/api/canvas/desenho")
-def canvas_salvar_desenho(corpo: dict):
-    _erros(lambda: canvas.salvar_desenho(corpo))
-    return {"ok": True}
-
-
-class OrdemFilhos(BaseModel):
-    pai: str
-    filhos: list[str]
-
-
-@app.put("/api/canvas/ordem")
-def canvas_ordem(corpo: OrdemFilhos):
-    """Mapa mental: grava a ordem dos filhos de um card (categoria ou ideia)."""
-    canvas.ordenar(corpo.pai, corpo.filhos)
-    return {"ok": True}
-
-
-@app.put("/api/canvas/posicoes")
-def canvas_posicoes(corpo: dict[str, Pos]):
-    canvas.posicoes({k: v.model_dump() for k, v in corpo.items()})
-    return {"ok": True}
-
-
-class Arquivar(BaseModel):
-    id: str
-    sim: bool = True
-
-
-class Vistas(BaseModel):
-    nomes: list[str]
-
-
-@app.post("/api/canvas/vista")
-def canvas_vista(corpo: Vistas):
-    """Marca 💡 ideias como vistas: tira o selo NOVO dos cards (nomes das ideias, com o 💡)."""
-    canvas.marcar_vista(corpo.nomes)
-    return {"ok": True}
-
-
-@app.post("/api/canvas/arquivar")
-def canvas_arquivar(corpo: Arquivar):
-    """Arquiva (sim) ou desarquiva um card do canvas. id do card: `i:💡 Nome` (ideia), `g:💡 Nome` (produção agrupada
-    da ideia), `p:<raiz>/<nome>` (copy solta ou VSL; raiz priorizar ou publicados), `e:<nome>` (entrada)."""
-    canvas.arquivar(corpo.id, corpo.sim)
-    return {"ok": True}
+@app.post("/api/copies/winner")
+def copies_winner(corpo: Winner):
+    return {"mudou": _erros(lambda: copies.marcar_winner(corpo.notas, corpo.sim))}
 
 
 class NovaIdeia(BaseModel):
@@ -729,21 +549,21 @@ class RenomearCategoria(BaseModel):
     para: str
 
 
-@app.post("/api/canvas/categoria/renomear")
-def canvas_categoria_renomear(corpo: RenomearCategoria):
-    """Mapa mental: renomeia a categoria nas copies do canvas aberto (e o card dela no layout)."""
-    return _erros(lambda: {"mudadas": canvas.renomear_categoria(corpo.de, corpo.para)})
+@app.post("/api/copies/categoria/renomear")
+def copies_categoria_renomear(corpo: RenomearCategoria):
+    """Renomeia a categoria nas copies (e leva a cor e a ordem dela na Criação)."""
+    return _erros(lambda: {"mudadas": copies.renomear_categoria(corpo.de, corpo.para)})
 
 
-@app.post("/api/canvas/categoria")
-def canvas_categoria(corpo: Categoria):
-    """Mapa mental: muda a categoria das copies (a caixa onde elas vivem)."""
-    return _erros(lambda: {"mudadas": canvas.definir_categoria(corpo.nomes, corpo.categoria)})
+@app.post("/api/copies/categoria")
+def copies_categoria(corpo: Categoria):
+    """Muda a categoria das copies."""
+    return _erros(lambda: {"mudadas": copies.definir_categoria(corpo.nomes, corpo.categoria)})
 
 
-@app.post("/api/canvas/ideia")
-def canvas_ideia(corpo: NovaIdeia):
-    return _erros(lambda: canvas.criar_ideia(corpo.titulo, corpo.brief, pos=corpo.pos and corpo.pos.model_dump(), categoria=corpo.categoria))
+@app.post("/api/copies/ideia")
+def copies_ideia(corpo: NovaIdeia):
+    return _erros(lambda: copies.criar_ideia(corpo.titulo, corpo.brief, pos=corpo.pos and corpo.pos.model_dump(), categoria=corpo.categoria))
 
 
 class NovaEntrada(BaseModel):
@@ -754,81 +574,14 @@ class NovaEntrada(BaseModel):
     categoria: str | None = None
 
 
-@app.post("/api/canvas/entrada")
-def canvas_entrada(corpo: NovaEntrada):
-    return _erros(lambda: canvas.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump(), corpo.pronto, corpo.categoria))
-
-
-class Fonte(BaseModel):
-    ideia: str
-    entrada: str
-    sim: bool = True
-
-
-@app.post("/api/canvas/fonte")
-def canvas_fonte(corpo: Fonte):
-    _erros(lambda: canvas.ligar_fonte(corpo.ideia, corpo.entrada, corpo.sim))
-    return {"ok": True}
+@app.post("/api/copies/entrada")
+def copies_entrada(corpo: NovaEntrada):
+    return _erros(lambda: copies.criar_entrada(corpo.conteudo, corpo.ideia, corpo.pos and corpo.pos.model_dump(), corpo.pronto, corpo.categoria))
 
 
 class Ref(BaseModel):
     raiz: str
     nome: str
-
-
-class Ligar(BaseModel):
-    producao: Ref
-    ideia: str | None = None
-
-
-@app.post("/api/canvas/ligar")
-def canvas_ligar(corpo: Ligar):
-    _erros(lambda: canvas.ligar_producao(corpo.producao.raiz, corpo.producao.nome, corpo.ideia))
-    return {"ok": True}
-
-
-class Origem(BaseModel):
-    producao: Ref
-    origem: str | None = None
-
-
-@app.post("/api/canvas/origem")
-def canvas_origem(corpo: Origem):
-    _erros(lambda: canvas.ligar_origem(corpo.producao.raiz, corpo.producao.nome, corpo.origem))
-    return {"ok": True}
-
-
-class Agrupar(BaseModel):
-    titulo: str
-    producoes: list[Ref]
-    pos: Pos | None = None
-
-
-@app.post("/api/canvas/agrupar")
-def canvas_agrupar(corpo: Agrupar):
-    return _erros(lambda: canvas.agrupar(corpo.titulo, [r.model_dump() for r in corpo.producoes],
-                                         corpo.pos and corpo.pos.model_dump()))
-
-
-class Saida(BaseModel):
-    ideia: str
-    formato: str
-    titulo: str = ""
-
-
-@app.post("/api/canvas/saida")
-def canvas_saida(corpo: Saida):
-    return _erros(lambda: canvas.criar_saida(corpo.ideia, corpo.formato, corpo.titulo))
-
-
-class ParaCopy(BaseModel):
-    ideia: str
-    formato: str
-
-
-@app.post("/api/canvas/virar-copy")
-def canvas_virar_copy(corpo: ParaCopy):
-    return _erros(lambda: canvas.transformar_em_copy(corpo.ideia, corpo.formato))
 
 
 @app.get("/api/ads")

@@ -4,7 +4,7 @@ Status da copy, do jeito que o Rodrigo já marca no Obsidian:
 - ideia     → nota solta em 1 Copies/1 Priorizar
 - edicao    → nome começa com 🧑🏼‍🔧
 - agendado  → nome começa com 🔹
-- publicado → está em 1 Copies/2 Publicados com `publicado: true` (publicar move para lá e tira 🔹/🧑🏼‍🔧)
+- publicado → está em 1 Copies/2 Publicados com `status: publicado` (desde 19/11/2026 não existe mais `publicado:`)
 
 Leitura e escrita pelo editor do app. Só arquivos .md diretamente dentro dessas pastas (ou o SKILL.md de cada
 skill); nada de subir de pasta. Apagar não apaga: move para a lixeira do vault (`.trash`, a do Obsidian).
@@ -83,27 +83,106 @@ def _arquivos(raiz: str) -> list[tuple[str, Path]]:
     return []
 
 
-def status(raiz: str, nome: str) -> str:
+# O status da copy é a propriedade `status:` da nota (desde 19/11/2026; antes eram 🔴/🧑🏼‍🔧/🔹 no começo do nome).
+# Valores no vault: ideia, gravar, edicao, agendado, publicado (19/11/2026: "priorizar" virou "ideia"; o antigo ainda é lido).
+STATUS_VAULT = {"ideia": "ideia", "gravar": "gravar", "edicao": "edicao", "agendado": "agendado", "publicado": "publicado"}
+DO_VAULT = {**{v: k for k, v in STATUS_VAULT.items()}, "priorizar": "ideia"}
+_STATUS_RE = re.compile(r"\A---\n(?:.*\n)*?status:[ \t]*\"?([\w-]*)\"?[ \t]*\n(?:.*\n)*?---", re.M)
+
+
+def status(raiz: str, nome: str, texto: str | None = None) -> str:
+    """O status da copy: `publicado` em 2 Publicados; em Priorizar, a propriedade `status:` (vazia = ideia)."""
     if raiz == "publicados":
         return "publicado"
     if raiz != "priorizar":
         return ""
-    m = MARCAS.match(nome)
-    if not m:
-        return "ideia"
-    return "agendado" if "\U0001F539" in m.group(0) else "gravar" if "\U0001F534" in m.group(0) else "edicao"
+    if texto is None:
+        p = _caminho(raiz, nome)
+        try:
+            texto = p.read_text(encoding="utf-8", errors="replace")[:3000] if p else ""
+        except OSError:
+            texto = ""
+    m = _STATUS_RE.match(texto or "")
+    st = DO_VAULT.get((m.group(1) if m else "").lower(), "ideia")
+    return "ideia" if st == "publicado" else st
+
+
+# corpo das notas (sem o frontmatter) em memória, pelo mtime: a busca do ⌘O lê daqui
+_CORPOS: dict[Path, tuple[float, str, str]] = {}
+
+
+def _sem_acento(t: str) -> str:
+    """Minúsculas sem acento, um caractere por caractere (mesmo comprimento: as posições batem com o original)."""
+    return "".join((unicodedata.normalize("NFD", c)[0] if c.strip() else " ").lower() for c in t)
+
+
+def _corpo(p: Path) -> tuple[str, str]:
+    mt = p.stat().st_mtime
+    c = _CORPOS.get(p)
+    if not c or c[0] != mt:
+        corpo = re.sub(r"\A---\n.*?\n---\n?", "", p.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+        corpo = re.sub(r"\s+", " ", corpo).strip()
+        c = _CORPOS[p] = (mt, corpo, _sem_acento(corpo))
+    return c[1], c[2]
+
+
+def _limpar_md(t: str) -> str:
+    """Texto corrido para a prévia: sem negrito, títulos, links markdown/wiki e embeds."""
+    t = re.sub(r"!\[\[[^\]]*\]\]", "", t)
+    t = re.sub(r"\[\[([^\]|]*\|)?([^\]]*)\]\]", r"\2", t)
+    t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"[*_`#>]+", "", t)
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def indice() -> list[dict]:
-    """Só nomes e datas de todas as pastas, para a busca rápida (⌘P). Barato: não abre os arquivos."""
+    """Nomes, datas e uma prévia do começo de cada nota, para a busca rápida (⌘O)."""
     out = []
     for raiz in [*TODAS, "skills"]:
         for nome, p in _arquivos(raiz):
             try:
-                out.append({"nome": nome, "raiz": raiz, "mtime": p.stat().st_mtime, "status": status(raiz, nome)})
+                corpo, _ = _corpo(p)
+                out.append({"nome": nome, "raiz": raiz, "mtime": p.stat().st_mtime, "status": status(raiz, nome) if raiz in PASTAS else "",
+                            "previa": _limpar_md(corpo)[:160]})
             except OSError:
                 pass
     return out
+
+
+def buscar_conteudo(q: str, limite: int = 40) -> list[dict]:
+    """Notas cujo texto tem todas as palavras da busca (sem acento, sem caixa). Volta o trecho em volta da 1ª ocorrência,
+    com as posições das palavras dentro do trecho, para o realce."""
+    termos = [t for t in _sem_acento(q).split() if t]
+    if not termos:
+        return []
+    frase = " ".join(termos)
+    out = []
+    for raiz in [*TODAS, "skills"]:
+        for nome, p in _arquivos(raiz):
+            try:
+                corpo, norm = _corpo(p)
+            except OSError:
+                continue
+            if not all(t in norm for t in termos):
+                continue
+            i = norm.find(frase)
+            exato = i >= 0
+            if not exato:
+                i = min(norm.find(t) for t in termos)
+            ini = max(0, i - 60)
+            ini = norm.rfind(" ", 0, ini) + 1 if ini else 0
+            fim = min(len(corpo), i + 140)
+            trecho, tnorm = corpo[ini:fim], norm[ini:fim]
+            marcas = []
+            for t in ([frase] if exato else termos):
+                k = tnorm.find(t)
+                while k >= 0:
+                    marcas.append([k + (1 if ini else 0), len(t)])
+                    k = tnorm.find(t, k + len(t))
+            out.append({"nome": nome, "raiz": raiz, "trecho": ("…" if ini else "") + trecho + ("…" if fim < len(corpo) else ""),
+                        "marcas": marcas, "n": sum(norm.count(t) for t in termos), "exato": exato, "mtime": p.stat().st_mtime})
+    out.sort(key=lambda x: (not x["exato"], -x["n"], -x["mtime"]))
+    return out[:limite]
 
 
 def ler(raiz: str, nome: str) -> dict | None:
@@ -115,9 +194,6 @@ def ler(raiz: str, nome: str) -> dict | None:
 
 
 def _escrever(p: Path, texto: str):
-    if not p.exists() and p.suffix == ".md" and p.parent in TODAS.values():   # nota nova do canvas nasce com código
-        from . import porta
-        texto = porta.carimbar(texto)
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".jarvis-", suffix=".md")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(texto)
@@ -178,12 +254,12 @@ def criar_skill(nome: str, descricao: str = "", categoria: str = "Copywriting") 
 
 
 def criar(titulo: str) -> dict:
-    """Nova copy em Priorizar com o frontmatter do template de Copy (publicado: false, scheduled, tags)."""
+    """Nova copy em Priorizar com o frontmatter do template de Copy (status: ideia, scheduled, notion, tags, categoria)."""
     titulo = re.sub(r"[/\\:]", "-", titulo).strip() or "Sem título"
     p = PRIORIZAR / f"{titulo}.md"
     if p.exists():
         raise FileExistsError(p.name)
-    modelo = "---\npublicado: false\nscheduled:\ntags:\n---\n\n"
+    modelo = "---\nstatus: ideia\nscheduled:\nnotion:\ntags:\ncategoria:\n---\n\n"
     if TEMPLATE_COPY.is_file():
         t = TEMPLATE_COPY.read_text(encoding="utf-8", errors="replace")
         m = re.match(r"^---\n.*?\n---\n", t, flags=re.S)
@@ -240,7 +316,7 @@ def agenda() -> list[dict]:
                 continue
             ds = _datas(texto)
             for data in ds:
-                out.append({"nome": nome, "raiz": raiz, "scheduled": data, "datas": ds, "status": status(raiz, nome)})
+                out.append({"nome": nome, "raiz": raiz, "scheduled": data, "datas": ds, "status": status(raiz, nome, texto)})
     return out
 
 
@@ -278,42 +354,51 @@ def mudar_agenda(raiz: str, nome: str, data: str | None = None, de: str | None =
     return {"mtime": p.stat().st_mtime}
 
 
-def _marcar_publicado(texto: str, valor: bool) -> str:
-    v = "true" if valor else "false"
-    m = re.match(r"^---\n(.*?)\n---\n", texto, flags=re.S)
-    if not m:
-        return f"---\npublicado: {v}\nscheduled:\ntags:\n---\n\n" + texto
-    fm = m.group(1)
-    fm = re.sub(r"(?m)^publicado:.*$", f"publicado: {v}", fm) if re.search(r"(?m)^publicado:", fm) else f"publicado: {v}\n" + fm
-    return f"---\n{fm}\n---\n" + texto[m.end():]
-
-
 def mover(raiz: str, nome: str, destino: str) -> dict:
-    """Muda de pasta. Publicar marca `publicado: true` e tira 🔹/🧑🏼‍🔧 do nome; tirar de Publicados volta a false."""
+    """Muda de pasta. Publicar grava `status: publicado`; tirar de Publicados volta para `status: ideia`."""
     if raiz not in PASTAS or destino not in PASTAS or raiz == destino:
         raise ValueError("movimento inválido")
     p = _caminho(raiz, nome)
     if not p or not p.is_file():
         raise FileNotFoundError(nome)
     PASTAS[destino].mkdir(exist_ok=True)
-    novo = MARCAS.sub("", nome).lstrip() or nome if destino == "publicados" else nome
+    novo = nome
     alvo = PASTAS[destino] / f"{novo}.md"
     if alvo.exists():
         raise FileExistsError(alvo.name)
     if destino == "publicados" or raiz == "publicados":
         texto = p.read_text(encoding="utf-8", errors="replace")
-        _escrever(p, _marcar_publicado(texto, destino == "publicados"))
+        texto = re.sub(r"(?m)^publicado:.*\n", "", texto, count=1)   # a propriedade antiga, se sobrou
+        _escrever(p, _definir_prop(texto, "status", "publicado" if destino == "publicados" else "ideia"))
     os.rename(p, alvo)
     _trocar_fixada(f"{raiz}/{nome}", f"{destino}/{novo}")
     return {"nome": novo, "raiz": destino, "mtime": alvo.stat().st_mtime}
 
 
+def _definir_prop(texto: str, chave: str, valor: str | None) -> str:
+    """Troca (ou cria, ou tira com None) uma propriedade simples no frontmatter, sem mexer no resto."""
+    m = re.match(r"\A---\n(.*?)\n---", texto, re.S)
+    fm, corpo = (m.group(1), texto[m.end():]) if m else ("", "\n" + texto)
+    linhas = [l for l in fm.split("\n")] if fm else []
+    i = next((k for k, l in enumerate(linhas) if re.match(rf"^{re.escape(chave)}:", l)), None)
+    if i is not None:
+        del linhas[i]
+    else:
+        i = len(linhas)
+    if valor is not None:
+        linhas.insert(i, f"{chave}: {valor}")
+    return "---\n" + "\n".join(linhas) + "\n---" + corpo
+
+
 def mudar_status(raiz: str, nome: str, novo_status: str) -> dict:
-    """ideia / gravar / edicao / agendado: troca só o marcador no começo do nome (a nota fica em Priorizar)."""
+    """ideia / gravar / edicao / agendado: grava a propriedade `status:` (a nota fica em Priorizar, o nome não muda)."""
     if raiz != "priorizar" or novo_status not in ("ideia", "gravar", "edicao", "agendado"):
         raise ValueError("status inválido")
-    base = MARCAS.sub("", nome)
-    return renomear(raiz, nome, PREFIXO.get(novo_status, "") + base)
+    p = _caminho(raiz, nome)
+    if not p or not p.is_file():
+        raise FileNotFoundError(nome)
+    _escrever(p, _definir_prop(p.read_text(encoding="utf-8", errors="replace"), "status", STATUS_VAULT[novo_status]))
+    return {"nome": nome, "raiz": raiz, "mtime": p.stat().st_mtime}
 
 
 def renomear(raiz: str, nome: str, novo: str) -> dict:

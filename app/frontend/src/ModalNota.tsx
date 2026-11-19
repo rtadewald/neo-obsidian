@@ -7,13 +7,12 @@ import { Sumario } from './Sumario'
 import { Editor } from './Editor'
 import type { Extra } from './propriedades'
 import { Icone } from './Icone'
-import { codigoDe, codigoDeAsync, copiar } from './porta'
 import { alternarPin, idDoCard, pinavel, usePins } from './pins'
 import { mudarStatus as statusComDesfazer } from './desfazer'
-import { PASTA, obsidian, type Raiz, type Trecho } from './notas'
-import { INBOX, STATUS, listarCanvases, onde, carregarTudo, tudoEmCache, canvasesEmCache, pedidoSaida, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao, type Formato } from './canvasApi'
+import { PASTA, obsidian, type Raiz } from './notas'
+import { STATUS, onde, carregarTudo, tudoEmCache, porFormato, post, type Alvo, type EstadoCanvas, type Voltar, type Producao, type Formato } from './canvasApi'
 
-/** Modal estilo Notion: uma ideia e as saídas dela, uma por tab. Abre do canvas, do calendário e do ⌘P. */
+/** Modal estilo Notion de uma nota (e o PainelNota, que a Redação usa embutido). */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
 type Estado = 'salvo' | 'editando' | 'salvando' | 'conflito' | 'erro'
 const urlNota = (a: Alvo) => `/api/notas/${a.raiz}/${encodeURIComponent(a.nome)}`
@@ -26,12 +25,9 @@ async function acao(a: Alvo, corpo: Record<string, string>) {
   return d as Alvo
 }
 
-export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao, voltar, onMostrar }: {
+export function ModalNota({ alvo, onFechar, onMudou, versao, voltar }: {
   alvo: Alvo; onFechar: () => void
   voltar?: Voltar                              // aberta da tabela das pastas: botão para voltar a ela
-  onMostrar?: (a: Alvo) => void               // fecha o modal e aponta o card no canvas
-  onTrecho?: (t: Trecho, pedido?: string) => void
-  onPedido?: (texto: string) => void          // manda um pedido pronto para o chat
   onMudou?: () => void                        // algo mudou no vault (o canvas recarrega)
   versao?: number                             // o chat terminou de responder
 }) {
@@ -132,7 +128,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
     } catch (e) { setApagar(false); avisar((e as Error).message) }
   }
 
-  async function novaSaida(formato: string, nomeFormato: string) {
+  async function novaSaida(formato: string, _nomeFormato?: string) {
     setMais(false)
     if (!grupo) return
     try {
@@ -146,8 +142,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
       await recarregar()
       onMudou?.()
       setAtiva(d)
-      onPedido?.(pedidoSaida(ideia, d.nome, formato, nomeFormato))
-      avisar('Nota criada: mande o pedido ao Claude')
+      avisar('Nota criada')
     } catch (e) { avisar((e as Error).message) }
   }
 
@@ -243,9 +238,6 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
               </span>
             )}
           </nav>
-          {/* mostrar no canvas: fecha a nota e leva até o card (muda para o canvas dela, se for outro) */}
-          {onMostrar && <button className="btn-icone modal-alvo" onClick={() => onMostrar(ativa)} aria-label="Mostrar no canvas" title="Mostrar no canvas (vai até o card)">
-            <svg className="i" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3.6" /><circle cx="10" cy="10" r=".9" fill="currentColor" /></svg></button>}
           {est && (() => { const id = idDoCard(est, ativa), sim = pins.includes(id); if (!pinavel(id)) return null
             return <button className={`btn-icone modal-pin ${sim ? 'is-on' : ''}`} onClick={() => { alternarPin(id, !sim); avisar(sim ? 'Despinado' : 'Pinado na barra da esquerda') }}
               aria-pressed={sim} aria-label={sim ? 'Despinar' : 'Pinar'} title={sim ? 'Despinar' : 'Pinar na barra da esquerda'}><Icone n="pin" t={15} /></button> })()}
@@ -292,7 +284,7 @@ export function ModalNota({ alvo, onFechar, onTrecho, onPedido, onMudou, versao,
         )}
 
         <PainelNota key={`${ativa.raiz}/${ativa.nome}`} alvo={ativa} prod={grupo?.prod ?? undefined} ideia={grupo?.ideia?.nome}
-          versao={versao} onTrecho={onTrecho} avisar={avisar} onLink={abrirLink} formatos={est?.formatos}
+          versao={versao} avisar={avisar} onLink={abrirLink} formatos={est?.formatos}
           onMudou={(novo) => { if (novo) setAtiva(novo); recarregar(); onMudou?.() }} />
         {aviso && createPortal(<div className="ideias-aviso" role="status">{aviso}</div>, document.body)}
         {apagar && (
@@ -323,17 +315,10 @@ function rotuloSaida(p: Producao, ideia?: string) {
 
 /** O editor de uma nota (cabeçalho, propriedades, texto e sumário). Usado no modal e na página Skills
  *  (`fixo`: o título não renomeia, para os arquivos das skills). */
-/** Código da nota (NEO-042) na barra do editor: clicar copia, para colar no Claude Code. */
-function Codigo({ nome, versao }: { nome: string; versao?: number }) {
-  const [c, setC] = useState(() => codigoDe(nome))
-  useEffect(() => { let vivo = true; codigoDeAsync(nome).then((x) => { if (vivo) setC(x) }); return () => { vivo = false } }, [nome, versao])
-  if (!c) return null
-  return <button type="button" className="nota-codigo" onClick={() => copiar(c)} title="Copiar o código para colar no Claude Code">{c}</button>
-}
 
-export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisar, onLink, fixo, formatos }: {
+export function PainelNota({ alvo, prod, ideia, versao, onMudou, avisar, onLink, fixo, formatos }: {
   alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean; formatos?: Formato[]
-  onTrecho?: (t: Trecho, pedido?: string) => void; onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
+  onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)
   const [texto, setTexto] = useState('')
@@ -454,10 +439,6 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
   }
 
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
-  // os canvas ativos, para o seletor de canvas das propriedades (`grupo:`)
-  const ativosDe = (l: { nome: string; icone: string; arquivado?: boolean; slug: string }[]) => l.filter((c) => !c.arquivado && c.slug !== INBOX).map((c) => ({ nome: c.nome, icone: c.icone }))
-  const [canvases, setCanvases] = useState<{ nome: string; icone: string }[] | undefined>(() => { const c = canvasesEmCache(); return c ? ativosDe(c) : undefined })
-  useEffect(() => { listarCanvases().then((l) => setCanvases(ativosDe(l))).catch(() => {}) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const extra: Extra = prod ? {
     status: { valor: stLocal ?? prod.status, opcoes: STATUS.map((x) => ({ k: x.k, rotulo: `${x.marca} ${x.nome}` })), mudar: mudarStatus },
@@ -465,8 +446,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
     onDatas: mudarDatas,
     onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
     onLink,
-    canvases,
-  } : { onLink, canvases }
+  } : { onLink }
 
   if (!nota) return <div className="modal-corpo"><p className="mudo">Carregando…</p></div>
 
@@ -501,7 +481,6 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
             <p className="menu-ctx-t">Transformar em copy de…</p>
             {formatos.map((f) => <button key={f.emoji} role="menuitem" onClick={() => virarCopy(f.emoji)}><span className="menu-emoji">{f.emoji}</span>{f.nome}</button>)}
           </div>, document.body)}
-        <Codigo nome={alvo.nome} versao={versao} />
         <button className={`btn-icone ${semSumario ? '' : 'is-on'}`} onClick={alternarSumario} aria-pressed={!semSumario}
           title={semSumario ? 'Mostrar o sumário (⌘])' : 'Esconder o sumário (⌘])'} aria-label={semSumario ? 'Mostrar o sumário' : 'Esconder o sumário'}>
           <svg className="i" width="15" height="15" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2.5" /><path d="M12.5 3.5v13M14.6 7.2h-.1M14.6 10h-.1" /></svg></button>
@@ -513,8 +492,7 @@ export function PainelNota({ alvo, prod, ideia, versao, onTrecho, onMudou, avisa
 
       <div className={`modal-corpo modal-corpo--sumario ${semSumario ? "sem-sumario" : ""}`}>
         <div className="modal-editor">
-          <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink}
-            onClaude={(s) => { salvar().then(() => onTrecho?.({ ...s, raiz: alvo.raiz, nome: alvo.nome, caminho })) }} />
+          <Editor chave={`${alvo.raiz}/${alvo.nome}`} valor={texto} onMudar={mudar} onSalvar={salvar} viewRef={view} extra={extra} onLink={onLink} />
         </div>
         {!semSumario && <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />}
       </div>

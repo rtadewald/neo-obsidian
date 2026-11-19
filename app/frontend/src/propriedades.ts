@@ -151,6 +151,7 @@ class Painel extends WidgetType {
 
     for (const it of this.itens) {
       const { chave, valor } = it
+      if (chave === 'status' && st) continue   // a propriedade status já aparece no seletor da primeira linha
       if (chave === 'grupo' && cvs) {
         linha('canvas', campoCanvas((Array.isArray(valor) ? valor : valor ? [valor] : []).filter(Boolean)))
         continue
