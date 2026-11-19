@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { PainelNota } from './ModalNota'
 import { ModalTabela, tabelaSalva, type Criacao, type EstadoTabela } from './Tabela'
@@ -22,7 +21,7 @@ export function Redacao({ versao }: { versao?: number }) {
   const [criacao, setCriacao] = useState<Criacao>({ cores: {}, categorias: [], ordem: {} })
   useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {}) }, [])
   const mudarCriacao = (m: Partial<Criacao>) => {
-    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) } }))
+    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
     fetch('/api/criacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }).then((r) => r.json()).then(setCriacao).catch(() => avisar('Não consegui guardar.'))
   }
   const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })
@@ -33,12 +32,26 @@ export function Redacao({ versao }: { versao?: number }) {
   const abertaRef = useRef(aberta); abertaRef.current = aberta
   const mesma = (a: Alvo, b: Alvo) => a.raiz === b.raiz && a.nome === b.nome
   // abrir: na aba da frente (troca a copy dela) ou, com `nova` (⌘+clique, ⌘↵ na busca), numa aba nova; já aberta, só vai para ela
+  // histórico para a seta ←: cada copy que saiu da aba da frente (trocada por outra) entra aqui
+  const [pilha, setPilha] = useState<Alvo[]>([])
   const abrirEm = useCallback((a: Alvo, nova?: boolean) => setAbas(({ lista, ativa }) => {
     const i = lista.findIndex((x) => mesma(x, a))
+    if (lista[ativa] && !mesma(lista[ativa], a)) { const de = lista[ativa]; setPilha((p) => (p.length && mesma(p[p.length - 1], de) ? p : [...p.slice(-49), de])) }
     if (i >= 0) return { lista, ativa: i }
     if (nova || !lista.length) return { lista: [...lista, a], ativa: lista.length }
     return { lista: lista.map((x, k) => (k === ativa ? a : x)), ativa }
   }), [])
+  // ←: volta para a copy anterior (na aba em que ela estiver ou, fechada, na aba da frente)
+  const voltar = () => {
+    const ant = pilha[pilha.length - 1]
+    if (!ant) return
+    setPilha((p) => p.slice(0, -1))
+    setAbas(({ lista, ativa }) => {
+      const i = lista.findIndex((x) => mesma(x, ant))
+      if (i >= 0) return { lista, ativa: i }
+      return lista.length ? { lista: lista.map((x, k) => (k === ativa ? ant : x)), ativa } : { lista: [ant], ativa: 0 }
+    })
+  }
   const setAberta = (a: Alvo | null) => setAbas(({ lista, ativa }) => a ? { lista: lista.map((x, k) => (k === ativa ? a : x)), ativa } : fecharLista(lista, ativa))
   const fecharLista = (lista: Alvo[], i: number) => { const l = lista.filter((_, k) => k !== i); return { lista: l, ativa: Math.max(0, Math.min(i, l.length - 1)) } }
   const fechar = (i: number) => setAbas(({ lista, ativa }) => { const r = fecharLista(lista, i); return { ...r, ativa: i < ativa ? ativa - 1 : r.ativa } })
@@ -115,6 +128,11 @@ export function Redacao({ versao }: { versao?: number }) {
       if (n && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && abertaRef.current && n <= abasRef.current.lista.length && !document.querySelector('.modal-fundo, .paleta-fundo')) {
         e.preventDefault(); e.stopImmediatePropagation(); setAbas((x) => ({ ...x, ativa: n - 1 })); return
       }
+      // modo W (navbar escondida) sem copy aberta: ⌘1…⌘5 vão para Criação, Gravar, Em edição, Agendado e Publicados
+      const PASTAS = ['ideias', 'gravar', 'edicao', 'agendado', 'publicado'] as const
+      if (n && n <= PASTAS.length && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && !abertaRef.current && document.querySelector('.app.modo-w') && !document.querySelector('.modal-fundo, .paleta-fundo')) {
+        e.preventDefault(); e.stopImmediatePropagation(); setT(tabelaSalva(PASTAS[n - 1])); return
+      }
       // a nota abre com o cursor no editor: lá o ⌘B sem texto selecionado também esconde/mostra a tabela
       // (com seleção segue sendo negrito)
       const noEditor = !!alvo?.closest?.('.cm-editor')
@@ -136,6 +154,8 @@ export function Redacao({ versao }: { versao?: number }) {
   const recarregar = useCallback(async () => {
     const tudo = await carregarTudo().catch(() => null)
     if (tudo) setEst(tudo)
+    // a lista de categorias (criacao.json) também pode ter mudado por fora (o Claude, outra janela): relê junto
+    fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {})
   }, [])
   // a nota salva a cada pausa na digitação e o vault avisa (versao): recarregar tudo a cada tecla travava a tabela,
   // então espera 1,5 s sem mudança
@@ -149,26 +169,22 @@ export function Redacao({ versao }: { versao?: number }) {
   const abrir = (a: Alvo, opts?: { nova?: boolean }) => { abrirEm(a, opts?.nova); setCal(false); setVerTabela(false) }
   const statusDe = (a: Alvo) => est?.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)?.status ?? ''
 
-  // o Calendário mora na navbar do topo, à direita (o App deixa o #nav-direita vazio para isso)
-  const [navDireita, setNavDireita] = useState<HTMLElement | null>(null)
-  useEffect(() => setNavDireita(document.getElementById('nav-direita')), [])
+  // 📅 Calendário: no canto superior direito, junto das abas de copy (sem copy aberta, no topo da tabela)
   const botoes = <>
     <button className={`lateral-btn ${cal ? 'is-ativa' : ''}`} onClick={() => setCal((v) => !v)}
       title={cal ? 'Fechar o calendário' : 'Abrir o calendário: arraste uma copy da tabela para um dia para agendar'}><span>📅</span><span>Calendário</span></button>
   </>
-  const botoesNav = navDireita && createPortal(botoes, navDireita)
 
   return (
     <div ref={caixa} className={`redacao ${aberta || cal ? 'com-lado' : ''} ${soCopy && (aberta || cal) ? 'so-copy' : ''}`}
       style={{ width: soTabela ? (tabCardW ? `min(100%, ${tabCardW}px)` : '100%') : `${cardW * fatorCard * 100}%`, height: `${cardH * 100}%`, ...(soCopy && (aberta || cal) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : escrita ? { gridTemplateColumns: `${latW}px 0px minmax(0, 1fr)` } : cal ? { gridTemplateColumns: `minmax(0, ${frac}fr) 0px minmax(0, ${1 - frac}fr)` } : {}) }}>
-      {botoesNav}
       <div className="redacao-borda is-esq" onPointerDown={arrastarCard(-1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
       <div className="redacao-borda is-dir" onPointerDown={arrastarCard(1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
       <div className="redacao-borda-baixo" onPointerDown={arrastarCard(0, true)} onDoubleClick={() => setCardH(1)} title="Arraste para mudar a altura (duplo clique ocupa tudo)" />
       <div className="redacao-canto is-esq" onPointerDown={arrastarCard(-1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-canto is-dir" onPointerDown={arrastarCard(1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-tabela" hidden={soCopy && !!(aberta || cal)}>
-        {est && <ModalTabela embutido compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={<div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
+        {est && <ModalTabela embutido compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
           onMudar={setT} onFechar={() => {}} onAbrir={abrir} criacao={criacao} onCriacao={mudarCriacao}
           onCategoria={async (a, categoria) => { await post('categoria', { nomes: [a.nome], categoria }); avisar(categoria ? `Foi para ${categoria}` : "Ficou sem categoria"); await recarregar() }}
           onRenomearCategoria={async (de, para) => { await post('categoria/renomear', { de, para }); avisar(`Categoria agora é ${para}`)
@@ -213,6 +229,7 @@ export function Redacao({ versao }: { versao?: number }) {
       ) : aberta ? (
         <aside className="redacao-lado redacao-nota glass glass--light">
           <nav className="redacao-abas" role="tablist">
+            <button className="redacao-voltar btn-icone" onClick={voltar} disabled={!pilha.length} title={pilha.length ? `Voltar para ${pilha[pilha.length - 1].nome}` : 'Nada para voltar'} aria-label="Voltar para a copy anterior">←</button>
             {abas.lista.map((a, i) => (
               <div key={`${a.raiz}/${a.nome}`} role="tab" aria-selected={i === abas.ativa} className={`redacao-aba ${i === abas.ativa ? 'is-ativa' : ''}`}
                 onClick={() => setAbas((x) => ({ ...x, ativa: i }))} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); fechar(i) } }} title={a.nome}>
@@ -220,11 +237,12 @@ export function Redacao({ versao }: { versao?: number }) {
                 <button onClick={(e) => { e.stopPropagation(); fechar(i) }} aria-label={`Fechar ${a.nome}`} title="Fechar a aba (ou clique do meio)">×</button>
               </div>
             ))}
+            <span className="redacao-abas-cal">{botoes}</span>
             <button className="redacao-so-copy btn-icone" onClick={() => setSoCopy((v) => !v)} title={soCopy ? 'Mostrar a tabela (⌘B)' : 'Esconder a tabela (⌘B)'}>{soCopy ? '⇥' : '⇤'}</button>
           </nav>
           <PainelNota key={`${aberta.raiz}/${aberta.nome}`} alvo={aberta} fixo versao={versao} avisar={avisar}
             prod={est?.producoes.find((x) => x.raiz === aberta.raiz && x.nome === aberta.nome)}
-            onLink={(nome) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) abrirEm({ raiz: p.raiz, nome: p.nome }, true) }}
+            onLink={(nome, nova) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) abrirEm({ raiz: p.raiz, nome: p.nome }, nova) }}
             onMudou={(novo) => { if (novo) setAberta(novo); recarregar(); setCalVersao((v) => v + 1) }} />
         </aside>
       ) : null}

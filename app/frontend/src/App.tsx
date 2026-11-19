@@ -103,7 +103,7 @@ export default function App() {
       // ⌃1…⌃8 (ou ⌥1…, ou ⌘1… onde o navegador deixa: no Chrome o ⌘1–8 troca de aba do navegador antes da página)
       // trocam de aba, na ordem da navbar. Com uma nota aberta no modal, os números navegam entre as versões dela (ModalNota)
       const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : 0
-      if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota, .redacao-nota')) {   // modo copy: os números são das abas de nota (Redacao)
+      if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota, .redacao-nota, .app.modo-w .redacao')) {   // modo copy: abas de nota; modo W na Redação: abas da tabela (Redacao)
         e.preventDefault()
         setPagina(NAV[n - 1])
       }
@@ -134,7 +134,7 @@ export default function App() {
           </Fragment>
         ))}
       </nav>
-      <div id="nav-direita" className="nav-direita" />   {/* a Redação põe aqui Skills e Calendário (portal) */}
+      <span />
       </div>
 
       <main className="corpo sem-chat">

@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import { EditorState } from '@codemirror/state'
+import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -77,10 +78,28 @@ export function titulo(v: EditorView, nivel: number) {
 }
 
 type Props = {
-  valor: string; onMudar: (v: string) => void; onSalvar?: () => void; onLink?: (nome: string) => void; chave: string
+  valor: string; onMudar: (v: string) => void; onSalvar?: () => void; onLink?: (nome: string, nova?: boolean) => void; chave: string
   onMenu?: (x: number, y: number) => void            // botão direito
   viewRef?: MutableRefObject<EditorView | null>
   extra?: Extra                                      // status e ações do app no painel de propriedades
+}
+
+// [[ abre um seletor de notas (os nomes do vault, de GET /api/notas-indice); escolher grava [[Nome]]
+let nomesNotas: string[] | null = null
+const carregarNomes = () => fetch('/api/notas-indice').then((r) => r.json()).then((d) => { nomesNotas = [...new Set((d.itens ?? []).map((i: { nome: string }) => i.nome))] as string[] }).catch(() => {})
+function completarLink(ctx: CompletionContext): CompletionResult | null {
+  const m = ctx.matchBefore(/\[\[[^\]\n]*/)
+  if (!m) return null
+  if (!nomesNotas) { carregarNomes(); return null }
+  const de = m.from + 2
+  const fecha = ctx.state.sliceDoc(ctx.pos, ctx.pos + 2) === ']]'
+  return {
+    from: de, filter: true,
+    options: nomesNotas.map((n) => ({ label: n, apply: (v: EditorView, _c: unknown, from: number, to: number) => {
+      const fim = fecha ? to + 2 : to
+      v.dispatch({ changes: { from, to: fim, insert: `${n}]]` }, selection: { anchor: from + n.length + 2 } })
+    } })),
+  }
 }
 
 export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chave, extra }: Props) {
@@ -101,7 +120,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chav
         extensions: [
           history(), EditorView.lineWrapping,
           yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }), syntaxHighlighting(estilo), tema,
-          placeholder('Escreva aqui…'), livePreview((n) => cb.current.onLink?.(n)),
+          placeholder('Escreva aqui…'), livePreview((n, nova) => cb.current.onLink?.(n, nova)), autocompletion({ override: [completarLink], icons: false }),
           EditorView.domEventHandlers({
             contextmenu: (e) => { if (!cb.current.onMenu) return false; e.preventDefault(); cb.current.onMenu(e.clientX, e.clientY); return true },
           }),

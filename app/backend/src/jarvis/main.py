@@ -216,7 +216,7 @@ def criacao():
 
 @app.post("/api/criacao")
 def criacao_salvar(corpo: dict):
-    """Muda o que vier: `cores` ({categoria: cor}), `categorias` (a ordem) e/ou `ordem` ({categoria: [raiz/nome]})."""
+    """Muda o que vier: `cores` ({categoria: cor}), `categorias` (a ordem), `ordem` ({categoria: [raiz/nome]}) e/ou `arquivadas`."""
     return copies.salvar_criacao(corpo)
 
 

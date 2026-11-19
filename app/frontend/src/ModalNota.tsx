@@ -317,7 +317,7 @@ function rotuloSaida(p: Producao, ideia?: string) {
  *  (`fixo`: o título não renomeia, para os arquivos das skills). */
 
 export function PainelNota({ alvo, prod, ideia, versao, onMudou, avisar, onLink, fixo, formatos }: {
-  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string) => void; fixo?: boolean; formatos?: Formato[]
+  alvo: Alvo; prod?: Producao; ideia?: string; versao?: number; onLink: (nome: string, nova?: boolean) => void; fixo?: boolean; formatos?: Formato[]
   onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)

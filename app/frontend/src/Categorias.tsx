@@ -16,14 +16,36 @@ export function listaCategorias(producoes: Producao[], ordem: string[]): string[
   return [...ordem.filter((c) => c && c !== SEM), ...resto]
 }
 
-export function pedirCategoria(): string {
-  return window.prompt('Nome da categoria nova (com o emoji na frente, ex.: 🎬 Bastidores):')?.trim() ?? ''
+/** Ícones da frente das categorias (os mesmos dos formatos do vault). */
+export const ICONES_CAT = ['📱', '💰', '📺', '📚', '🎥', '🏞️']
+const separar = (nome: string) => { const t = semEmoji(nome); return { icone: nome.slice(0, nome.length - t.length).trim(), texto: t } }
+
+/** Criar ou renomear uma categoria ali mesmo no menu: escolher o ícone e escrever o nome (Enter grava, Esc desiste). */
+export function EditorCategoria({ inicial = '', onOk, onCancelar }: { inicial?: string; onOk: (nome: string) => void; onCancelar: () => void }) {
+  const s = separar(inicial)
+  const [icone, setIcone] = useState(s.icone || '📱')
+  const [texto, setTexto] = useState(s.texto)
+  const gravar = () => { const t = texto.trim(); if (t) onOk(`${icone} ${t}`); else onCancelar() }
+  return (
+    <div className="cats-editor" onClick={(e) => e.stopPropagation()}>
+      <div className="cats-editor-icones" role="radiogroup" aria-label="Ícone">
+        {ICONES_CAT.map((i) => <button key={i} type="button" role="radio" aria-checked={i === icone} className={i === icone ? 'is-on' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => setIcone(i)}>{i}</button>)}
+      </div>
+      <label className="cats-editor-campo"><span>{icone}</span>
+        <input autoFocus value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Nome da categoria" onBlur={gravar}
+          onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); gravar() } else if (e.key === 'Escape') { e.preventDefault(); onCancelar() } }} />
+      </label>
+    </div>
+  )
 }
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ lista, contagem, nPins, total, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
+export function MenuCategorias({ lista, renomear, onRenomear, arquivadas, contagem, nPins, total, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
   lista: string[]
+  renomear: string | null   // a categoria sendo renomeada ali mesmo (botão direito → Renomear)
+  onRenomear: (de: string, para: string | null) => void   // para null = desistiu
+  arquivadas: string[]   // ficam numa seção recolhida no fim (botão direito desarquiva)
   contagem: Record<string, number>   // copies da aba em cada categoria ('' = sem categoria)
   nPins: number   // pinadas da aba
   total: number
@@ -38,6 +60,8 @@ export function MenuCategorias({ lista, contagem, nPins, total, sel, cores, onSe
   onTirar: (divisor: string) => void
 }) {
   const [sobre, setSobre] = useState<string | null>(null)
+  const [verArq, setVerArq] = useState(false)
+  const [criando, setCriando] = useState(false)
   // largura do menu: arrastar a borda direita (fica guardada); duplo clique volta ao padrão
   const [larg, setLarg] = useState<number>(() => { try { return Number(localStorage.getItem('cats-largura')) || 210 } catch { return 210 } })
   useEffect(() => { try { localStorage.setItem('cats-largura', String(larg)) } catch { /* sem storage */ } }, [larg])
@@ -53,7 +77,7 @@ export function MenuCategorias({ lista, contagem, nPins, total, sel, cores, onSe
     if (e.metaKey || e.ctrlKey) onSel(sel.includes(c) ? sel.filter((x) => x !== c) : [...sel, c])
     else onSel(sel.length === 1 && sel[0] === c ? [] : [c])
   }
-  const item = (c: string, rotulo: string) => (
+  const item = (c: string, rotulo: string) => c && c === renomear ? <EditorCategoria key={c} inicial={c} onOk={(n) => onRenomear(c, n)} onCancelar={() => onRenomear(c, null)} /> : (
     <button key={c || '-'} className={`cats-item ${sel.includes(c) ? 'is-on' : ''} ${sobre === c ? 'is-sobre' : ''}`}
       onClick={(e) => clicar(c, e)}
       draggable={!!c && c !== PIN} onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
@@ -83,8 +107,13 @@ export function MenuCategorias({ lista, contagem, nPins, total, sel, cores, onSe
           onContextMenu={(e) => { e.preventDefault(); if (window.confirm('Tirar este divisor?')) onTirar(c) }}><hr /></div>
       ) : item(c, c))}
       {(contagem[''] ?? 0) > 0 && item('', SEM)}
+      {arquivadas.length > 0 && <>
+        <button className="cats-arq" onClick={() => setVerArq((v) => !v)} aria-expanded={verArq}>{verArq ? '▾' : '▸'} Arquivadas <em>{arquivadas.length}</em></button>
+        {verArq && <div className="cats-arq-lista">{arquivadas.map((c) => item(c, c))}</div>}
+      </>}
       <div className="cats-acoes">
-        <button className="cats-nova" onClick={() => { const n = pedirCategoria(); if (n) onCriar(n) }}>+ Nova categoria</button>
+        {criando ? <EditorCategoria onOk={(n) => { setCriando(false); onCriar(n) }} onCancelar={() => setCriando(false)} />
+          : <button className="cats-nova" onClick={() => setCriando(true)}>+ Nova categoria</button>}
         <button className="cats-nova" onClick={onDivisor} title="Um traço para separar grupos de categorias (arrastável)">+ Divisor</button>
       </div>
     </aside>

@@ -38,7 +38,7 @@ export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, li
   const [cats, setCats] = useState<string[]>(() => listaCategorias(tudoEmCache()?.producoes ?? [], []))
   useEffect(() => {
     fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json())
-      .then((c) => setCats(listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? []))).catch(() => {})   // os divisores separam os grupos
+      .then((c) => setCats(listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? []).filter((x) => !(c.arquivadas ?? []).includes(x)))).catch(() => {})   // os divisores separam os grupos
   }, [])
   const [categoria, setCategoria] = useState<string>(() => {
     try {

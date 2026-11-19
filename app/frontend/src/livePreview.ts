@@ -6,7 +6,7 @@ import { extraCampo, painelProps } from './propriedades'
 /** "Live preview" do Obsidian: o markdown aparece formatado e as marcas (#, **, >, [[ ]], ---)
  *  só aparecem na linha onde está o cursor. O texto do arquivo nunca muda, só o que se vê. */
 
-type Abrir = (nome: string) => void
+type Abrir = (nome: string, nova?: boolean) => void   // nova: ⌘+clique abre numa aba nova
 
 class Bolinha extends WidgetType {
   eq() { return true }
@@ -165,7 +165,7 @@ const campo = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 })
 
-/** ⌘/Ctrl+clique abre o [[link]] (como no Obsidian) e o link normal em outra aba. */
+/** Clique abre o [[link]] (⌘/Ctrl+clique numa aba nova, como no Obsidian); ⌘+clique abre o link normal em outra aba. */
 export function livePreview(abrir?: Abrir) {
   return [
     extraCampo, campo,
@@ -176,12 +176,14 @@ export function livePreview(abrir?: Abrir) {
         if (solto?.dataset.url && !e.metaKey && !e.ctrlKey && e.button === 0) {
           e.preventDefault(); window.open(solto.dataset.url, '_blank', 'noopener,noreferrer'); return true
         }
+        // [[link]]: clique abre a nota na aba da frente; ⌘+clique numa aba nova
+        const nota = (e.target as HTMLElement).closest('[data-nota]') as HTMLElement | null
+        if (nota?.dataset.nota && e.button === 0) { e.preventDefault(); abrir?.(nota.dataset.nota, e.metaKey || e.ctrlKey); return true }
         if (!(e.metaKey || e.ctrlKey)) return false
-        const alvo = (e.target as HTMLElement).closest('[data-nota], [data-url]') as HTMLElement | null
+        const alvo = (e.target as HTMLElement).closest('[data-url]') as HTMLElement | null
         if (!alvo) return false
         e.preventDefault()
-        if (alvo.dataset.nota) abrir?.(alvo.dataset.nota)
-        else if (alvo.dataset.url) window.open(alvo.dataset.url, '_blank', 'noopener,noreferrer')
+        if (alvo.dataset.url) window.open(alvo.dataset.url, '_blank', 'noopener,noreferrer')
         return true
       },
     }),

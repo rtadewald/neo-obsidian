@@ -1555,7 +1555,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .tabela-status-sel:hover, .tabela-status-sel:focus-visible { background-color: rgba(23, 24, 27, .05) !important; outline: none; }
 .tabela-status-sel:hover { padding-right: 20px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%2366656a' stroke-width='1.6'/%3E%3C/svg%3E") !important; background-repeat: no-repeat; background-position: right 6px center; }
 /* pinada: destaque dentro da própria categoria, acima das demais */
-.tabela tr.is-pinada td { background: rgba(226, 240, 92, .2); }
+.tabela tr.is-pinada td { background: transparent; }   /* a pinada é marcada só pelo 📌 (o amarelo é da copy aberta) */
 .tabela .col-nome .tabela-pin { display: inline; margin: 0 5px 0 0; font-size: 11px; color: inherit; }   /* o span da col-nome é block */
 /* card maior que a tabela: a tabela fica centralizada no painel (sem o vazio só de um lado) */
 
@@ -1594,7 +1594,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 
 /* no modo W a navbar some: Skills e Calendário aparecem no topo da tabela */
 .redacao-botoes-w { display: none; gap: 2px; }
-.app.modo-w .redacao-botoes-w { display: flex; }
+.redacao-botoes-w { display: flex; }   /* sem copy aberta: Calendário no topo da tabela */
 .redacao-botoes-w .lateral-btn { height: 26px; font-size: 12px; }
 .redacao-botoes-w .lateral-btn.is-ativa { background: rgba(23, 24, 27, .08); }
 
@@ -1642,3 +1642,40 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .novo-rapido-cats button.is-on { background: #1d1d1f; color: #fff; }
 .novo-cats-sep { flex-basis: 100%; height: 0; }
 .novo-rapido .paleta-pe { margin-top: 14px; }
+
+/* categorias arquivadas: seção recolhida no fim do menu */
+.cats-arq { margin-top: 10px; border: 0; background: transparent; text-align: left; padding: 5px 8px; border-radius: 8px; font: inherit; font-size: 11.5px; color: rgba(23, 24, 27, .45); cursor: pointer; display: flex; gap: 6px; align-items: center; }
+.cats-arq em { font-style: normal; opacity: .7; }
+.cats-arq:hover { background: rgba(23, 24, 27, .05); color: var(--ink); }
+.cats-arq-lista .cats-item { opacity: .6; }
+.cats-arq-lista .cats-item.is-on, .cats-arq-lista .cats-item:hover { opacity: 1; }
+
+/* menu de categorias: sem rolagem para o lado (a alça fica dentro da borda) */
+.cats { overflow-x: hidden; }
+.cats-alca { right: 0; }
+
+/* criar/renomear categoria no próprio menu: ícones prontos + nome */
+.cats-editor { margin: 4px 0; padding: 8px; border-radius: 10px; background: #fff; box-shadow: 0 1px 4px rgba(23, 24, 27, .1), inset 0 0 0 1px rgba(23, 24, 27, .08); display: flex; flex-direction: column; gap: 7px; }
+.cats-editor-icones { display: flex; flex-wrap: wrap; gap: 2px; }
+.cats-editor-icones button { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; font-size: 14px; cursor: pointer; opacity: .55; }
+.cats-editor-icones button:hover { background: rgba(23, 24, 27, .06); opacity: 1; }
+.cats-editor-icones button.is-on { background: rgba(226, 240, 92, .6); opacity: 1; }
+.cats-editor-campo { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 7px; background: rgba(23, 24, 27, .04); }
+.cats-editor-campo input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
+
+/* menu da categoria: "sem cor" é um quadrinho branco riscado de vermelho, junto das cores */
+.tabela-sem-cor { background: #fff linear-gradient(to top right, transparent calc(50% - 1px), #e5484d calc(50% - 1px), #e5484d calc(50% + 1px), transparent calc(50% + 1px)) !important; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .15); }
+/* seta ← nas abas de nota: volta para a copy anterior */
+.redacao-voltar { flex: none; align-self: center; font-size: 15px; margin-right: 2px; }
+.redacao-voltar:disabled { opacity: .3; cursor: default; }
+/* seletor de notas do [[ no editor */
+.cm-tooltip.cm-tooltip-autocomplete { border: 0; border-radius: 10px; background: #fff; box-shadow: 0 10px 30px -10px rgba(23, 24, 27, .35), 0 0 0 1px rgba(23, 24, 27, .08); padding: 4px; font-family: inherit; }
+.cm-tooltip.cm-tooltip-autocomplete > ul { max-height: 260px; font-family: inherit; }
+.cm-tooltip.cm-tooltip-autocomplete > ul > li { padding: 5px 9px !important; border-radius: 6px; font-size: 13px; }
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: rgba(226, 240, 92, .55); color: var(--ink); }
+
+/* com copy aberta: Calendário no canto direito das abas de copy, antes do ⇤ */
+.redacao-abas-cal { margin-left: auto; display: flex; align-items: center; flex: none; }
+.redacao-abas-cal .lateral-btn { height: 26px; font-size: 12px; }
+.redacao-abas-cal .lateral-btn.is-ativa { background: rgba(23, 24, 27, .08); }
+.redacao-abas-cal + .redacao-so-copy { margin-left: 4px; }

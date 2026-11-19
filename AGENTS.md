@@ -161,7 +161,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 ## 5. A Redação (`Redacao.tsx`, `Tabela.tsx`)
 
 - **Layout:** um card só, com a tabela à esquerda e a nota (ou o calendário) à direita; divisória arrastável
-  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** abre/fecha o calendário (só sem texto selecionado); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. No modo copy, **⌘1…⌘9** (ou ⌃/⌥) vão para as abas de nota, por cima da troca de página da navbar.
+  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** abre/fecha o calendário (só sem texto selecionado); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. No modo copy, **⌘1…⌘9** (ou ⌃/⌥) vão para as abas de nota, por cima da troca de página da navbar. No modo W sem copy aberta, **⌘1…⌘5** vão para Criação, Gravar, Em edição, Agendado e Publicados.
 - **Abas de notas** sobre o painel, como no Obsidian (`redacao-abas` no `localStorage`): clique numa linha abre na aba
   da frente; **⌘+clique** (ou ⌘↵ na busca ⌘O) abre numa aba nova; × ou clique do meio fecha. Enter na busca abre na
   aba da frente.
@@ -172,16 +172,20 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
     categoria muda a ordem; arrastar copy sobre copy muda a posição (e a categoria, se for de outro grupo). Cor e ordem em
     `dados/criacao.json` (`GET/POST /api/criacao`).
 - **Menu de categorias** à esquerda da tabela (`Categorias.tsx`): Todas, cada categoria (com a contagem da aba) e
-  "+ Nova categoria" (entra na lista do `criacao.json`, mesmo sem copy). Clique filtra (⌘ soma), soltar uma copy (ou a
+  "+ Nova categoria" (entra na lista do `criacao.json`, mesmo sem copy; criar e renomear abrem ali mesmo um editor com ícones prontos 📱 💰 📺 📚 🎥 🏞️ e o nome). Clique filtra (⌘ soma), soltar uma copy (ou a
   seleção) muda a categoria, arrastar categoria muda a ordem, botão direito: cor, renomear, apagar (só vazia).
   No topo, a categoria especial **📌 Pinados**: só as pinadas da aba (soltar uma copy ali pina).
+  Botão direito → **🗄️ Arquivar categoria**: sai do menu e da Criação (a não ser escolhida), vai para a seção
+  recolhida "Arquivadas" no fim do menu (`arquivadas` no `criacao.json`); as copies não mudam.
+- **Links no editor:** `[[` abre um seletor de notas (nomes de `GET /api/notas-indice`); Enter grava `[[Nome]]`.
+  Clique num [[link]] abre na aba da frente, ⌘+clique numa aba nova. A seta **←** nas abas volta para a copy anterior.
+- **⇧+clique** numa linha seleciona da última clicada até ela. A pinada é marcada só pelo 📌.
   "+ Divisor" põe um traço arrastável (entrada `—…` na lista do `criacao.json`; botão direito tira).
 - **Mostrar publicados** (fim da Criação): botão que abre, depois de um traço, as copies publicadas com ícone de
   formato (mesma categoria escolhida), mais recentes primeiro.
 - **Modo copy** (copy aberta): a mesma tabela à esquerda (abas, menu de categorias, grupos, colunas); a copy fica
   numa coluna central. O menu de categorias muda de largura pela borda direita (`cats-largura`).
-- **📅 Calendário** fica na navbar do topo, à direita (portal no `#nav-direita` do App); no modo W, que
-  esconde a navbar, aparece no topo da tabela. Data vazia não mostra dd/mm/aaaa (o ícone aparece no hover da linha). A divisória muda a largura da tabela (`redacao-lateral-tabela`).
+- **📅 Calendário** fica no canto superior direito, junto das abas de copy (sem copy aberta, no topo da tabela). Data vazia não mostra dd/mm/aaaa (o ícone aparece no hover da linha). A divisória muda a largura da tabela (`redacao-lateral-tabela`).
 - **Colunas:** Copy (sem prévia), Status (seletor com ícone, com ⌘Z) e
   Data (campo de data: grava o `scheduled`). Larguras como numa planilha: a alça na borda direita muda só aquela coluna
   e empurra as outras (`tabela-larguras`); a Data fica com a sobra e, passando do painel, a tabela rola para o lado.

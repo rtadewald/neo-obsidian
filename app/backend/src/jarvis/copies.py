@@ -281,7 +281,7 @@ CRIACAO = DADOS / "criacao.json"
 
 def criacao() -> dict:
     d = _json(CRIACAO, {})
-    return {"cores": d.get("cores", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {})}
+    return {"cores": d.get("cores", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}), "arquivadas": d.get("arquivadas", [])}
 
 
 @_travado
@@ -291,8 +291,9 @@ def salvar_criacao(mudanca: dict) -> dict:
         if isinstance(mudanca.get(k), dict):
             d[k] = {**d[k], **mudanca[k]}
             d[k] = {c: v for c, v in d[k].items() if v not in (None, "", [])}
-    if isinstance(mudanca.get("categorias"), list):
-        d["categorias"] = list(dict.fromkeys(str(x) for x in mudanca["categorias"]))
+    for k in ("categorias", "arquivadas"):   # arquivadas: categorias fora do menu e da Criação (as copies ficam como estão)
+        if isinstance(mudanca.get(k), list):
+            d[k] = list(dict.fromkeys(str(x) for x in mudanca[k]))
     DADOS.mkdir(parents=True, exist_ok=True)
     CRIACAO.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
     return d
@@ -614,6 +615,7 @@ def renomear_categoria(de: str, para: str) -> int:
             n += 1
     d = criacao()
     salvar_criacao({"cores": {para: d["cores"].get(de), de: None}, "ordem": {para: d["ordem"].get(de), de: None},
-                    "categorias": [para if c == de else c for c in d["categorias"]]})
+                    "categorias": [para if c == de else c for c in d["categorias"]],
+                    "arquivadas": [para if c == de else c for c in d["arquivadas"]]})
     return n
 

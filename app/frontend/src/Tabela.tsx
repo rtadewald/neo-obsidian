@@ -39,7 +39,7 @@ const guardar = (pasta: string, g: Partial<Guardado>) => {
 /** Abre a pasta como ela estava quando o Rodrigo saiu (ou nova, na primeira vez). */
 export const tabelaSalva = (pasta: Pasta): EstadoTabela => guardadas[pasta]?.t ?? tabelaNova(pasta)
 
-export type Criacao = { cores: Record<string, string>; categorias: string[]; ordem: Record<string, string[]> }
+export type Criacao = { cores: Record<string, string>; categorias: string[]; ordem: Record<string, string[]>; arquivadas?: string[] }
 /** Os grupos da Criação, pelo ícone (formato) do nome da copy. */
 export const GRUPO_FORMATO: Record<string, string> = { '📱': '📱 Reels', '📝': '📱 Reels', '🏞️': '📱 Reels', '🏞': '📱 Reels', '💻': '📱 Reels', '📚': '📚 Aula', '💰': '💰 Ad', '📺': '📺 VSL' }
 /** Cores pastel das categorias (botão direito na categoria). */
@@ -109,6 +109,15 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
   const [apagando, setApagando] = useState(false)
   useEffect(() => { setSel(new Set()); setConfirmar(false) }, [t.pasta])
   const chaveDe = (p: { raiz: string; nome: string }) => `${p.raiz}/${p.nome}`
+  // ⇧+clique: seleciona da última linha clicada (a âncora) até esta, na ordem em que aparecem na tabela
+  const ancora = useRef<string | null>(null)
+  const selecionarAte = (k: string) => {
+    const ordem = [...(rolo.current?.querySelectorAll<HTMLElement>('tr[data-chave]') ?? [])].map((tr) => tr.dataset.chave!)
+    const a = ancora.current ? ordem.indexOf(ancora.current) : -1, b = ordem.indexOf(k)
+    if (b < 0) return
+    const [i, j] = a < 0 ? [b, b] : [Math.min(a, b), Math.max(a, b)]
+    setSel(new Set(ordem.slice(i, j + 1)))
+  }
   // caixas de seleção só fora da Redação; nela a seleção é arrastando o mouse
   const comCaixa = !!onApagar && !embutido
   // seleção por caixa arrastável (como no Finder): arrastar a partir de qualquer ponto da linha que não seja o nome da copy
@@ -192,6 +201,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   // filtros que valem antes dos chips de formato e das barras de mês (para os números deles não sumirem ao clicar)
   // as categorias que existem nas copies (para o seletor da coluna Categoria)
+  const arquivadas = useMemo(() => criacao?.arquivadas ?? [], [criacao?.arquivadas])
   const todasCategorias = useMemo(() => listaCategorias(est.producoes, criacao?.categorias ?? []), [est.producoes, criacao?.categorias])
   // publicadas com ícone de formato (as que ficariam na Criação), com a mesma categoria escolhida; mais recentes primeiro
   const [verPub, setVerPub] = useState(false)
@@ -210,9 +220,10 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
     return daPasta.filter((p) => (!t.ano || dia(p).startsWith(t.ano))
       && (!f?.status?.length || f.status.includes(p.status))
       && naCat(f?.categoria ?? [], p)
+      && !(t.pasta === 'ideias' && embutido && arquivadas.includes(p.categoria ?? '') && !f?.categoria?.includes(p.categoria ?? ''))
       && (!f?.data || (f.data === 'com') === !!p.scheduled)
       && (!q || p.nome.toLowerCase().includes(q) || (p.ideia ?? '').toLowerCase().includes(q) || p.previa.toLowerCase().includes(q)))
-  }, [daPasta, t.busca, t.ano, t.grupo, t.filtros, embutido, pinsSet])
+  }, [daPasta, t.busca, t.ano, t.grupo, t.filtros, embutido, pinsSet, arquivadas])
   const linhas = useMemo(() => {
     const l = base.filter((p) => (embutido || !t.formatos.length || t.formatos.includes(p.formato)) && (!t.mes || dia(p).startsWith(t.mes)))
     const { col, asc } = t.ordem
@@ -296,6 +307,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
   // arrastar na Criação: categoria sobre categoria muda a ordem; copy sobre copy muda a posição (ou a categoria)
   const [sobre, setSobre] = useState<string | null>(null)
   const [menuCor, setMenuCor] = useState<{ x: number; y: number; cat: string } | null>(null)
+  const [renCat, setRenCat] = useState<string | null>(null)   // categoria sendo renomeada no menu
   const soltarCategoria = (de: string, para: string) => {
     if (de === para || !onCriacao) return
     const atual = categorias.map(([c]) => c).filter((c) => c !== de)
@@ -377,8 +389,10 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
       onPointerDown={(e) => e.stopPropagation()} onBlur={(e) => gravar(e.target.value)}
       onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } else if (e.key === 'Escape') { e.preventDefault(); setRenomeando(null) } }} />
   }
+  // nas células de Status e Data só o seletor/campo segura o clique; o resto da célula abre a copy, como a linha toda
+  const soControle = (e: React.MouseEvent) => { if ((e.target as HTMLElement).closest('select, input, button')) e.stopPropagation() }
   const linha = (p: Producao, g?: Galho, pin = false) => (
-                <tr key={`${p.raiz}/${p.nome}`} data-chave={chaveDe(p)} onClick={(e) => { if (engolirClique.current) return; if (!(e.metaKey || e.ctrlKey) && sel.size) setSel(new Set()); onAbrir({ raiz: p.raiz, nome: p.nome }, { nova: e.metaKey || e.ctrlKey }) }} tabIndex={0} className={`${pin ? 'is-pinada' : ''} ${sel.has(chaveDe(p)) ? 'is-sel' : ''} ${g?.nivel ? `tabela-nivel-${g.nivel}` : ''} ${aberta && aberta.raiz === p.raiz && aberta.nome === p.nome ? 'is-aberta' : ''} ${g?.nivel && criacao?.cores[catDe(p)] ? 'com-cor' : ''} ${sobre === `p:${p.raiz}/${p.nome}` ? 'is-sobre' : ''}`}
+                <tr key={`${p.raiz}/${p.nome}`} data-chave={chaveDe(p)} onMouseDown={(e) => { if (e.shiftKey) e.preventDefault() }} onClick={(e) => { if (engolirClique.current) return; if (e.shiftKey && onApagar) { selecionarAte(chaveDe(p)); return } ancora.current = chaveDe(p); if (!(e.metaKey || e.ctrlKey) && sel.size) setSel(new Set()); onAbrir({ raiz: p.raiz, nome: p.nome }, { nova: e.metaKey || e.ctrlKey }) }} tabIndex={0} className={`${pin ? 'is-pinada' : ''} ${sel.has(chaveDe(p)) ? 'is-sel' : ''} ${g?.nivel ? `tabela-nivel-${g.nivel}` : ''} ${aberta && aberta.raiz === p.raiz && aberta.nome === p.nome ? 'is-aberta' : ''} ${g?.nivel && criacao?.cores[catDe(p)] ? 'com-cor' : ''} ${sobre === `p:${p.raiz}/${p.nome}` ? 'is-sobre' : ''}`}
                   draggable onDragStart={(e) => { const ini = inicioArraste.current as HTMLElement | null; if ((onApagar && (!ini?.closest?.('.col-nome') || ini.matches?.('td.col-nome, td.col-formato, td.col-sel'))) || ini?.closest?.('input')) { e.preventDefault(); return } e.dataTransfer.setData('text/plain', `${p.raiz}\u0000${p.nome}`); e.dataTransfer.setData('neo/copia', JSON.stringify({ id: `${p.raiz}/${p.nome}`, cat: catDe(p) })); e.dataTransfer.effectAllowed = 'move' }}
                   onDragOver={g?.nivel ? (e) => { if (e.dataTransfer.types.includes('neo/copia')) { e.preventDefault(); setSobre(`p:${p.raiz}/${p.nome}`) } } : undefined}
                   onDragLeave={g?.nivel ? () => setSobre(null) : undefined}
@@ -395,10 +409,10 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
                     <div><b>{pin && <span className="tabela-pin" title="Priorizada (botão direito → Tirar de Priorizar)">📌</span>}<span className="tabela-ic">{p.formato || '📄'}</span>{nomeOuCampo(p)}{g.nivel === 1 && g.n ? <em className="tabela-n">{g.n}</em> : null}</b>{!embutido && p.previa && <span>{p.previa}</span>}</div></div>
                     : <><b>{nomeOuCampo(p)}{pin && <span className="tabela-pin" title="Priorizada (botão direito → Tirar de Priorizar)">📌</span>}</b>{!embutido && p.previa && <span>{p.previa}</span>}</>}</td>
 
-                  {embutido && <td className="col-status" onClick={(e) => e.stopPropagation()}>
+                  {embutido && <td className="col-status" onClick={soControle}>
                     {onStatus ? <select className={`tabela-status-sel is-${p.status}`} value={p.status} onChange={(e) => onStatus([{ raiz: p.raiz, nome: p.nome }], e.target.value as StatusProd)}>
                       {STATUS.map((x) => <option key={x.k} value={x.k}>{x.marca} {x.nome}</option>)}</select> : <Status p={p} />}</td>}
-                  {embutido && onData ? <td className="col-data" onClick={(e) => e.stopPropagation()}>
+                  {embutido && onData ? <td className="col-data" onClick={soControle}>
                     <input type="date" className={`tabela-data-in ${p.scheduled ? '' : 'is-vazia'}`} value={(p.scheduled ?? '').slice(0, 10)} title="Mudar a data (scheduled)"
                       onChange={(e) => { if (/^2\d{3}-/.test(e.target.value)) onData({ raiz: p.raiz, nome: p.nome }, e.target.value) }} /></td>
                   : <td className="col-data">{(p.datas?.length ?? 0) > 1 ? <span title={`Postada ${p.datas!.length} vezes`}>{p.datas!.map(dataBr).join(' · ')}</span>
@@ -437,7 +451,7 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
         </header>
 
         <div className="tabela-corpo">
-        {embutido && !semCategorias && t.pasta !== 'skills' && <MenuCategorias lista={todasCategorias} contagem={contagemCat} nPins={daPasta.filter((p) => pinsSet.has(`p:${p.raiz}/${p.nome}`)).length} total={daPasta.length} sel={t.filtros?.categoria ?? []}
+        {embutido && !semCategorias && t.pasta !== 'skills' && <MenuCategorias renomear={renCat} onRenomear={(de, para) => { setRenCat(null); if (para && para !== de) onRenomearCategoria?.(de, para) }} lista={todasCategorias.filter((c) => !arquivadas.includes(c))} arquivadas={arquivadas.filter((c) => todasCategorias.includes(c))} contagem={contagemCat} nPins={daPasta.filter((p) => pinsSet.has(`p:${p.raiz}/${p.nome}`)).length} total={daPasta.length} sel={t.filtros?.categoria ?? []}
           cores={criacao?.cores ?? {}} onSel={(l) => mudar({ filtros: { ...t.filtros, categoria: l } })}
           onSoltar={(d, cat) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
             if (cat === PIN) { for (const id of ids) alternarPin(`p:${id}`, true); return }
@@ -549,14 +563,20 @@ export function ModalTabela({ est, t, onMudar, onFechar, onAbrir, onApagar, onSt
         </div>
         {menuCor && createPortal(
           <div className="tabela-menu tabela-cores glass glass--light" style={{ left: menuCor.x, top: menuCor.y }} role="menu" onMouseLeave={() => setMenuCor(null)}>
-            <p className="tabela-menu-t">Cor de {menuCor.cat}</p>
+            {onRenomearCategoria && <button onClick={() => { setRenCat(menuCor.cat); setMenuCor(null) }}>✏️ Renomear</button>}
+            {(() => { const c = menuCor.cat, sim = arquivadas.includes(c)
+              return <button onClick={() => { setMenuCor(null); onCriacao?.({ arquivadas: sim ? arquivadas.filter((x) => x !== c) : [...arquivadas, c] })
+                if (!sim && t.filtros?.categoria?.includes(c)) mudar({ filtros: { ...t.filtros, categoria: t.filtros.categoria.filter((x) => x !== c) } }) }}>
+                {sim ? '📤 Desarquivar' : '🗄️ Arquivar'}</button> })()}
+            {!est.producoes.some((p) => p.categoria === menuCor.cat) && <button className="is-perigo" onClick={() => { const c = menuCor.cat; setMenuCor(null); onCriacao?.({ categorias: todasCategorias.filter((x) => x !== c) }) }}>Apagar (vazia)</button>}
+            <hr />
+            <p className="tabela-menu-t">Cor</p>
             <div className="tabela-cores-grade">
               {PASTEIS.map((c) => <button key={c} className={criacao?.cores[menuCor.cat] === c ? 'is-on' : ''} style={{ background: c }} title={c}
                 onClick={() => { onCriacao?.({ cores: { [menuCor.cat]: c } }); setMenuCor(null) }} />)}
+              <button className={`tabela-sem-cor ${criacao?.cores[menuCor.cat] ? '' : 'is-on'}`} title="Sem cor" aria-label="Sem cor"
+                onClick={() => { onCriacao?.({ cores: { [menuCor.cat]: '' } }); setMenuCor(null) }} />
             </div>
-            <button onClick={() => { onCriacao?.({ cores: { [menuCor.cat]: '' } }); setMenuCor(null) }}>Sem cor</button>
-            {onRenomearCategoria && <button onClick={() => { const de = menuCor.cat; setMenuCor(null); const para = window.prompt('Novo nome da categoria:', de)?.trim(); if (para && para !== de) onRenomearCategoria(de, para) }}>Renomear…</button>}
-            {!est.producoes.some((p) => p.categoria === menuCor.cat) && <button onClick={() => { const c = menuCor.cat; setMenuCor(null); onCriacao?.({ categorias: todasCategorias.filter((x) => x !== c) }) }}>Apagar categoria (vazia)</button>}
           </div>, document.body)}
         {menu && createPortal(   // no body: dentro do modal (glass) o position: fixed contava a partir do modal, não da tela
           <div className="tabela-menu glass glass--light" ref={refMenu} style={{ left: menu.x, top: menu.y }} role="menu" onContextMenu={(e) => e.preventDefault()}>
