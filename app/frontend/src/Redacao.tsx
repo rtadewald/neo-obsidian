@@ -187,8 +187,10 @@ export function Redacao({ versao }: { versao?: number }) {
 
   // 📅 Calendário: no canto superior direito, junto das abas de copy (sem copy aberta, no topo da tabela)
   const botoes = <>
+    {/* + Nova copy no canto de cima (a mesma janela do ⌘K) */}
+    <button className="lateral-btn redacao-nova" onClick={() => window.dispatchEvent(new Event('nova-copy'))} title="Copy nova (⌘K)"><span>+ Nova copy</span><kbd>⌘K</kbd></button>
     <button className={`lateral-btn ${cal ? 'is-ativa' : ''}`} onClick={() => setCal((v) => !v)}
-      title={cal ? 'Fechar o calendário' : 'Abrir o calendário: arraste uma copy da tabela para um dia para agendar'}><span>📅</span><span>Calendário</span></button>
+      title={cal ? 'Fechar o calendário' : 'Abrir o calendário: arraste uma copy da tabela para um dia para agendar'}><span>📅</span><span>Calendário</span><kbd>⌘C</kbd></button>
   </>
 
   return (

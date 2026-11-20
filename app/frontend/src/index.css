@@ -1349,7 +1349,8 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 /* Skills e Calendário (modo W) logo depois das abas da Redação, com um traço */
 .redacao .modal-tabela .modal-tabs nav { flex: none; }
 .redacao-botoes-w { align-items: center; }
-.redacao-botoes-w::before { content: ''; width: 1px; height: 16px; margin: 0 8px 0 4px; background: rgba(23, 24, 27, .16); }
+/* sem as abas de status, o Calendário fica na ponta direita da faixa de cima, sem o traço */
+.redacao-botoes-w { margin-left: auto; }
 
 /* ⌘] no modo copy: sem Status e Data, a Copy fica com a largura toda */
 .tabela-sem-colunas .tabela .col-status, .tabela-sem-colunas .tabela .col-data, .tabela-sem-colunas .tabela .col-categoria { display: none; }
@@ -1616,3 +1617,9 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .cats-t-btn:hover { color: var(--ink); }
 .cats-t-btn svg { flex: none; transition: transform .15s; }
 .cats-t-btn.is-aberta svg { transform: rotate(90deg); }
+
+/* + Nova copy no canto de cima, ao lado do Calendário */
+.redacao-nova kbd, .redacao-botoes-w kbd, .redacao-abas-cal kbd { margin-left: 4px; font: inherit; font-size: 10.5px; color: var(--mute); padding: 1px 5px; border-radius: 5px; background: rgba(23, 24, 27, .06); }
+.redacao-abas-cal { flex: none; display: inline-flex; align-items: center; gap: 2px; }   /* os botões do canto não encolhem atrás das abas */
+/* as abas de nota encolhem (com reticências) para o + Nova copy e o Calendário caberem sempre no canto */
+.redacao-aba { min-width: 70px; flex: 0 1 220px; }

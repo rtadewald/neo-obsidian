@@ -174,7 +174,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const daCriacao = useMemo(() => baseCriacao.filter((p) => (stSel.length ? stSel.includes(p.status) : p.status !== 'publicado')), [baseCriacao, stSel.join('|')])   // eslint-disable-line react-hooks/exhaustive-deps
   const daPasta = daCriacao
   // contagem de cada status (com a categoria escolhida no menu)
-  // status e categoria são filtros excludentes (escolher um tira o outro): cada contagem vale para a lista inteira
+  // escolher um status tira a categoria; com um status escolhido, a categoria filtra dentro dele (contagem do status: lista inteira)
   const contagemStatus = useMemo(() => { const c: Record<string, number> = {}; for (const p of baseCriacao) c[p.status] = (c[p.status] ?? 0) + 1; return c }, [baseCriacao])
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   const arquivadas = useMemo(() => criacao.arquivadas ?? [], [criacao.arquivadas])
@@ -191,7 +191,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   // categoria numa coluna
   const nCols = semColunas ? 2 : 4
   const umaCat = t.pasta === 'ideias' && (t.filtros?.categoria?.length ?? 0) === 1
-  const contagemCat = useMemo(() => { const c: Record<string, number> = {}; for (const p of baseCriacao) if (p.status !== 'publicado') c[p.categoria ?? ''] = (c[p.categoria ?? ''] ?? 0) + 1; return c }, [baseCriacao])
+  // contagem das categorias: dentro do status escolhido (se houver), senão das que não estão publicadas
+  const contagemCat = useMemo(() => { const c: Record<string, number> = {}; for (const p of baseCriacao) if (stSel.length ? stSel.includes(p.status) : p.status !== 'publicado') c[p.categoria ?? ''] = (c[p.categoria ?? ''] ?? 0) + 1; return c }, [baseCriacao, stSel.join('|')])   // eslint-disable-line react-hooks/exhaustive-deps
   const linhas = useMemo(() => {
     const f = t.filtros
     const l = daPasta.filter((p) => (!t.ano || dia(p).startsWith(t.ano))
@@ -414,7 +415,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
             onSoltar: (d, k) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
               onStatus(ids.map((id) => { const [raiz, ...resto] = id.split('/'); return { raiz: raiz as Alvo['raiz'], nome: resto.join('/') } }), k as StatusProd) } }}
           renomear={renCat} onRenomear={(de, para) => { setRenCat(null); if (para && para !== de) onRenomearCategoria(de, para) }} lista={todasCategorias.filter((c) => !arquivadas.includes(c))} arquivadas={arquivadas.filter((c) => todasCategorias.includes(c))} contagem={contagemCat} nPins={daPasta.filter((p) => pinsSet.has(idPin(p))).length} total={daPasta.length} sel={t.filtros?.categoria ?? []}
-          cores={criacao.cores} onCor={(chave, cor) => onCriacao({ cores: { [chave]: cor } })} onSel={(l) => mudar({ filtros: { ...t.filtros, categoria: l, ...(l.length ? { status: [] } : {}) } })}   // categoria tira o status
+          cores={criacao.cores} onCor={(chave, cor) => onCriacao({ cores: { [chave]: cor } })} onSel={(l) => mudar({ filtros: { ...t.filtros, categoria: l } })}   // com um status escolhido, a categoria filtra dentro dele
           onSoltar={(d, cat) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
             if (cat === PIN) { for (const id of ids) alternarPin(`p:${id}`, true); return }
             for (const id of ids) { const [raiz, ...resto] = id.split('/'); onCategoria({ raiz: raiz as Alvo['raiz'], nome: resto.join('/') }, cat === SEM ? '' : cat) } }}
