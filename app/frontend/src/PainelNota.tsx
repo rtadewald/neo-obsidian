@@ -149,7 +149,7 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
               <input className="ideias-titulo-campo" autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} onBlur={confirmarTitulo}
                 onFocus={(e) => e.target.select()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitulo(null) } }} aria-label="Nome da nota" />
             </form>
-          ) : fixo ? <h1>{alvo.nome.split('/').pop()}</h1>
+          ) : fixo ? <h1 title="Duplo clique seleciona o título inteiro para renomear" onDoubleClick={(e) => { e.preventDefault(); window.getSelection()?.removeAllRanges(); setTitulo(alvo.nome) }}>{alvo.nome.split('/').pop()}</h1>
             : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
         </div>
         {/* o estado só aparece quando pede atenção (conflito com o Obsidian ou erro ao salvar) */}

@@ -1247,10 +1247,8 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .paleta-previa mark { background: rgba(226, 240, 92, .65); color: inherit; border-radius: 3px; padding: 0 1px; }
 .paleta-lista button.is-sel .paleta-previa { color: rgba(244, 242, 239, .75); }
 .paleta-lista button.is-sel .paleta-previa mark { background: rgba(226, 240, 92, .35); }
-/* Redação: só o nome da copy tem a mãozinha; a calha à esquerda (recuo, ícone) e os vazios são de seleção */
-.tabela-embutida .tabela tbody tr[data-chave] { cursor: default; }
-.tabela-embutida .tabela tbody tr[data-chave] .tabela-galho > div { cursor: pointer; }
-.tabela-embutida .tabela tbody tr[data-chave] td:not(.col-nome):not(.col-formato):not(.col-sel) { cursor: pointer; }
+/* Redação: a linha inteira tem a mãozinha (clicar em qualquer ponto abre a copy; arrastar da calha seleciona) */
+.tabela-embutida .tabela tbody tr[data-chave], .tabela-embutida .tabela tbody tr[data-chave] td { cursor: pointer; }
 /* Filtrar (Redação) */
 .tabela-filtro-menu { left: 0; min-width: 340px; max-width: 420px; padding: 10px 12px; }
 .tabela-filtro-t { margin: 6px 2px 6px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2); }
