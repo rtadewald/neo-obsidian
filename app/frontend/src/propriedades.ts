@@ -101,8 +101,13 @@ class Painel extends WidgetType {
   ignoreEvent() { return true }
 
   toDOM(view: EditorView) {
+    // o bloco de fora leva o respiro como padding: margem em widget de bloco não entra no mapa de alturas do
+    // CodeMirror e a seta para cima/baixo calcula a linha errada (pulava para o topo)
+    const envelope = document.createElement('div')
+    envelope.className = 'cm-lp-props-bloco'
     const raiz = document.createElement('div')
     raiz.className = 'cm-lp-props'
+    envelope.append(raiz)
     const linha = (rotulo: string, campo: HTMLElement, chave?: string) => {
       const d = document.createElement('div'); d.className = 'cm-prop'
       const k = document.createElement('span'); k.className = 'cm-prop-chave'; k.textContent = rotulo
@@ -291,7 +296,7 @@ class Painel extends WidgetType {
       const alvo = focoDepois; focoDepois = null
       requestAnimationFrame(() => (raiz.querySelector(`[data-foco="${CSS.escape(alvo)}"]`) as HTMLElement | null)?.focus())
     }
-    return raiz
+    return envelope
   }
 }
 

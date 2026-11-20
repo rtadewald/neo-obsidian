@@ -9,8 +9,7 @@ import functools
 import json
 import re
 import threading
-import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
@@ -103,13 +102,6 @@ def _formato(nome: str) -> str:
     return "📄"
 
 
-def _base(nome: str) -> str:
-    """Nome sem marcas de status, formato e 💡: o "título da ideia"."""
-    t = notas.MARCAS.sub("", nome)
-    t = re.sub(r"^[\W_]+", "", t, flags=re.U)
-    return t.strip() or nome
-
-
 # ---------- leitura ----------
 
 _trava = threading.RLock()   # as rotas rodam em paralelo: quem grava o criacao.json passa pela trava
@@ -123,59 +115,11 @@ def _travado(f):
     return g
 
 
-NOVAS = DADOS / "novas.json"   # copies que chegaram agora (selo NOVO) e ainda não foram vistas
-
-
-def _slug(nome: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()).strip("-") or "canvas"
-
-
 def _json(arq: Path, padrao):
     try:
         return json.loads(arq.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return padrao
-
-
-
-
-
-
-
-
-CORES_PRODUTO = ["#e0a32e", "#5b8def", "#e0679f", "#3fae7a", "#9b6be0", "#e2683c", "#2bb0c0", "#8a8f98"]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ---------- desenho (Excalidraw) ----------
-# Cada canvas tem a sua camada de desenho: os elementos e os arquivos (imagens) do Excalidraw, num arquivo à parte do
-# layout (`<slug>.desenho.json`), com o mesmo cuidado: temporário próprio e a versão anterior no histórico.
-
-
-
-
-
 
 
 URL = re.compile(r"https?://[^\s)\]>\"']+")
@@ -205,73 +149,56 @@ def _midia(texto: str) -> dict:
     return {"links": links, "imagem": img, "video": video, "copia": copia}
 
 
+# uma linha por arquivo, guardada pelo (mtime, tamanho) e pelo dia (a data que vale do `scheduled` depende de hoje):
+# a Redação relê /api/copies a cada mudança, e só as notas que mudaram são lidas de novo
+_LINHAS: dict[Path, tuple[tuple, dict]] = {}
+
+
+def _linha(raiz: str, nome: str, p: Path) -> dict:
+    st = p.stat()
+    chave = (raiz, st.st_mtime_ns, st.st_size, date.today())
+    c = _LINHAS.get(p)
+    if c and c[0] == chave:
+        return c[1]
+    inteiro = _ler(p, None)
+    t = inteiro[:3000]
+    fm = _fm(t)
+    sched = notas._scheduled(t)
+    criado = getattr(st, "st_birthtime", st.st_mtime)
+    corpo = FM.sub("", inteiro, count=1)
+    tags = _lista(fm, "tags")
+    midia = _midia(t)
+    if not midia["imagem"] and _valor(fm, "thumb"):
+        midia["imagem"] = _valor(fm, "thumb")
+    linha = {"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome, t), "scheduled": sched, "datas": notas._datas(t),
+             "ano": (sched or datetime.fromtimestamp(criado).strftime("%Y"))[:4],
+             "formato": _formato(nome), "origem": _alvo(_valor(fm, "origem")),
+             "previa": notas._previa(t), "mtime": st.st_mtime, "criado": criado,
+             "palavras": len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo)))),
+             "winner": WINNER in tags, "tags": tags,
+             "categoria": _valor(fm, "categoria") or None, "arquivado": _valor(fm, "arquivado") == "true", **midia}
+    _LINHAS[p] = (chave, linha)
+    return linha
+
+
 def _todas() -> dict:
-    """Todas as notas do canvas (ideias, entradas e copies), cada uma com `canvas`: o nome do canvas onde ela vive.
-    Copy sem `grupo:` vai junto com a ideia dela; ideia sem `grupo:` vai com a maioria das copies dela. Grupo que não é
-    canvas nenhum (ou vazio) = Inbox."""
-    ideias, entradas, producoes = [], [], []
-    for nome, p in notas._arquivos("ideias"):
-        t = _ler(p)
-        fm = _fm(t)
-        m = _midia(t)
-        if not m["imagem"] and _valor(fm, "thumb"):
-            m["imagem"] = _valor(fm, "thumb")
-        ideias.append({"nome": nome, "previa": notas._previa(t), **m, "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"), "categoria": _valor(fm, "categoria") or None, "material": _tem_material(t), "fontes": [x for x in map(_alvo, _lista(fm, "fontes")) if x],
-                       "mtime": p.stat().st_mtime})
-    for nome, p in notas._arquivos("entradas"):
-        t = _ler(p)
-        fm = _fm(t)
-        entradas.append({"nome": nome, "url": _valor(fm, "url") or "", "tipo": _valor(fm, "tipo") or "link",
-                         "thumb": _valor(fm, "thumb") or "", "grupo": _valor(fm, "grupo"), "grupos": _lista(fm, "grupo"), "tags": _lista(fm, "tags"),
-                         "previa": notas._previa(t), "mtime": p.stat().st_mtime})
+    """Todas as copies (1 Priorizar e 2 Publicados), uma linha por nota."""
+    vivas, producoes = set(), []
     for raiz in notas.PASTAS:
         for nome, p in notas._arquivos(raiz):
-            inteiro = _ler(p, None)
-            t = inteiro[:3000]
-            fm = _fm(t)
-            sched = notas._scheduled(t)
-            st = p.stat()
-            corpo = FM.sub("", inteiro, count=1)
-            palavras = len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo))))
-            producoes.append({"nome": nome, "raiz": raiz, "status": notas.status(raiz, nome, t), "scheduled": sched, "datas": notas._datas(t),
-                              "ano": (sched or datetime.fromtimestamp(getattr(st, "st_birthtime", st.st_mtime)).strftime("%Y"))[:4],
-                              "formato": _formato(nome), "ideia": _alvo(_valor(fm, "ideia")), "origem": _alvo(_valor(fm, "origem")),
-                              "previa": notas._previa(t), "mtime": st.st_mtime, "criado": getattr(st, "st_birthtime", st.st_mtime),
-                              "palavras": palavras, "winner": WINNER in _lista(fm, "tags"), "tags": _lista(fm, "tags"),
-                              "categoria": _valor(fm, "categoria") or None, "arquivado": _valor(fm, "arquivado") == "true",
-                              **{**_midia(t), **({"imagem": _valor(fm, "thumb")} if _valor(fm, "thumb") and not _midia(t)["imagem"] else {})}})
-    return {"ideias": ideias, "entradas": entradas, "producoes": producoes}
-
-
-def _gravar_novas(nomes: list[str]):
-    DADOS.mkdir(parents=True, exist_ok=True)
-    NOVAS.write_text(json.dumps(list(dict.fromkeys(nomes)), ensure_ascii=False, indent=1), encoding="utf-8")
-
-
-def marcar_nova(nome: str):
-    """Ideia que chegou de fora ganha o selo NOVO no card, até ser usada (ganhar uma produção) ou vista."""
-    _gravar_novas([*_json(NOVAS, []), nome])
-
-
-
-
-def _novas(tudo: dict) -> list[str]:
-    """As novas que continuam novas: a 💡 ideia existe e ainda não tem produção (usar a ideia tira o selo sozinho);
-    a copy criada à mão (⌘⇧N, nova copy) fica nova até ser vista (aberta ou o selo clicado)."""
-    usadas = {p.get("ideia") for p in tudo["producoes"]}
-    ideias = {i["nome"] for i in tudo["ideias"]}
-    copias = {p["nome"] for p in tudo["producoes"]}
-    lista = _json(NOVAS, [])
-    vivas = [n for n in lista if (n in ideias and n not in usadas) or n in copias]
-    if len(vivas) != len(lista):
-        _gravar_novas(vivas)
-    return vivas
+            try:
+                producoes.append(_linha(raiz, nome, p))
+                vivas.add(p)
+            except OSError:
+                pass
+    for p in [q for q in _LINHAS if q not in vivas]:   # renomeadas, movidas, apagadas
+        del _LINHAS[p]
+    return {"producoes": producoes}
 
 
 def estado() -> dict:
-    """Todas as copies do vault (e as ideias/entradas antigas), as novas e os formatos: o que a Redação lista."""
-    tudo = _todas()
-    return {**tudo, "novas": _novas(tudo), "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
+    """Todas as copies do vault e os formatos: o que a Redação lista."""
+    return {**_todas(), "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
 # ---------- Criação (Redação): cor e ordem das categorias e das copies; arquivar ----------
@@ -308,14 +235,6 @@ def arquivar_nota(raiz: str, nome: str, sim: bool = True) -> dict:
     return {"ok": True}
 
 
-
-
-
-
-
-
-
-
 # ---------- escrita ----------
 
 def _limpo(titulo: str) -> str:
@@ -338,7 +257,6 @@ def _nova_copy(titulo: str, corpo: str, categoria: str | None = None, extras: di
     cab = ["status: ideia", "scheduled:", "notion:", "tags:", f'categoria: "{categoria}"' if categoria else "categoria:"]
     cab += [f'{k}: "{v}"' for k, v in (extras or {}).items() if v]
     notas._escrever(p, "---\n" + "\n".join(cab) + "\n---\n\n" + (corpo.strip() + "\n" if corpo.strip() else ""))
-    marcar_nova(p.stem)   # nasce com o selo NOVO até ser vista
     return p
 
 
@@ -423,68 +341,22 @@ def _com_entrada(texto: str, conteudo: str, titulo: str = "", data: bool = True)
     return texto[:fim].rstrip() + f"\n\n{bloco}" + ("\n" + texto[fim:] if prox else "")
 
 
-
-
-PLACEHOLDER = "Ideia central das versões ligadas a ela"
-
-
-def _tem_material(texto: str) -> bool:
-    """A ideia tem material de verdade (link, imagem, vídeo, texto)? As notas de lugar criadas na reorganização do mapa
-    mental não têm: no mapa elas somem e as copies delas penduram direto na categoria."""
-    corpo = re.sub(r"^---\n.*?\n---\n?", "", texto, count=1, flags=re.S)
-    linhas = [l for l in corpo.splitlines() if l.strip() and not l.strip().startswith("#") and PLACEHOLDER not in l]
-    resto = " ".join(linhas)
-    return bool(re.search(r"https?://|!\[\[|\[\[", resto)) or len(resto.strip()) > 40
-
-
 def _caminho_ideia(ideia: str) -> Path:
-    """A nota de uma 💡 antiga ou, agora que tudo é copy, a copy com esse nome."""
-    p = notas.IDEIAS / f"{ideia}.md"
-    if p.is_file():
-        return p
     raiz, nome = achar(ideia)
     return notas.TODAS[raiz] / f"{nome}.md"
 
 
-
-
-
-
-def _esvaziar(texto: str, chave: str) -> str:
-    """A propriedade fica, sem valor (`chave:`); se não existia, é criada vazia."""
-    if not re.search(rf"^{re.escape(chave)}:", _fm(texto), re.M):
-        return _definir(texto, chave, None).replace("\n---\n", f"\n{chave}:\n---\n", 1)
-    m = FM.match(texto)
-    fm = re.sub(rf"^{re.escape(chave)}:.*$", f"{chave}:", m.group(1), count=1, flags=re.M)
-    return "---\n" + fm + "\n---\n" + texto[m.end():]
-
-
-
-
-
-
-
-
-
-
-def _id(raiz: str, nome: str) -> str:
-    return {"ideias": f"i:{nome}", "entradas": f"e:{nome}"}.get(raiz, f"p:{raiz}/{nome}")
-
-
 def renomeou(raiz: str, antes: str, raiz_depois: str, depois: str):
-    """Renomeou, mudou status ou publicou: o selo NOVO e a ordem da Criação seguem o nome novo."""
+    """Renomeou, mudou status ou publicou: a ordem da Criação segue o nome novo."""
     velho, novo = f"{raiz}/{antes}", f"{raiz_depois}/{depois}"
     d = criacao()
     if any(velho in v for v in d["ordem"].values()):
         salvar_criacao({"ordem": {c: [novo if x == velho else x for x in v] for c, v in d["ordem"].items()}})
-    if antes in _json(NOVAS, []):
-        _gravar_novas([depois if n == antes else n for n in _json(NOVAS, [])])
 
 
 # ---------- mídia dos cards ----------
 
 ANEXOS = notas.VAULT / "2 Notas" / "Engine" / "attachments"
-_videos_x: dict[str, dict | None] = {}
 
 
 def anexo(nome: str) -> Path | None:
@@ -496,12 +368,27 @@ def anexo(nome: str) -> Path | None:
     return next((q for q in notas.VAULT.rglob(nome) if ".trash" not in q.parts and ".obsidian" not in q.parts), None)
 
 
-
-
 # ---------- frontmatter em lote ----------
 
 
+TIPOS_IMAGEM = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
+
+def salvar_imagem(dados: bytes, tipo: str) -> dict:
+    """Imagem colada no chat vai para os anexos do vault, com o nome que o Obsidian daria (`Pasted image <data>.png`):
+    o agente lê o arquivo e a imagem fica no vault para usar numa nota com `![[...]]`."""
+    ext = TIPOS_IMAGEM.get(tipo)
+    if not ext:
+        raise ValueError("formato de imagem não suportado (png, jpg, webp ou gif)")
+    if len(dados) > 15 * 1024 * 1024:
+        raise ValueError("imagem maior que 15 MB")
+    ANEXOS.mkdir(parents=True, exist_ok=True)
+    base = f"Pasted image {datetime.now():%Y%m%d%H%M%S}"
+    p, n = ANEXOS / f"{base}.{ext}", 1
+    while p.exists():
+        p, n = ANEXOS / f"{base} {n}.{ext}", n + 1
+    p.write_bytes(dados)
+    return {"nome": p.name, "caminho": str(p.relative_to(notas.VAULT))}
 
 
 def marcar_winner(alvos: list[dict], sim: bool) -> int:
@@ -518,8 +405,6 @@ def marcar_winner(alvos: list[dict], sim: bool) -> int:
             notas._escrever(p, _definir(t, "tags", novas))   # lista vazia fica `tags:` (a chave não some)
             n += 1
     return n
-
-
 
 
 # ---------- as mesmas ações do app, pelo nome da nota (as rotas e o Claude Code usam) ----------
@@ -559,18 +444,6 @@ def mudar_status(nome: str, status: str) -> dict:
     return {"raiz": d["raiz"], "nome": d["nome"]}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def definir_tags(nome: str, tags: list[str]) -> list[str]:
     """Troca as tags da nota (coluna Tags da tabela). Devolve as de antes, para o ⌘Z do app."""
     raiz, nome = achar(nome)
@@ -581,8 +454,6 @@ def definir_tags(nome: str, tags: list[str]) -> list[str]:
     if novas != antes:
         notas._escrever(p, _definir(t, "tags", novas))
     return antes
-
-
 
 
 def definir_categoria(nomes: list[str], categoria: str | None) -> int:

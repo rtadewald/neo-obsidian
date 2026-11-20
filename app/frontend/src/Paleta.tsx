@@ -6,8 +6,7 @@ const chave = (r: string, n: string) => `${r}/${n}`
 
 /* ---------- busca rápida de notas (⌘O) ---------- */
 
-/** raiz 'grupo': 💡 ideia que existe só como grupo de copies; abre na versão principal (`abrir`). */
-type Entrada = { nome: string; raiz: Raiz | 'grupo'; mtime: number; abrir?: { raiz: Raiz; nome: string }; versoes?: number; previa?: string }
+type Entrada = { nome: string; raiz: Raiz; mtime: number; previa?: string }
 /** Achado dentro do texto (GET /api/notas-busca): o trecho e as posições [início, tamanho] das palavras nele. */
 type Achado = { nome: string; raiz: Raiz; mtime: number; trecho: string; marcas: [number, number][] }
 
@@ -68,7 +67,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
   }, [q])
 
   const res = useMemo(() => {
-    const peso: Record<Raiz | 'grupo', number> = { ideias: 25, grupo: 25, priorizar: 20, skills: 10, entradas: 5, publicados: 0 }
+    const peso: Record<Raiz, number> = { ideias: 0, entradas: 0, priorizar: 20, skills: 10, publicados: 0 }
     if (!q.trim()) {   // busca vazia: as últimas abertas primeiro, depois todo o resto de 1 Copies (publicados inclusive), das editadas mais recentemente
       const porChave = new Map(idx.map((e) => [chave(e.raiz, e.nome), e]))
       const recentes = lerRecentes().map((k) => porChave.get(k)).filter((e): e is Entrada => !!e)
@@ -88,7 +87,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
   }, [q, idx, achados])
   const trechoDe = useMemo(() => new Map(achados.map((a) => [chave(a.raiz, a.nome), a])), [achados])
 
-  const abrirEntrada = (e: Entrada) => (e.abrir ? onAbrir(e.abrir.raiz, e.abrir.nome) : onAbrir(e.raiz as Raiz, e.nome))
+  const abrirEntrada = (e: Entrada) => onAbrir(e.raiz, e.nome)
   const criar = q.trim() && !res.some((r) => r.e.nome.toLowerCase() === q.trim().toLowerCase())
   const total = res.length + (criar ? 1 : 0)
   useEffect(() => setSel(0), [q])
@@ -101,7 +100,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
     else if (e.key === 'Enter') {
       e.preventDefault()
       const it = res[sel]?.e
-      if (sel < res.length && (e.metaKey || e.ctrlKey) && onImportar) onImportar(it.abrir?.raiz ?? (it.raiz as Raiz), it.abrir?.nome ?? it.nome)
+      if (sel < res.length && (e.metaKey || e.ctrlKey) && onImportar) onImportar(it.raiz, it.nome)
       else if (sel < res.length) abrirEntrada(it)
       else if (criar) onCriar(q.trim())
     }
@@ -140,7 +139,7 @@ export function Paleta({ onFechar, onAbrir, onCriar, onImportar }: { onFechar: (
                 {(() => { const a = trechoDe.get(chave(e.raiz, e.nome)); return a ? <span className="paleta-previa is-achado">{realceTrecho(a)}</span>
                   : e.previa ? <span className="paleta-previa">{e.previa}</span> : null })()}
               </span>
-              <span className="paleta-pasta">{e.raiz === 'grupo' ? `Ideia · ${e.versoes} ${e.versoes === 1 ? "versão" : "versões"}` : ROTULO[e.raiz]}</span>
+              <span className="paleta-pasta">{ROTULO[e.raiz]}</span>
             </button>
           ))}
           {criar && (

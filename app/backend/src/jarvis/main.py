@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import anuncios, instagram_canais, auth, copies, db, metricool, notas, planejamento, porta, preferencias, radar, videos_x
+from . import agente, anuncios, instagram_canais, auth, copies, db, metricool, notas, planejamento, porta, preferencias, radar, videos_x
 from .config import FRONT_DIST
 
 MODO_AUTH = auth.preparar()
@@ -233,7 +233,7 @@ async def eventos():
 
 
 class Tela(BaseModel):
-    acao: str                  # pagina | abrir_nota (abre numa aba da Redação; nova=True: aba nova) | fechar_nota
+    acao: str                  # pagina | abrir_nota | mostrar (abre numa aba da Redação; nova=True: aba nova)
     pagina: str | None = None
     nova: bool | None = None
     raiz: str | None = None
@@ -291,24 +291,8 @@ async def sincronizar():
 
 @app.get("/api/notas-indice")
 def notas_indice():
-    """Busca rápida (⌘P/⌘O): as notas e também as 💡 ideias que existem só como grupo de copies (`ideia:` sem nota 💡).
-    Essas abrem na versão principal do grupo (o 📱 Reels quando houver)."""
-    itens = notas.indice()
-    try:
-        tudo = copies._todas()
-        com_nota = {i["nome"] for i in tudo["ideias"]}
-        grupos: dict[str, list[dict]] = {}
-        for p in tudo["producoes"]:
-            if p["ideia"] and p["ideia"] not in com_nota:
-                grupos.setdefault(p["ideia"], []).append(p)
-        for nome, ps in grupos.items():
-            ps.sort(key=lambda p: (p["formato"] != "📱", p["status"] == "publicado", -p["mtime"]))
-            principal = ps[0]
-            itens.append({"nome": nome if nome.startswith("💡") else f"💡 {nome}", "raiz": "grupo", "mtime": max(p["mtime"] for p in ps),
-                          "status": "", "abrir": {"raiz": principal["raiz"], "nome": principal["nome"]}, "versoes": len(ps)})
-    except Exception:   # a busca nunca quebra por causa dos grupos
-        pass
-    return {"itens": itens}
+    """Busca rápida (⌘O) e o seletor de [[links]] do editor: nome, raiz, data e prévia de cada nota."""
+    return {"itens": notas.indice()}
 
 
 @app.get("/api/notas-busca")
@@ -462,9 +446,7 @@ class Nova(BaseModel):
 @app.post("/api/notas/priorizar")
 def nota_nova(corpo: Nova):
     try:
-        d = notas.criar(corpo.titulo)
-        copies.marcar_nova(d["nome"])   # copy nova também nasce com o selo NOVO
-        return d
+        return notas.criar(corpo.titulo)
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")
 
@@ -596,6 +578,56 @@ async def ads_sincronizar():
         return {"status": "ja_rodando"}
     _ads = asyncio.create_task(anuncios.sincronizar())
     return {"status": "iniciado"}
+
+
+# ---------- chat (Claude Agent SDK rodando no vault, na coluna da direita) ----------
+
+class Mensagem(BaseModel):
+    conversa: str = "geral"
+    texto: str
+    onde: str = ""             # onde o Rodrigo está no app (tela, nota aberta): vai para o contexto do agente
+    nota: dict | None = None   # {raiz, nome}: a nota aberta na Redação; vira uma linha no começo da mensagem
+
+
+@app.post("/api/chat")
+async def chat(m: Mensagem):
+    async def eventos():
+        async for ev in agente.conversar(m.conversa, m.texto, m.onde, m.nota):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+    return StreamingResponse(eventos(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/chat/{conversa}")
+def chat_historico(conversa: str):
+    return db.mensagens(conversa)
+
+
+@app.get("/api/chats")
+def chats():
+    """As conversas do chat (mais recente primeiro): id, titulo, n de mensagens, atualizado_em."""
+    return db.lista_conversas()
+
+
+@app.delete("/api/chats/{conversa}")
+def chats_apagar(conversa: str):
+    """Apaga uma conversa do chat (as mensagens e a sessão)."""
+    db.apagar_conversa(conversa)
+    return {"ok": True}
+
+
+class ImagemColada(BaseModel):
+    dados: str          # base64 (sem o prefixo data:)
+    tipo: str           # image/png, image/jpeg…
+
+
+@app.post("/api/chat/imagem")
+def chat_imagem(corpo: ImagemColada):
+    import base64
+    try:
+        return copies.salvar_imagem(base64.b64decode(corpo.dados), corpo.tipo)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 app.mount("/api/thumbs", StaticFiles(directory=metricool.THUMBS, check_dir=False), name="thumbs")

@@ -41,7 +41,9 @@ export function EditorCategoria({ inicial = '', onOk, onCancelar }: { inicial?: 
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ lista, renomear, onRenomear, arquivadas, contagem, nPins, total, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
+export function MenuCategorias({ status, lista, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
+  /** Status acima das categorias: clicar filtra (⌘ soma), soltar uma copy muda o status dela. */
+  status?: { lista: { k: string; rotulo: string; n: number }[]; sel: string[]; onSel: (l: string[]) => void; onSoltar: (copia: string, k: string) => void }
   lista: string[]
   renomear: string | null   // a categoria sendo renomeada ali mesmo (botão direito → Renomear)
   onRenomear: (de: string, para: string | null) => void   // para null = desistiu
@@ -94,10 +96,24 @@ export function MenuCategorias({ lista, renomear, onRenomear, arquivadas, contag
   return (
     <aside className="cats" aria-label="Categorias" style={{ width: larg }}>
       <i className="cats-alca" onPointerDown={redimensionar} onDoubleClick={() => setLarg(210)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />
+      {status && <>
+        <p className="cats-t">Status</p>
+        <button className={`cats-item ${status.sel.length ? '' : 'is-on'}`} onClick={() => status.onSel([])} title="Sem filtro de status (as publicadas ficam no fim, em Mostrar publicados)">
+          <span>Todos</span><em>{status.lista.filter((x) => x.k !== 'publicado').reduce((a, x) => a + x.n, 0)}</em></button>
+        {status.lista.map((x) => (
+          <button key={x.k} className={`cats-item ${status.sel.includes(x.k) ? 'is-on' : ''} ${sobre === `st:${x.k}` ? 'is-sobre' : ''}`}
+            title="Clique filtra (⌘ soma) · solte uma copy aqui para mudar o status"
+            onClick={(e) => { const l = status.sel; status.onSel(e.metaKey || e.ctrlKey ? (l.includes(x.k) ? l.filter((y) => y !== x.k) : [...l, x.k]) : l.length === 1 && l[0] === x.k ? [] : [x.k]) }}
+            onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/copia')) { e.preventDefault(); setSobre(`st:${x.k}`) } }}
+            onDragLeave={() => setSobre(null)}
+            onDrop={(e) => { e.preventDefault(); setSobre(null); const d = e.dataTransfer.getData('neo/copia'); if (d) status.onSoltar(d, x.k) }}>
+            <span>{x.rotulo}</span><em>{x.n}</em>
+          </button>
+        ))}
+        <div className="cats-div is-fixo"><hr /></div>
+      </>}
       <p className="cats-t">Categorias</p>
       {item(PIN, '📌 Pinados')}
-      <div className="cats-div is-fixo"><hr /></div>
-      <button className={`cats-item ${sel.length ? '' : 'is-on'}`} onClick={() => onSel([])}><span>Todas</span><em>{total}</em></button>
       {lista.map((c) => ehDivisor(c) ? (
         <div key={c} className={`cats-div ${sobre === c ? 'is-sobre' : ''}`} draggable title="Arraste para mudar o lugar · botão direito tira"
           onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}

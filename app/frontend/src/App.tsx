@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Calendario } from './Calendario'
-import { onde } from './canvasApi'
-import { ModalNota } from './ModalNota'
-import type { Alvo, Voltar } from './canvasApi'
+import { Chat, EVENTO_CHAT } from './Chat'
+import { editorAtual, selecao } from './Editor'
+import { PASTA } from './notas'
+import { onde, type Alvo } from './canvasApi'
 import { EVENTO_AVISO, assinarEventos, vigiarOnde } from './porta'
-import { EmBreve } from './EmBreve'
 import { Icone } from './Icone'
 import { Radar } from './Radar'
 import { Instagram } from './Instagram'
@@ -24,41 +24,76 @@ export default function App() {
   const [pagina, setPagina] = useState<string>(() => { try { const p = localStorage.getItem('pagina'); return p && (NAV as readonly string[]).includes(p) ? p : 'Redação' } catch { return 'Redação' } })
   onde.pagina = pagina   // vai ao backend (GET /api/onde): o Claude Code sabe onde o Rodrigo está
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
-  // modal de nota (ideia + saídas em tabs): o calendário e as Skills abrem aqui
-  const [modal, setModal] = useState<Alvo | null>(null)
-  if (!modal) onde.nota = null   // com a nota aberta, o ModalNota informa a aba ativa (vai para GET /api/onde)
-  const [voltar, setVoltar] = useState<Voltar | null>(null)
   const [paleta, setPaleta] = useState(false)
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
   const avisarApp = (msg: string) => { setAvisoApp(msg); window.setTimeout(() => setAvisoApp((a) => (a === msg ? null : a)), 3200) }
   // a busca (⌘O) e o Claude abrem a copy numa aba da Redação (Enter: a da frente; ⌘↵: uma nova)
   const abrirNaRedacao = (alvo: Alvo, nova: boolean) => {
-    setPagina('Redação'); setModal(null)
+    setPagina('Redação')
     window.setTimeout(() => window.dispatchEvent(new CustomEvent(EVENTO_REDACAO, { detail: { alvo, nova } })), 30)
   }
-  const [mudou, setMudou] = useState(0)   // algo mudou no vault pelo modal: a Redação recarrega
+  const [mudou, setMudou] = useState(0)   // copy nova (⌘K, ⌘O): a Redação recarrega
   const [versao, setVersao] = useState(0)
-  // ⌘I no editor, "Mandar ao Claude" nos cards e pedidos prontos: abrem a caixa de pedido ao Claude Code
   // eventos do backend: nota mudou no vault (o Claude editou daqui), o Claude mexendo na tela e se ele está ouvindo
   const tela = useRef<(ev: { acao: string; pagina?: string; raiz?: string; nome?: string; nova?: boolean }) => void>(() => {})
   tela.current = (ev) => {
     if (ev.acao === 'pagina' && ev.pagina && (NAV as readonly string[]).includes(ev.pagina)) setPagina(ev.pagina)
     else if ((ev.acao === 'abrir_nota' || ev.acao === 'mostrar') && ev.raiz && ev.nome) abrirNaRedacao({ raiz: ev.raiz, nome: ev.nome } as Alvo, !!ev.nova)
-    else if (ev.acao === 'fechar_nota') { setModal(null); setVoltar(null) }
   }
   useEffect(() => assinarEventos((ev) => {
     if (ev.t === 'mudou') setVersao((v) => v + 1)
     else if (ev.t === 'tela') tela.current(ev)
   }), [])
   useEffect(() => vigiarOnde(), [])
-  // o botão "+ Nova copy" da Redação abre a mesma janela do ⌘I
+
+  // o chat da direita (Claude Agent SDK no vault): ⌘J abre e fecha; recolhido vira a bolinha no canto
+  const [chat, setChat] = useState(() => { try { return localStorage.getItem('chat') !== 'fechado' } catch { return true } })
+  const chatRef = useRef(chat); chatRef.current = chat   // o atalho ⌘I lê o estado de agora
+  useEffect(() => { try { localStorage.setItem('chat', chat ? 'aberto' : 'fechado') } catch { /* sem storage */ } }, [chat])
+  // largura do chat: arrastando a borda esquerda dele (duplo clique volta ao padrão)
+  // janela do chat: flutua por cima da página; arrasta pelo cabeçalho e muda de tamanho pelas bordas e cantos (fica guardada)
+  type Janela = { x: number; y: number; w: number; h: number }
+  const padrao = (): Janela => ({ w: 420, h: window.innerHeight - 96, x: window.innerWidth - 420 - 18, y: 70 })
+  const [janela, setJanela] = useState<Janela>(() => { try { return JSON.parse(localStorage.getItem('chat-janela') || 'null') ?? padrao() } catch { return padrao() } })
+  useEffect(() => { try { localStorage.setItem('chat-janela', JSON.stringify(janela)) } catch { /* sem storage */ } }, [janela])
+  // sempre inteira na tela (a janela do navegador pode ter encolhido)
+  const [, setTela] = useState(0)
+  useEffect(() => { const f = () => setTela((n) => n + 1); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f) }, [])
+  const W = window.innerWidth, H = window.innerHeight
+  const jw = Math.min(Math.max(janela.w, 300), W - 16), jh = Math.min(Math.max(janela.h, 260), H - 16)
+  const jan = { w: jw, h: jh, x: Math.min(Math.max(janela.x, 8), W - jw - 8), y: Math.min(Math.max(janela.y, 8), H - jh - 8) }
+  const mexerJanela = (modo: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault(); e.stopPropagation()
+    const x0 = e.clientX, y0 = e.clientY, j0 = jan
+    const mover = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0
+      const n = { ...j0 }
+      if (modo === 'm') { n.x += dx; n.y += dy }   // m = mover; e, d, c, b = bordas esquerda, direita, cima e baixo
+      if (modo.includes('d')) n.w = j0.w + dx
+      if (modo.includes('e')) { n.w = Math.max(300, j0.w - dx); n.x = j0.x + j0.w - n.w }
+      if (modo.includes('b')) n.h = j0.h + dy
+      if (modo.includes('c')) { n.h = Math.max(260, j0.h - dy); n.y = j0.y + j0.h - n.h }
+      setJanela(n)
+    }
+    const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
+    document.body.classList.add('arrastando')
+    window.addEventListener('pointermove', mover)
+    window.addEventListener('pointerup', soltar)
+  }
+  // arrastar pelo cabeçalho (fora dos botões)
+  const pegarCabeca = (e: React.PointerEvent) => {
+    const t = e.target as HTMLElement
+    if (!t.closest('.chat-cabeca') || t.closest('button, a, input, select, textarea, [role="menu"]')) return
+    mexerJanela('m')(e)
+  }
+  // o botão "+ Nova copy" da Redação abre a mesma janela do ⌘K
   useEffect(() => { const f = () => setNovo('producao'); window.addEventListener('nova-copy', f); return () => window.removeEventListener('nova-copy', f) }, [])
   useEffect(() => {
     const f = (e: Event) => avisarApp((e as CustomEvent<string>).detail)
     window.addEventListener(EVENTO_AVISO, f); return () => window.removeEventListener(EVENTO_AVISO, f)
   }, [])
-
 
 
   // modo W: esconde a navbar do topo (W fora de campos liga e desliga; Esc sai)
@@ -88,20 +123,43 @@ export default function App() {
       }
       // nova copy / nova criação (nascem em Priorizar e abrem numa aba da Redação). ⌥N pela tecla física (e.code):
       // no Mac o ⌥N vira o til. ⌘⇧I/⌘⇧N também valem onde o navegador deixa (o Chrome reserva o ⌘⇧N para a janela anônima).
-      // ⌘I nova copy (com uma nota aberta o ⌘I manda o trecho ao Claude Code), ⌥N nova criação
-      const cmdI = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'i' || e.code === 'KeyI')
+      // ⌘I abre o chat da direita e foca o campo (aberto, esconde); com texto selecionado no editor da copy, manda o trecho junto
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'i' || e.code === 'KeyI')) {
+        if (document.querySelector('.paleta-fundo')) return
+        e.preventDefault(); e.stopPropagation()
+        const v = editorAtual.v
+        const nota = onde.nota
+        let trecho = null
+        if (v && v.dom.isConnected && v.hasFocus && !v.state.selection.main.empty && nota) {   // só a seleção de agora (editor em foco)
+          const s = selecao(v)
+          trecho = { ...s, nome: nota.nome, raiz: nota.raiz, caminho: `${PASTA[nota.raiz] ?? nota.raiz}/${nota.nome}.md` }
+        }
+        if (chatRef.current && !trecho) { setChat(false); return }   // aberto e sem trecho: ⌘I esconde o chat
+        setChat(true)
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent(EVENTO_CHAT, { detail: { trecho } })), 30)
+        return
+      }
+      // ⌘K nova copy, ⌥N nova criação (nascem em Priorizar e abrem numa aba da Redação)
+      const cmdK = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'k' || e.code === 'KeyK')
       const opcao = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN'
       const comando = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && ['i', 'n'].includes(e.key.toLowerCase())
-      if (cmdI || opcao || comando) {
+      if (cmdK || opcao || comando) {
         const t = e.target as HTMLElement | null
         if (document.querySelector('.modal-fundo .modal-nota, .paleta-fundo')) return
-        if ((opcao || cmdI) && t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor')) return   // dentro de um campo, a tecla é do campo
+        if (opcao && t?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor')) return   // dentro de um campo, o ⌥N é do campo
+        if (cmdK && t?.closest?.('textarea, input, select')) return
         e.preventDefault(); e.stopPropagation()
-        setNovo('producao')   // ⌘I, ⌥N, ⌘⇧N: copy nova com o ícone do formato (nasce como Ideia e aparece na Criação)
+        setNovo('producao')   // ⌘K, ⌥N, ⌘⇧N: copy nova com o ícone do formato (nasce como Ideia e aparece na Criação)
+        return
+      }
+      // ⌘J mostra/oculta o chat (o ⌘B é o negrito do editor)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
+        e.preventDefault(); e.stopPropagation()
+        setChat((c) => !c)
         return
       }
       // ⌃1…⌃8 (ou ⌥1…, ou ⌘1… onde o navegador deixa: no Chrome o ⌘1–8 troca de aba do navegador antes da página)
-      // trocam de aba, na ordem da navbar. Com uma nota aberta no modal, os números navegam entre as versões dela (ModalNota)
+      // trocam de aba, na ordem da navbar
       const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : 0
       if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota, .redacao-nota, .app.modo-w .redacao')) {   // modo copy: abas de nota; modo W na Redação: abas da tabela (Redacao)
         e.preventDefault()
@@ -113,7 +171,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`app ${modal ? 'com-nota' : ''} ${trabalho ? 'modo-w' : ''}`}>
+    <div className={`app ${trabalho ? 'modo-w' : ''}`}>
       <div className="lateral-area">
       {/* breadcrumb: NEO-OBSIDIAN › a página aberta */}
       <nav className="migalhas" aria-label="Onde você está">
@@ -137,6 +195,7 @@ export default function App() {
       <span />
       </div>
 
+      {/* o chat flutua à direita, por cima da página (a página não encolhe) */}
       <main className="corpo sem-chat">
         <section className="pagina">
           {pagina === 'Redação' ? <Redacao versao={versao + mudou} />
@@ -144,13 +203,16 @@ export default function App() {
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} />
             : pagina === 'Instagram' ? <Instagram />
             : pagina === 'Sites' ? <Radar key="sites" titulo="Sites" fontes={['github', 'huggingface', 'hackernews']} />
-            : pagina === 'Agendamento' ? <Calendario />
-            : <EmBreve pagina={pagina} />}
-          {modal && <ModalNota alvo={modal} onFechar={() => { setModal(null); setVoltar(null) }}
-        voltar={voltar ? { rotulo: voltar.rotulo, fn: () => { setModal(null); setVoltar(null); voltar.fn() } } : undefined}
-        onMudou={() => setMudou((n) => n + 1)} versao={versao} />}
+            : <Calendario />}
         </section>
       </main>
+      <div className={`chat-janela ${chat ? '' : 'is-fechada'}`} onPointerDown={chat ? pegarCabeca : undefined}
+        onDoubleClick={(e) => { if ((e.target as HTMLElement).closest('.chat-cabeca') && !(e.target as HTMLElement).closest('button')) setJanela(padrao()) }}
+        style={chat ? { left: jan.x, top: jan.y, width: jan.w, height: jan.h } : undefined}>
+        <Chat aberto={chat} onAlternar={() => setChat((v) => !v)} onMudou={() => setVersao((v) => v + 1)}
+          onTela={(ev) => tela.current(ev)} />
+        {chat && ['e', 'd', 'c', 'b', 'ce', 'cd', 'be', 'bd'].map((m) => <i key={m} className={`chat-borda is-${m}`} onPointerDown={mexerJanela(m)} />)}
+      </div>
 
       {novo && <NovoRapido tipo={novo} onFechar={() => setNovo(null)}
         onCriado={(_c, msg, nota) => {   // a copy nova abre numa aba nova da Redação

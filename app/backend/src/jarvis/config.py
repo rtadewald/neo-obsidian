@@ -8,7 +8,7 @@ DB = DADOS / "jarvis.db"
 FRONT_DIST = APP / "frontend" / "dist"
 
 
-MODELO_CHAT = "claude-sonnet-5-5"   # Sonnet 5.5 (sem isto, herdaria o "opus" do settings.json do usuário)
+MODELO_CHAT = "claude-sonnet-5-5"   # o chat do app (sem isto, herdaria o modelo do settings.json do usuário)
 MODELO_RADAR = "haiku"    # classificação e "por que importa" dos sinais
 
 # perfil "Claude Profile" do Chrome (deviceId da extensão Claude in Chrome nele): X e Instagram do radar rodam só nele,

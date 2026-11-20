@@ -48,3 +48,39 @@ export const api = {
   metricool: () => fetch('/api/metricool/estado').then(j<{ conectado: boolean; motivo: string }>),
 }
 
+
+// ---------- chat (Claude Agent SDK no vault, coluna da direita) ----------
+
+export type Msg = { papel: 'usuario' | 'jarvis'; texto: string; ferramentas?: string[]; erro?: string }
+
+export const historico = (conversa: string) =>
+  fetch(`/api/chat/${encodeURIComponent(conversa)}`, { cache: 'no-store' }).then(j<{ papel: Msg['papel']; texto: string }[]>)
+
+export type EventoChat =
+  | { t: 'texto'; v: string }
+  | { t: 'ferramenta'; nome: string; alvo: string }
+  | { t: 'fim'; sessao: string; custo: number | null }
+  | { t: 'erro'; v: string }
+  | { t: 'mudou' }   // uma ferramenta do chat mudou o vault/app: a tela recarrega na hora
+  | { t: 'tela'; acao: string; pagina?: string; raiz?: string; nome?: string; nova?: boolean }   // o chat mexe na tela
+
+/** POST /api/chat e lê o SSE linha a linha. */
+export async function conversar(corpo: { conversa: string; texto: string; onde?: string; nota?: { raiz: string; nome: string } | null }, cb: (e: EventoChat) => void, parar?: AbortSignal) {
+  // parar (o botão ⏹ do chat) corta a conexão: o servidor cancela a resposta do agente
+  const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: parar })
+  if (!r.ok || !r.body) throw new Error(`${r.status}`)
+  const leitor = r.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await leitor.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let i
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const bloco = buf.slice(0, i)
+      buf = buf.slice(i + 2)
+      if (bloco.startsWith('data: ')) cb(JSON.parse(bloco.slice(6)))
+    }
+  }
+}

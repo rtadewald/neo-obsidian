@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarioEditorial } from './CalendarioEditorial'
-import { PainelNota } from './ModalNota'
+import { PainelNota } from './PainelNota'
 import { ModalTabela, tabelaSalva, type Criacao, type EstadoTabela } from './Tabela'
-import { carregarTudo, post, tudoEmCache, type Alvo, type EstadoCanvas, type StatusProd } from './canvasApi'
-import { mudarStatus, registrarAcao } from './desfazer'
+import { carregarTudo, onde, post, tudoEmCache, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
+import { desfazerUltima, mudarStatus, registrarAcao } from './desfazer'
+import { lembrarAberta } from './Paleta'
 import { avisar } from './porta'
 
-/** Redação: a tabela das copies (abas por status, Criação por categoria, Winners, Pinados e Skills) com a nota aberta à direita,
+/** Redação: a tabela das copies (abas por status, Criação por categoria) com a nota aberta à direita,
  *  como no Obsidian, e um calendário que abre no lugar da nota: arrastar uma linha da tabela para um dia agenda a copy
  *  (`scheduled`). Todas as copies do vault. */
 const CHAVE_ABAS = 'redacao-abas'   // as copies abertas em abas (como no Obsidian) e qual está à frente
@@ -30,6 +31,8 @@ export function Redacao({ versao }: { versao?: number }) {
   const aberta: Alvo | null = verTabela ? null : abas.lista[abas.ativa] ?? null
   const abasRef = useRef(abas); abasRef.current = abas
   const abertaRef = useRef(aberta); abertaRef.current = aberta
+  useEffect(() => { onde.nota = aberta; return () => { onde.nota = null } }, [aberta])   // GET /api/onde: a copy aberta
+  useEffect(() => { if (aberta) lembrarAberta(aberta.raiz, aberta.nome) }, [aberta?.raiz, aberta?.nome])   // ⌘O vazio: as últimas abertas  // eslint-disable-line react-hooks/exhaustive-deps
   const mesma = (a: Alvo, b: Alvo) => a.raiz === b.raiz && a.nome === b.nome
   // abrir: na aba da frente (troca a copy dela) ou, com `nova` (⌘+clique, ⌘↵ na busca), numa aba nova; já aberta, só vai para ela
   // histórico para a seta ←: cada copy que saiu da aba da frente (trocada por outra) entra aqui
@@ -73,7 +76,7 @@ export function Redacao({ versao }: { versao?: number }) {
     const r = caixa.current?.getBoundingClientRect()
     if (!r) return
     e.preventDefault()
-    const mover = (ev: PointerEvent) => (escrita ? setLatW(Math.round(Math.min(900, Math.max(260, ev.clientX - r.left)))) : setFrac(Math.min(0.85, Math.max(0.12, (ev.clientX - r.left) / r.width))))
+    const mover = (ev: PointerEvent) => (escrita ? setLatW(Math.round(Math.min(900 + (semCats ? catsW : 0), Math.max(260, ev.clientX - r.left + (semCats ? catsW : 0))))) : setFrac(Math.min(0.85, Math.max(0.12, (ev.clientX - r.left) / r.width))))
     const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
     document.body.classList.add('arrastando')
     window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar)
@@ -89,6 +92,10 @@ export function Redacao({ versao }: { versao?: number }) {
   const escrita = !!aberta && !cal
   const [latW, setLatW] = useState<number>(() => { try { return Number(localStorage.getItem('redacao-lateral-tabela')) || 480 } catch { return 480 } })
   useEffect(() => { try { localStorage.setItem('redacao-lateral-tabela', String(latW)) } catch { /* sem storage */ } }, [latW])
+  // ⌘[ esconde o menu de categorias: a tabela fica com a mesma largura e a copy ganha o espaço do menu
+  // (latW é a largura com o menu; sem ele, a coluna da tabela encolhe a largura do menu)
+  const [catsW, setCatsW] = useState<number>(() => { try { return (Number(localStorage.getItem('cats-largura')) || 210) + 1 } catch { return 211 } })
+  const latEfetiva = Math.max(200, latW - (semCats ? catsW : 0))
   // só a tabela: largura própria em px (as alças mexem livremente); vazio = ocupa tudo (duplo clique volta a isso)
   const [tabCardW, setTabCardW] = useState<number | null>(() => { try { return Number(localStorage.getItem('redacao-card-tabela')) || null } catch { return null } })
   useEffect(() => { try { localStorage.setItem('redacao-card-tabela', tabCardW ? String(tabCardW) : '') } catch { /* sem storage */ } }, [tabCardW])
@@ -128,20 +135,23 @@ export function Redacao({ versao }: { versao?: number }) {
       if (n && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && abertaRef.current && n <= abasRef.current.lista.length && !document.querySelector('.modal-fundo, .paleta-fundo')) {
         e.preventDefault(); e.stopImmediatePropagation(); setAbas((x) => ({ ...x, ativa: n - 1 })); return
       }
-      // modo W (navbar escondida) sem copy aberta: ⌘1…⌘5 vão para Criação, Gravar, Em edição, Agendado e Publicados
-      const PASTAS = ['ideias', 'gravar', 'edicao', 'agendado', 'publicado'] as const
+      // modo W (navbar escondida) sem copy aberta: ⌘1 tira o filtro de status; ⌘2…⌘5 filtram Gravar, Em edição, Agendado e Publicado
+      const PASTAS = ['', 'gravar', 'edicao', 'agendado', 'publicado'] as const
       if (n && n <= PASTAS.length && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && !abertaRef.current && document.querySelector('.app.modo-w') && !document.querySelector('.modal-fundo, .paleta-fundo')) {
-        e.preventDefault(); e.stopImmediatePropagation(); setT(tabelaSalva(PASTAS[n - 1])); return
+        e.preventDefault(); e.stopImmediatePropagation(); const st = PASTAS[n - 1]; setT((x) => ({ ...x, filtros: { ...x.filtros, status: st ? [st] : [] } })); return
       }
       // a nota abre com o cursor no editor: lá o ⌘B sem texto selecionado também esconde/mostra a tabela
       // (com seleção segue sendo negrito)
       const noEditor = !!alvo?.closest?.('.cm-editor')
       const bLivre = k === 'KeyB' && noEditor && !!window.getSelection()?.isCollapsed
       const campo = alvo?.closest?.('textarea, input, select, [contenteditable="true"], .cm-editor') && !bLivre
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || campo || document.querySelector('.modal-fundo, .paleta-fundo')) return
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || campo || document.querySelector('.modal-fundo, .paleta-fundo')) return
       const feito = () => { e.preventDefault(); e.stopPropagation() }
+      // ⌘Z / ⌘⇧Z: desfaz e refaz status e tags mudados na tabela
+      if (k === 'KeyZ') { feito(); desfazerUltima(e.shiftKey).then((m) => { avisar(m); recarregarRef.current() }); return }
+      if (e.shiftKey) return
       if (k === 'KeyB') { feito(); setSoCopy((v) => !v) }
-      else if (k === 'BracketLeft') { feito(); setSemCats((v) => !v) }
+      else if (k === 'BracketLeft') { feito(); const m = document.querySelector('.redacao .cats')?.getBoundingClientRect().width; if (m) setCatsW(Math.round(m)); setSemCats((v) => !v) }
       else if (k === 'BracketRight') { feito(); setSemColunas((v) => !v) }
       else if (k === 'KeyP') { feito(); setVerTabela((v) => !v) }
       else if (k === 'KeyC' && !String(window.getSelection() ?? '')) { feito(); setCal((v) => !v) }
@@ -151,20 +161,26 @@ export function Redacao({ versao }: { versao?: number }) {
   }, [abrirEm])
   useEffect(() => { try { localStorage.setItem(CHAVE_CAL, cal ? 'sim' : 'nao') } catch { /* sem storage */ } }, [cal])
 
+  const recarregarRef = useRef<() => void>(() => {})
   const recarregar = useCallback(async () => {
     const tudo = await carregarTudo().catch(() => null)
     if (tudo) setEst(tudo)
     // a lista de categorias (criacao.json) também pode ter mudado por fora (o Claude, outra janela): relê junto
     fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {})
   }, [])
-  // a nota salva a cada pausa na digitação e o vault avisa (versao): recarregar tudo a cada tecla travava a tabela,
-  // então espera 1,5 s sem mudança
+  recarregarRef.current = recarregar
+  // a nota salva a cada pausa na digitação e o vault avisa (versao): espera a digitação parar um pouco antes de reler
   const primeira = useRef(true)
   useEffect(() => {
     if (primeira.current) { primeira.current = false; recarregar(); return }
-    const id = window.setTimeout(recarregar, 1500)
+    const id = window.setTimeout(recarregar, 600)
     return () => window.clearTimeout(id)
   }, [recarregar, versao])
+  // a mudança aparece na hora na tabela (antes da resposta do servidor); o recarregar depois traz o que o vault gravou
+  const naHora = (alvos: Alvo[], m: Partial<Producao>) => {
+    const k = new Set(alvos.map((a) => `${a.raiz}/${a.nome}`))
+    setEst((e) => e && { ...e, producoes: e.producoes.map((p) => (k.has(`${p.raiz}/${p.nome}`) ? { ...p, ...m } : p)) })
+  }
 
   const abrir = (a: Alvo, opts?: { nova?: boolean }) => { abrirEm(a, opts?.nova); setCal(false); setVerTabela(false) }
   const statusDe = (a: Alvo) => est?.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)?.status ?? ''
@@ -177,32 +193,36 @@ export function Redacao({ versao }: { versao?: number }) {
 
   return (
     <div ref={caixa} className={`redacao ${aberta || cal ? 'com-lado' : ''} ${soCopy && (aberta || cal) ? 'so-copy' : ''}`}
-      style={{ width: soTabela ? (tabCardW ? `min(100%, ${tabCardW}px)` : '100%') : `${cardW * fatorCard * 100}%`, height: `${cardH * 100}%`, ...(soCopy && (aberta || cal) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : escrita ? { gridTemplateColumns: `${latW}px 0px minmax(0, 1fr)` } : cal ? { gridTemplateColumns: `minmax(0, ${frac}fr) 0px minmax(0, ${1 - frac}fr)` } : {}) }}>
+      style={{ width: soTabela ? (tabCardW ? `min(100%, ${tabCardW}px)` : '100%') : `${cardW * fatorCard * 100}%`, height: `${cardH * 100}%`, ...(soCopy && (aberta || cal) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : escrita ? { gridTemplateColumns: `${latEfetiva}px 0px minmax(0, 1fr)` } : cal ? { gridTemplateColumns: `minmax(0, ${frac}fr) 0px minmax(0, ${1 - frac}fr)` } : {}) }}>
       <div className="redacao-borda is-esq" onPointerDown={arrastarCard(-1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
       <div className="redacao-borda is-dir" onPointerDown={arrastarCard(1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
       <div className="redacao-borda-baixo" onPointerDown={arrastarCard(0, true)} onDoubleClick={() => setCardH(1)} title="Arraste para mudar a altura (duplo clique ocupa tudo)" />
       <div className="redacao-canto is-esq" onPointerDown={arrastarCard(-1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-canto is-dir" onPointerDown={arrastarCard(1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-tabela" hidden={soCopy && !!(aberta || cal)}>
-        {est && <ModalTabela embutido compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
-          onMudar={setT} onFechar={() => {}} onAbrir={abrir} criacao={criacao} onCriacao={mudarCriacao}
-          onCategoria={async (a, categoria) => { await post('categoria', { nomes: [a.nome], categoria }); avisar(categoria ? `Foi para ${categoria}` : "Ficou sem categoria"); await recarregar() }}
+        {est && <ModalTabela compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
+          onMudar={setT} onAbrir={abrir} criacao={criacao} onCriacao={mudarCriacao}
+          onCategoria={async (a, categoria) => { naHora([a], { categoria: categoria || null }); await post('categoria', { nomes: [a.nome], categoria }); avisar(categoria ? `Foi para ${categoria}` : "Ficou sem categoria"); await recarregar() }}
           onRenomearCategoria={async (de, para) => { await post('categoria/renomear', { de, para }); avisar(`Categoria agora é ${para}`)
             fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {})   // a lista e a cor já vêm com o nome novo
             setT((x) => (x.filtros?.categoria?.includes(de) ? { ...x, filtros: { ...x.filtros, categoria: x.filtros.categoria.map((c) => (c === de ? para : c)) } } : x))
             await recarregar() }}
-          onArquivar={async (a, sim) => { await post('arquivar', { raiz: a.raiz, nome: a.nome, sim }); avisar(sim ? 'Arquivada (fora da Criação)' : 'Desarquivada'); await recarregar() }}
+          onArquivar={async (a, sim) => { naHora([a], { arquivado: sim }); await post('arquivar', { raiz: a.raiz, nome: a.nome, sim }); avisar(sim ? 'Arquivada (fora da Criação)' : 'Desarquivada'); await recarregar() }}
           onStatus={async (alvos, st: StatusProd) => {
-            try { await mudarStatus(alvos.map((a) => ({ nome: a.nome, status: statusDe(a) })), st); avisar(alvos.length === 1 ? 'Status mudou' : `${alvos.length} copies mudaram de status`) }
+            const antes = alvos.map((a) => ({ nome: a.nome, status: statusDe(a) }))
+            naHora(alvos, { status: st })
+            try { await mudarStatus(antes, st); avisar(alvos.length === 1 ? 'Status mudou' : `${alvos.length} copies mudaram de status`) }
             catch (e) { avisar((e as Error).message) }
             await recarregar()
           }}
           onData={async (a, data) => {
+            naHora([a], { scheduled: data })
             const r = await fetch(`/api/notas/${a.raiz}/${encodeURIComponent(a.nome)}/agenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) })
             if (!r.ok) avisar('Não deu para mudar a data.'); else avisar('Data mudou')
             await recarregar(); setCalVersao((v) => v + 1)
           }}
           onTags={async (a, tags) => {
+            naHora([a], { tags })
             const { antes } = await post<{ antes: string[] }>('tags', { nome: a.nome, tags })
             registrarAcao({ rotulo: `tags de ${a.nome}`, desfazer: () => post('tags', { nome: a.nome, tags: antes }), refazer: () => post('tags', { nome: a.nome, tags }) })
             await recarregar()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icone } from './Icone'
-import { PainelNota } from './ModalNota'
+import { PainelNota } from './PainelNota'
 import type { Alvo } from './canvasApi'
 
 /** Editor de skills: as pastas de `3 Skills` à esquerda (cada skill com os arquivos de apoio dela), o texto no meio

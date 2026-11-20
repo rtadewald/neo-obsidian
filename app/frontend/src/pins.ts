@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react'
-import { chaveProd, type Alvo, type EstadoCanvas } from './canvasApi'
 
-/** Pinados globais (ids de card: `i:`, `g:`, `e:`, `p:raiz/nome`), guardados em `canvas-pinados`. O canvas é o dono da
- *  lista; o modal da nota e as tabelas pinam por aqui e avisam o canvas com o evento `pinados-mudou`. */
+/** As copies pinadas (📌, `p:raiz/nome`), guardadas em `canvas-pinados` (nome legado); quem pina avisa com o evento
+ *  `pinados-mudou`. */
 const CHAVE = 'canvas-pinados'
-export const EVENTO_PINS = 'pinados-mudou'
+const EVENTO_PINS = 'pinados-mudou'
 
-/** Vão para a barra as categorias (`c:`), os cards de produção 🎬 (`g:`) e as copies (`p:`); o pinado abre num canvas
- *  próprio, com os filhos. As 💡 (`i:`) não existem mais: o pin antigo vira a copy que nasceu dela (em Priorizar). */
-export const pinavel = (id: string) => id.startsWith('c:') || id.startsWith('g:') || id.startsWith('p:')
+/** Só copies (`p:`). Os pins de 💡 (`i:`) antigos viram a copy que nasceu dela (em Priorizar). */
+const pinavel = (id: string) => id.startsWith('p:')
 const daIdeia = (id: string) => (id.startsWith('i:') ? `p:priorizar/${id.slice(2).replace(/^💡\s*/, '')}` : id)
 
-export function lerPins(): string[] {
+function lerPins(): string[] {
   try { return [...new Set((JSON.parse(localStorage.getItem(CHAVE) || '[]') as string[]).map(daIdeia))].filter(pinavel) } catch { return [] }
 }
 
@@ -22,26 +20,6 @@ export function alternarPin(id: string, sim?: boolean) {
     l.filter((x) => x !== id)
   try { localStorage.setItem(CHAVE, JSON.stringify(novos)) } catch { /* sem storage */ }
   window.dispatchEvent(new Event(EVENTO_PINS))
-}
-
-/** Um card pinado mudou de id (categoria renomeada): o pin vai junto, no mesmo lugar da lista. */
-export function trocarPin(de: string, para: string) {
-  const l = lerPins()
-  if (!l.includes(de)) return
-  try { localStorage.setItem(CHAVE, JSON.stringify(l.map((x) => (x === de ? para : x)))) } catch { /* sem storage */ }
-  window.dispatchEvent(new Event(EVENTO_PINS))
-}
-
-/** O card onde a nota aparece no canvas: a 💡 ideia, a entrada, o card da produção (copies da mesma ideia) ou a copy solta. */
-export function idDoCard(est: EstadoCanvas, a: Alvo): string {
-  if (a.raiz === 'ideias') return `i:${a.nome}`
-  if (a.raiz === 'entradas') return `e:${a.nome}`
-  const p = est.producoes.find((x) => x.raiz === a.raiz && x.nome === a.nome)
-  if (p?.ideia && p.formato !== '📺') {
-    const irmas = est.producoes.filter((x) => chaveProd(x) === chaveProd(p) && x.formato !== '📺').length
-    if (est.ideias.some((i) => i.nome === p.ideia) || irmas >= 2) return `g:${chaveProd(p)}`
-  }
-  return `p:${a.raiz}/${a.nome}`
 }
 
 /** Lista atual dos pinados, que acompanha qualquer mudança (canvas, modal, tabela). */

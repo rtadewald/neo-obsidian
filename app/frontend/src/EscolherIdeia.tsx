@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { carregarTudo } from './canvasApi'
+import { carregarTudo, tudoEmCache } from './canvasApi'
 
 type Item = { nome: string; mtime: number }
-let cache: Item[] | null = null
 
 /** Busca de copies (de todos os canvas) para plugar um material numa copy que já existe. Enter escolhe a primeira. */
 export function EscolherIdeia({ onEscolher, desligado, placeholder = 'Buscar copy…' }: {
   onEscolher: (nome: string) => void; desligado?: boolean; placeholder?: string
 }) {
-  const [ideias, setIdeias] = useState<Item[]>(cache ?? [])
+  const [ideias, setIdeias] = useState<Item[]>(() => tudoEmCache()?.producoes ?? [])
   const [q, setQ] = useState('')
-  useEffect(() => { carregarTudo().then((t) => { cache = t.producoes; setIdeias(t.producoes) }).catch(() => {}) }, [])
+  useEffect(() => { if (!tudoEmCache()) carregarTudo().then((t) => setIdeias(t.producoes)).catch(() => {}) }, [])
   const lista = useMemo(() => {
     const b = q.trim().toLowerCase()
     return ideias.filter((i) => !b || i.nome.toLowerCase().includes(b)).sort((a, b) => b.mtime - a.mtime).slice(0, 8)

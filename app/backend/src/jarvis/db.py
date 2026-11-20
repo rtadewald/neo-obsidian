@@ -217,6 +217,57 @@ def sinal(id_: int):
     return dict(l) if l else None
 
 
+def sessao_da_conversa(conversa: str) -> str | None:
+    with conexao() as c:
+        l = c.execute("select sessao from conversas where id=?", (conversa,)).fetchone()
+    return l["sessao"] if l else None
+
+
+def guardar_sessao(conversa: str, sessao: str):
+    with conexao() as c:
+        c.execute("""insert into conversas (id, sessao, atualizado_em) values (?,?,?)
+                     on conflict(id) do update set sessao=excluded.sessao, atualizado_em=excluded.atualizado_em""",
+                  (conversa, sessao, time.time()))
+
+
+def guardar_mensagem(conversa: str, papel: str, texto: str):
+    with conexao() as c:
+        c.execute("insert into mensagens (conversa, papel, texto, criado_em) values (?,?,?,?)",
+                  (conversa, papel, texto, time.time()))
+
+
+def mensagens(conversa: str, limite: int = 80):
+    with conexao() as c:
+        linhas = c.execute("select papel, texto, criado_em from mensagens where conversa=? order by id desc limit ?",
+                           (conversa, limite)).fetchall()
+    return [dict(l) for l in reversed(linhas)]
+
+
+def lista_conversas() -> list[dict]:
+    """As conversas do chat, da mais recente para a mais antiga, com o título (a primeira mensagem do Rodrigo)."""
+    with conexao() as c:
+        linhas = c.execute("""
+            select m.conversa as id, count(*) as n, max(m.criado_em) as atualizado_em,
+                   (select texto from mensagens x where x.conversa = m.conversa and x.papel = 'usuario' order by x.id limit 1) as primeira,
+                   (select titulo from conversas k where k.id = m.conversa) as titulo
+            from mensagens m group by m.conversa order by atualizado_em desc""").fetchall()
+    out = []
+    for l in linhas:
+        d = dict(l)
+        t = d.pop("primeira") or ""
+        # tira o cabeçalho do sinal/trecho que o app põe antes do pedido: fica a última linha não citada
+        corpo = [x for x in t.splitlines() if x.strip() and not x.startswith((">", "📡", "📎", "🖼️"))]
+        d["titulo"] = d["titulo"] or (corpo[-1] if corpo else t.splitlines()[0] if t else "Conversa")[:80]
+        out.append(d)
+    return out
+
+
+def apagar_conversa(conversa: str):
+    with conexao() as c:
+        c.execute("delete from mensagens where conversa=?", (conversa,))
+        c.execute("delete from conversas where id=?", (conversa,))
+
+
 def registrar_coleta(inicio: float, status: str, detalhes: dict):
     with conexao() as c:
         c.execute("insert into coletas (inicio, fim, status, detalhes) values (?,?,?,?)",

@@ -48,6 +48,9 @@ function inicioDoTexto(t: string) {
 
 export type Selecao = { texto: string; linhaIni: number; linhaFim: number }
 
+/** O editor da nota em uso (o último criado ou focado): o ⌘I lê a seleção dele para mandar ao chat. */
+export const editorAtual: { v: EditorView | null } = { v: null }
+
 /** O que está selecionado; sem seleção, a linha do cursor (ou a nota inteira, se a linha estiver vazia). */
 export function selecao(v: EditorView): Selecao {
   const { from, to } = v.state.selection.main
@@ -122,6 +125,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chav
           yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }), syntaxHighlighting(estilo), tema,
           placeholder('Escreva aqui…'), livePreview((n, nova) => cb.current.onLink?.(n, nova)), autocompletion({ override: [completarLink], icons: false }),
           EditorView.domEventHandlers({
+            focus: () => { editorAtual.v = v; return false },
             contextmenu: (e) => { if (!cb.current.onMenu) return false; e.preventDefault(); cb.current.onMenu(e.clientX, e.clientY); return true },
           }),
           keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { cb.current.onSalvar?.(); return true } },
@@ -133,11 +137,10 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chav
       }),
     })
     view.current = v
+    editorAtual.v = v
     if (viewRef) viewRef.current = v
-    // foca ao abrir, mas não rouba o foco de um campo aberto por cima (busca ⌘P, renomear)
-    const ativo = document.activeElement
-    if (!(ativo instanceof HTMLInputElement || ativo instanceof HTMLTextAreaElement)) v.focus()
-    return () => { v.destroy(); view.current = null; if (viewRef) viewRef.current = null }
+    // não foca ao abrir: a copy abre no modo esc (os atalhos valem); escrever pede um clique no texto
+    return () => { v.destroy(); view.current = null; if (editorAtual.v === v) editorAtual.v = null; if (viewRef) viewRef.current = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave])
 

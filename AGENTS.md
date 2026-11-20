@@ -12,7 +12,7 @@ Ele não tem banco de notas próprio: **lê e escreve os mesmos `.md` do vault**
 
 > **Histórico.** Até 18/11/2026 havia 💡 ideias separadas; viraram copies. Em 19/11/2026 saíram o **Canvas** inteiro
 > (mapa mental, canvas, layout, desenho, o `grupo:` das notas), o agrupamento de versões (🎬, `ideia:`, que saiu de todas as copies), os códigos
-> `NEO-###` e o chat do Jarvis. O que restar desses nomes no código é legado. Backups: `backups-locais/` (fora do git)
+> `NEO-###` e o chat do Jarvis (o chat voltou na mesma noite, sem canvas: seção 9). O que restar desses nomes no código é legado. Backups: `backups-locais/` (fora do git)
 > e o commit `96020d1`.
 
 O app não tem IA dentro: ele é a **porta para o Claude Code** que roda no terminal (seção 9). O Rodrigo fala com o
@@ -77,7 +77,6 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 
 ```
 1 Copies/
-  0 Ideias/            💡 ideias (uma nota por ideia). Entradas/ = legado (ver seção 12)
   1 Priorizar/         copies vivas: backlog, em edição, agendadas
   2 Publicados/        copies publicadas (status: publicado)
 2 Notas/Engine/
@@ -104,7 +103,7 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
   Despublicar faz o caminho inverso (`status: ideia`, volta para `1 Priorizar/`).
 - **Priorizar é o pin** (botão direito → 📌 Priorizar; ids `p:raiz/nome` em `canvas-pinados`): as pinadas ficam no topo da
   própria categoria (ou da lista), com 📌, fundo amarelo e um traço separando das demais, fora dos filtros e da ordenação.
-- Copy nova (⌘I, ⌥N ou "+ Nova copy" na Redação) nasce com o frontmatter do `T-Copy.md` (`status: ideia`,
+- Copy nova (⌘K, ⌥N ou "+ Nova copy" na Redação) nasce com o frontmatter do `T-Copy.md` (`status: ideia`,
   `scheduled`, `notion`, `tags`, `categoria`) e o ícone do formato, então aparece na Criação. A janela também mostra as categorias (começa na escolhida no menu, se for uma só, ou na última usada) e grava o `categoria:`.
 - Leitura: `notas.status(raiz, nome)`; `notas.STATUS_VAULT`/`DO_VAULT` traduzem o código do app para o vault.
 
@@ -143,7 +142,7 @@ emoji conhecido aparece como `📄`. O nome sem marcas nem emoji é o título da
 | `url`, `tipo`, `thumb`, `autor` | ideia | o material bruto: `tipo` é `texto`, `link`, `youtube`, `instagram` ou `radar` |
 
 Copy nova nasce em `1 Priorizar/` com o frontmatter do T-Copy (`notas.criar`) ou `status: ideia / scheduled: /
-notion: / tags: / categoria:` (`copies._nova_copy`, para ⌘I, link colado e o radar).
+notion: / tags: / categoria:` (`copies._nova_copy`, para ⌘K, link colado e o radar).
 
 ### Links
 
@@ -161,7 +160,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 ## 5. A Redação (`Redacao.tsx`, `Tabela.tsx`)
 
 - **Layout:** um card só, com a tabela à esquerda e a nota (ou o calendário) à direita; divisória arrastável
-  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** abre/fecha o calendário (só sem texto selecionado); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. No modo copy, **⌘1…⌘9** (ou ⌃/⌥) vão para as abas de nota, por cima da troca de página da navbar. No modo W sem copy aberta, **⌘1…⌘5** vão para Criação, Gravar, Em edição, Agendado e Publicados.
+  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** abre/fecha o calendário (só sem texto selecionado); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. No modo copy, **⌘1…⌘9** (ou ⌃/⌥) vão para as abas de nota, por cima da troca de página da navbar. No modo W sem copy aberta, **⌘1** tira o filtro de status e **⌘2…⌘5** filtram Gravar, Em edição, Agendado e Publicado. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas ficam no "Mostrar publicados" do fim.
 - **Abas de notas** sobre o painel, como no Obsidian (`redacao-abas` no `localStorage`): clique numa linha abre na aba
   da frente; **⌘+clique** (ou ⌘↵ na busca ⌘O) abre numa aba nova; × ou clique do meio fecha. Enter na busca abre na
   aba da frente.
@@ -218,15 +217,17 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
   começo da nota ou o trecho onde as palavras apareceram (marcado). Copies e skills; Enter abre na aba da frente da Redação, ⌘↵ numa
   aba nova; sem resultado igual, oferece criar a copy.
 - **Esc** dentro do editor ou de um campo só sai dele: W, ⌘B, ⌘P, ⌘[, ⌘], ⌘C, ⌘D e os outros atalhos voltam a valer.
-- **⌘I** (fora de um campo): copy nova (`NovoRapido.tsx`), nasce em Priorizar e abre numa aba nova.
-- **Painel da nota** (`PainelNota` em `ModalNota.tsx`): propriedades como no Obsidian (status na primeira linha, tags,
+- **⌘K**: copy nova (`NovoRapido.tsx`), nasce em Priorizar e abre numa aba nova (⌥N também).
+- **⌘I**: abre o chat da direita e foca o campo; com texto selecionado no editor da copy (editor em foco), manda o
+  trecho junto (`📎 [[nota]] · linhas X–Y`).
+- **Painel da nota** (`PainelNota.tsx`): propriedades como no Obsidian (status na primeira linha, tags,
   datas, `publicado`), editor CodeMirror com live preview, salva 1 s depois de parar.
 - **Largura do card:** as alças nas bordas esquerda e direita da Redação estreitam o card inteiro (centralizado,
   guardado em `redacao-card`); duplo clique volta a ocupar tudo. A copy fica sempre numa coluna central.
 
 ## 7. Processos do dia a dia
 
-- **Copy nova:** ⌘I, a busca ⌘O (criar), link colado na caixa do ⌘I, ou um card do radar (botão direito → criar copy).
+- **Copy nova:** ⌘K, a busca ⌘O (criar), link colado na caixa do ⌘K, ou um card do radar (botão direito → criar copy).
 - **Andar no funil:** o seletor de status na tabela ou no painel. Agendar = data na célula ou arrastar para o
   calendário. Publicar = status Publicado (move a nota para `2 Publicados/`).
 - **Tirar do caminho:** arquivar (sai da Criação, nota intacta) ou deletar (vai para `.trash/`).
@@ -307,17 +308,39 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
   chamar ferramentas de **leitura** (`can_use_tool` nega agendar e editar). Posts e miniaturas vão para o SQLite e
   `dados/thumbs` (os links do Instagram expiram).
 
-## 9. A porta para o Claude Code (`porta.py`, `porta.ts`)
+## 9. O chat da direita e a porta para o Claude Code
 
-O chat do Jarvis saiu (18/11/2026). Tudo acontece no Claude Code do terminal, que mexe nas notas direto e usa o app
-pela API; o app é a porta para falar com ele. Modelo copiado do Neo Stitch.
+### O chat (`Chat.tsx`, `agente.py`)
 
-- **Sem caixa de pedido** (desde 19/11/2026): a bolinha, o ⌘J, a fila (`/api/fila`, `dados/fila.jsonl`) e o
-  `ouvir.sh` saíram. O Rodrigo cita a nota pelo nome no terminal; `GET /api/onde` diz o que está aberto.
+Voltou em 19/11/2026 (tinha saído no `96020d1`), sem as ferramentas de canvas. É o Claude Code pelo **Claude Agent SDK**
+rodando com `cwd` no vault (`setting_sources` user + project: lê o `CLAUDE.md` do vault e as skills de `3 Skills` pelo
+symlink `.claude/skills`), modelo `MODELO_CHAT` (`config.py`), `bypassPermissions` e Bash livre, como no terminal.
+
+- **Coluna da direita** do `.corpo` (`com-chat`/`sem-chat`), na mesma janela da página: com o chat aberto, a janela é o
+  `.corpo::before` e a página (Redação, Instagram) perde o cartão próprio; só uma linha separa os dois. **⌘J** abre e
+  fecha; **⌘I** abre e foca (com seleção no editor, leva o trecho); recolhido vira a bolinha no canto inferior direito. A borda esquerda arrasta a largura (`chat-w`, limitada a 40vw na tela; duplo clique volta ao padrão).
+- **Conversas:** cada uma tem o histórico (`mensagens`) e a sessão do Claude retomada (`conversas.sessao`) no
+  `dados/jarvis.db`. Relógio = conversas anteriores; + = nova. A conversa aberta fica em `chat-conversa`.
+- **Rotas:** `POST /api/chat` (SSE: `texto`, `ferramenta`, `mudou`, `tela`, `fim`, `erro`), `GET /api/chat/{conversa}`,
+  `GET /api/chats`, `DELETE /api/chats/{conversa}`, `POST /api/chat/imagem` (imagem colada vai para os anexos do vault
+  e entra na mensagem como `🖼️ ![[...]]`).
+- **Ferramentas próprias** (MCP `neo`): `rotas` (lista a API), `app` (chama qualquer rota `/api/` pelo ASGI, sem rede;
+  escrita emite `mudou`), `tela` (`pagina` ou `abrir_nota`, que abre numa aba da Redação) e `transcrever_youtube`.
+- Cada mensagem leva "onde o Rodrigo está" (página e nota aberta) e a nota aberta vira uma linha no começo do texto.
+- No campo: Enter envia (ocupado: entra na fila), Esc para a resposta, `/` abre o seletor de skills, ⌘V cola imagem,
+  ⌘⇧D dita (reconhecimento de voz do navegador).
+
+### A porta para o Claude Code do terminal (`porta.py`, `porta.ts`)
+
+O Claude Code do terminal mexe nas notas direto e usa o app pela API; o app é a porta para falar com ele. Modelo
+copiado do Neo Stitch.
+
+- **Sem caixa de pedido** (desde 19/11/2026): a fila (`/api/fila`, `dados/fila.jsonl`) e o `ouvir.sh` saíram (a
+  bolinha e o ⌘J agora são do chat da direita). O Rodrigo cita a nota pelo nome no terminal; `GET /api/onde` diz o que está aberto.
 - **Eventos (`GET /api/eventos`, SSE).** `mudou`: o vigia (`porta.vigiar_vault`, a cada 1,5 s) viu nota criada, editada,
   movida ou apagada; a Redação e a nota aberta recarregam (a nota só se não houver edição pendente). `tela`: o Claude
   mexe na tela com `POST /api/tela` `{acao, pagina?, raiz?, nome?, nova?}`; ações `pagina`, `abrir_nota` (abre numa
-  aba da Redação; `nova: true` numa aba nova) e `fechar_nota`.
+  aba da Redação; `nova: true` numa aba nova) e `mostrar`.
 - **Onde o Rodrigo está:** o app manda (`porta.vigiarOnde`, de segundo em segundo, só quando muda) a página e a nota
   aberta; o Claude lê em `GET /api/onde`.
 - O radar e o Metricool continuam usando o SDK do Claude por conta própria (`radar.py`, `coletores/`, `metricool.py`).
@@ -326,7 +349,7 @@ pela API; o app é a porta para falar com ele. Modelo copiado do Neo Stitch.
 
 | Rota | Para quê |
 |---|---|
-| `GET /api/copies` | todas as copies (status, formato, categoria, `arquivado`, mídia), as novas e os formatos |
+| `GET /api/copies` | todas as copies (status, formato, categoria, `arquivado`, mídia) e os formatos. Cada nota fica em cache pelo mtime: só as que mudaram são relidas |
 | `POST /api/copies/status` · `tags` · `winner` · `categoria` · `categoria/renomear` · `arquivar` | ações nas copies (pelo nome) |
 | `POST /api/copies/ideia` · `entrada` | copy nova em Priorizar · copy a partir de link/texto (ou `pronto` do radar) |
 | `GET/POST /api/criacao` | cor e ordem das categorias e das copies na Criação (`dados/criacao.json`) |
@@ -352,26 +375,32 @@ app/backend/src/jarvis/
   copies.py                   as copies (lista, mídia, criar, status, tags, categoria, arquivar) e a Criação (cor/ordem)
   instagram_canais.py         Instagram: canais, coleta pelo Chrome, MP4, métricas
   porta.py                    eventos SSE, vigia do vault, onde
+  agente.py                   o chat da direita: Claude Agent SDK no vault (ferramentas rotas, app, tela, youtube)
   radar.py · preferencias.py · db.py · coletores/{fontes,x,x_curtir}.py   radar e like no X
   metricool.py · anuncios.py · planejamento.py · youtube.py · videos_x.py · auth.py
 app/frontend/src/
   App.tsx                     navbar, breadcrumb, páginas, busca, eventos da porta
   Redacao.tsx · Tabela.tsx    a Redação: tabela (Criação, status, categorias) + nota em abas + calendário
-  ModalNota.tsx               o PainelNota (propriedades + editor) que a Redação usa
+  PainelNota.tsx              propriedades + editor da nota (Redação e Skills)
+  Chat.tsx                    o chat da direita (⌘J): conversas, fila, imagens, ditado, / skills
   Paleta.tsx · NovoRapido.tsx · porta.ts · Radar.tsx · Instagram.tsx · CalendarioEditorial.tsx · Calendario.tsx
   Editor.tsx · livePreview.ts · propriedades.ts   o editor no jeito do Obsidian
   canvasApi.ts · api.ts · notas.ts                tipos e chamadas (o nome canvasApi é legado); notas.ts = raízes, pastas, link do Obsidian
   index.css                   todo o CSS (tokens no topo)
 ```
 
-`Desempenho.tsx` não está na navbar. Saíram de vez: o Canvas (Canvas.tsx, Canvases.tsx, PaletaCanvas.tsx,
-Desenho.tsx), a página Calendário (virou o calendário da Redação; Skills voltou a ser página da navbar), os códigos NEO e o chat
-do Jarvis. Não traga de volta sem pedido.
+`Desempenho.tsx` (Meta Ads, `/api/ads`) está guardado fora da navbar. Saíram na limpeza de 19/11/2026: o ModalNota
+(modal de nota com versões), EmBreve, o selo NOVO (`novas.json`), as abas Winners/Pinados/Skills da tabela e o CSS sem uso. Saíram de vez: o Canvas (Canvas.tsx, Canvases.tsx, PaletaCanvas.tsx,
+Desenho.tsx), a página Calendário (virou o calendário da Redação; Skills voltou a ser página da navbar) e os códigos NEO.
+Não traga de volta sem pedido.
 
 ## 12. Armadilhas conhecidas
 
-- **"Entrada"** ainda existe no código (`0 Ideias/Entradas/`, `fontes:`, card `e:`), mas o
-  fluxo atual cria tudo como 💡 ideia. Não crie entradas novas; ao mexer, prefira convergir para ideia.
+- **`ideias` / `entradas`** ainda são raízes em `notas.py` e `notas.ts` (a pasta `0 Ideias/` não existe mais). O
+  `/api/copies` só lê Priorizar e Publicados. "Plugar" um link numa copy (`POST /api/copies/entrada` com `ideia`) põe o
+  material na seção "## Entradas" da própria copy.
+- **Velocidade:** a tabela muda status, tags, categoria, data e arquivar na hora (`naHora` na Redação) e só depois relê
+  `/api/copies`; `carregarTudo` junta pedidos simultâneos. ⌘Z / ⌘⇧Z (fora do editor) desfazem status e tags.
 - **Nome com sufixo " 2"**: `_livre` evita colisão acrescentando um número. Se aparecer, foi colisão de nome.
 - **Cache do navegador:** listas buscadas logo depois de reiniciar o servidor podem ficar com a página HTML em cache;
   use `cache: 'no-store'` nas listas que mudam (já está em `carregarTudo`, Instagram e Criação).

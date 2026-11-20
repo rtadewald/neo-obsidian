@@ -38,7 +38,6 @@ TEMPLATE_COPY = VAULT / "2 Notas" / "Engine" / "templates" / "T-Copy.md"
 RAIZES = {**{k: str(p.relative_to(VAULT)) for k, p in TODAS.items()}, "skills": "3 Skills"}
 NOME_RUIM = re.compile(r"[/\\\x00]|^\.|\.\.")
 PINS = VAULT / ".obsidian" / "plugins" / "file-explorer-plus" / "data.json"
-PREFIXO = {"gravar": "🔴", "edicao": "🧑🏼‍🔧", "agendado": "🔹"}   # 🔴 gravar: copy pronta, falta gravar
 # um ou mais marcadores de status no começo do nome (🔹, 🧑‍🔧 com ou sem tom de pele)
 MARCAS = re.compile("^(?:\U0001F539|\U0001F534|\U0001F9D1[\U0001F3FB-\U0001F3FF]?\u200d\U0001F527)+")
 
@@ -107,8 +106,8 @@ def status(raiz: str, nome: str, texto: str | None = None) -> str:
     return "ideia" if st == "publicado" else st
 
 
-# corpo das notas (sem o frontmatter) em memória, pelo mtime: a busca do ⌘O lê daqui
-_CORPOS: dict[Path, tuple[float, str, str]] = {}
+# corpo das notas (sem o frontmatter) em memória, pelo mtime: a busca do ⌘O lê daqui (e o começo, para o status)
+_CORPOS: dict[Path, tuple[float, str, str, str]] = {}
 
 
 def _sem_acento(t: str) -> str:
@@ -116,13 +115,20 @@ def _sem_acento(t: str) -> str:
     return "".join((unicodedata.normalize("NFD", c)[0] if c.strip() else " ").lower() for c in t)
 
 
-def _corpo(p: Path) -> tuple[str, str]:
+def _lido(p: Path) -> tuple[float, str, str, str]:
+    """(mtime, corpo corrido, corpo sem acento, os primeiros 3000 caracteres do arquivo), relido só quando muda."""
     mt = p.stat().st_mtime
     c = _CORPOS.get(p)
     if not c or c[0] != mt:
-        corpo = re.sub(r"\A---\n.*?\n---\n?", "", p.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+        texto = p.read_text(encoding="utf-8", errors="replace")
+        corpo = re.sub(r"\A---\n.*?\n---\n?", "", texto, flags=re.S)
         corpo = re.sub(r"\s+", " ", corpo).strip()
-        c = _CORPOS[p] = (mt, corpo, _sem_acento(corpo))
+        c = _CORPOS[p] = (mt, corpo, _sem_acento(corpo), texto[:3000])
+    return c
+
+
+def _corpo(p: Path) -> tuple[str, str]:
+    c = _lido(p)
     return c[1], c[2]
 
 
@@ -141,9 +147,9 @@ def indice() -> list[dict]:
     for raiz in [*TODAS, "skills"]:
         for nome, p in _arquivos(raiz):
             try:
-                corpo, _ = _corpo(p)
-                out.append({"nome": nome, "raiz": raiz, "mtime": p.stat().st_mtime, "status": status(raiz, nome) if raiz in PASTAS else "",
-                            "previa": _limpar_md(corpo)[:160]})
+                mt, corpo, _, cabeca = _lido(p)
+                out.append({"nome": nome, "raiz": raiz, "mtime": mt, "status": status(raiz, nome, cabeca) if raiz in PASTAS else "",
+                            "previa": _limpar_md(corpo[:600])[:160]})
             except OSError:
                 pass
     return out
@@ -270,7 +276,6 @@ def criar(titulo: str) -> dict:
             "criado": datetime.now().isoformat(timespec="seconds")}
 
 
-SCHED = re.compile(r'(?m)^scheduled:\s*"?(\d{4}-\d{2}-\d{2})"?\s*$')
 
 
 DATA = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -453,15 +458,6 @@ def para_lixeira(raiz: str, nome: str) -> dict:
 def _rel(raiz: str, nome: str) -> str | None:
     p = _caminho(raiz, nome)
     return str(p.relative_to(VAULT)) if p else None
-
-
-def _de_rel(rel: str) -> str | None:
-    for raiz, pasta in PASTAS.items():
-        r = str(pasta.relative_to(VAULT)) + "/"
-        if rel.startswith(r) and rel.endswith(".md") and "/" not in rel[len(r):]:
-            return f"{raiz}/{rel[len(r):-3]}"
-    m = re.fullmatch(r"3 Skills/([^/]+)/SKILL\.md", rel)
-    return f"skills/{m.group(1)}" if m else None
 
 
 def _pins() -> dict:
