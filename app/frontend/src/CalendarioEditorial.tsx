@@ -82,7 +82,6 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
     <div className="cal-ed">
       <div className="cal-ed-topo">
         <h2 className="titulo cal-ed-titulo">{MESES[mes.getMonth()][0].toUpperCase() + MESES[mes.getMonth()].slice(1)} {mes.getFullYear()}</h2>
-        <p className="mudo">Arraste uma nota pra outro dia pra reagendar. Arraste um trecho vazio da semana pra marcar o que vai rolar nela.</p>
         <div className="acoes-topo">
           <button className="pilula" onClick={() => setMes((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))} aria-label="Mês anterior">‹</button>
           <button className="pilula" onClick={() => { const d = new Date(); setMes(new Date(d.getFullYear(), d.getMonth(), 1)) }}>Hoje</button>

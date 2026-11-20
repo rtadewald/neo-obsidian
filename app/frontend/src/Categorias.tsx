@@ -41,9 +41,11 @@ export function EditorCategoria({ inicial = '', onOk, onCancelar }: { inicial?: 
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ status, lista, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
+export function MenuCategorias({ status, onArquivados, nArquivados, lista, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onTirar }: {
   /** Status acima das categorias: clicar filtra (⌘ soma), soltar uma copy muda o status dela. */
   status?: { lista: { k: string; rotulo: string; n: number }[]; sel: string[]; onSel: (l: string[]) => void; onSoltar: (copia: string, k: string) => void }
+  onArquivados?: () => void   // botão 🗄️ Arquivados no fim: abre a janela com as categorias e copies arquivadas
+  nArquivados?: number
   lista: string[]
   renomear: string | null   // a categoria sendo renomeada ali mesmo (botão direito → Renomear)
   onRenomear: (de: string, para: string | null) => void   // para null = desistiu
@@ -62,8 +64,16 @@ export function MenuCategorias({ status, lista, renomear, onRenomear, arquivadas
   onTirar: (divisor: string) => void
 }) {
   const [sobre, setSobre] = useState<string | null>(null)
-  const [verArq, setVerArq] = useState(false)
   const [criando, setCriando] = useState(false)
+  // Status e Categorias recolhem e expandem pelo título (fica guardado)
+  const [fechadas, setFechadas] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('cats-fechadas') || '[]') } catch { return [] } })
+  useEffect(() => { try { localStorage.setItem('cats-fechadas', JSON.stringify(fechadas)) } catch { /* sem storage */ } }, [fechadas])
+  const titulo = (k: string, rotulo: string) => {
+    const aberta = !fechadas.includes(k)
+    return <button type="button" className={`cats-t cats-t-btn ${aberta ? 'is-aberta' : ''}`} aria-expanded={aberta}
+      onClick={() => setFechadas((f) => (aberta ? [...f, k] : f.filter((x) => x !== k)))} title={aberta ? 'Recolher' : 'Expandir'}>
+{rotulo}<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+  }
   // largura do menu: arrastar a borda direita (fica guardada); duplo clique volta ao padrão
   const [larg, setLarg] = useState<number>(() => { try { return Number(localStorage.getItem('cats-largura')) || 210 } catch { return 210 } })
   useEffect(() => { try { localStorage.setItem('cats-largura', String(larg)) } catch { /* sem storage */ } }, [larg])
@@ -97,12 +107,10 @@ export function MenuCategorias({ status, lista, renomear, onRenomear, arquivadas
     <aside className="cats" aria-label="Categorias" style={{ width: larg }}>
       <i className="cats-alca" onPointerDown={redimensionar} onDoubleClick={() => setLarg(210)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />
       {status && <>
-        <p className="cats-t">Status</p>
-        <button className={`cats-item ${status.sel.length ? '' : 'is-on'}`} onClick={() => status.onSel([])} title="Sem filtro de status (as publicadas ficam no fim, em Mostrar publicados)">
-          <span>Todos</span><em>{status.lista.filter((x) => x.k !== 'publicado').reduce((a, x) => a + x.n, 0)}</em></button>
-        {status.lista.map((x) => (
+        {titulo('status', 'Status')}
+        {!fechadas.includes('status') && status.lista.map((x) => (
           <button key={x.k} className={`cats-item ${status.sel.includes(x.k) ? 'is-on' : ''} ${sobre === `st:${x.k}` ? 'is-sobre' : ''}`}
-            title="Clique filtra (⌘ soma) · solte uma copy aqui para mudar o status"
+            title="Clique mostra só este status, de todas as categorias (⌘ soma; clicar de novo tira) · solte uma copy aqui para mudar o status"
             onClick={(e) => { const l = status.sel; status.onSel(e.metaKey || e.ctrlKey ? (l.includes(x.k) ? l.filter((y) => y !== x.k) : [...l, x.k]) : l.length === 1 && l[0] === x.k ? [] : [x.k]) }}
             onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/copia')) { e.preventDefault(); setSobre(`st:${x.k}`) } }}
             onDragLeave={() => setSobre(null)}
@@ -110,23 +118,23 @@ export function MenuCategorias({ status, lista, renomear, onRenomear, arquivadas
             <span>{x.rotulo}</span><em>{x.n}</em>
           </button>
         ))}
-        <div className="cats-div is-fixo"><hr /></div>
       </>}
-      <p className="cats-t">Categorias</p>
+      {titulo('cats', 'Categorias')}
+      {!fechadas.includes('cats') && <>
       {item(PIN, '📌 Pinados')}
       {lista.map((c) => ehDivisor(c) ? (
-        <div key={c} className={`cats-div ${sobre === c ? 'is-sobre' : ''}`} draggable title="Arraste para mudar o lugar · botão direito tira"
+        <div key={c} className={`cats-div ${sobre === c ? 'is-sobre' : ''}`} draggable title="Arraste para mudar o lugar · × tira"
           onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
           onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/categoria')) { e.preventDefault(); setSobre(c) } }}
           onDragLeave={() => setSobre(null)}
           onDrop={(e) => { e.preventDefault(); setSobre(null); const k = e.dataTransfer.getData('neo/categoria'); if (k) onOrdem(k, c) }}
-          onContextMenu={(e) => { e.preventDefault(); if (window.confirm('Tirar este divisor?')) onTirar(c) }}><hr /></div>
+          onContextMenu={(e) => { e.preventDefault(); if (window.confirm('Tirar este divisor?')) onTirar(c) }}><hr />
+          <button type="button" className="cats-div-x" title="Tirar este divisor" aria-label="Tirar este divisor" draggable={false}
+            onClick={(e) => { e.stopPropagation(); onTirar(c) }}>×</button></div>
       ) : item(c, c))}
       {(contagem[''] ?? 0) > 0 && item('', SEM)}
-      {arquivadas.length > 0 && <>
-        <button className="cats-arq" onClick={() => setVerArq((v) => !v)} aria-expanded={verArq}>{verArq ? '▾' : '▸'} Arquivadas <em>{arquivadas.length}</em></button>
-        {verArq && <div className="cats-arq-lista">{arquivadas.map((c) => item(c, c))}</div>}
       </>}
+      {onArquivados && <button className="cats-arq" onClick={onArquivados} title="As categorias e as copies arquivadas, para analisar">🗄️ Arquivados <em>{nArquivados ?? arquivadas.length}</em></button>}
       <div className="cats-acoes">
         {criando ? <EditorCategoria onOk={(n) => { setCriando(false); onCriar(n) }} onCancelar={() => setCriando(false)} />
           : <button className="cats-nova" onClick={() => setCriando(true)}>+ Nova categoria</button>}

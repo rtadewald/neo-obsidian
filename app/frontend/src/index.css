@@ -1327,7 +1327,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .tabela-embutida .tabela.sem-grupo .tabela-nivel-1 .col-nome { padding-left: 0; }
 
 /* divisor arrastável no menu de categorias */
-.cats-div { padding: 6px 8px; cursor: grab; border-radius: 6px; }
+.cats-div { position: relative; padding: 6px 8px; cursor: grab; border-radius: 6px; }
 .cats-div hr { margin: 0; border: 0; border-top: 1px solid rgba(23, 24, 27, .14); }
 .cats-div:hover hr { border-top-color: rgba(23, 24, 27, .35); }
 .cats-div.is-sobre { box-shadow: inset 0 2px 0 #1d1d1f; }
@@ -1341,8 +1341,8 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .tabela-pub-sep td { padding: 10px 0 6px 30px !important; border: 0 !important; border-top: 1px solid rgba(23, 24, 27, .16) !important; background: transparent !important; }
 .tabela-pub-sep span { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: rgba(23, 24, 27, .45); }
 
-/* a Data fica com a sobra: as linhas vão até a borda da tabela */
-.tabela-embutida .tabela th.col-data { width: auto; }
+/* o Status (última coluna) fica com a sobra: as linhas vão até a borda da tabela */
+.tabela-embutida .tabela th.col-status { width: auto; }
 
 /* Skills e Calendário (modo W) logo depois das abas da Redação, com um traço */
 .redacao .modal-tabela .modal-tabs nav { flex: none; }
@@ -1540,3 +1540,36 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 
 /* arrastar uma copy sobre uma aba de status: a aba acende (soltar muda o status) */
 .modal-tab.is-sobre { background: rgba(226, 240, 92, .55); box-shadow: inset 0 0 0 1.5px var(--lime-deep, #9bb51c); }
+
+/* divisor do menu de categorias: com o cursor em cima aparece um × que tira o divisor */
+.cats-div-x { position: absolute; right: 2px; top: 50%; width: 18px; height: 18px; margin-top: -9px; display: grid; place-items: center; border-radius: 50%;
+  font-size: 13px; line-height: 1; color: var(--ink-2); background: rgba(250, 249, 247, .95); box-shadow: 0 0 0 1px rgba(23, 24, 27, .12); opacity: 0; cursor: pointer; transition: opacity .12s; }
+.cats-div:hover .cats-div-x { opacity: 1; }
+.cats-div-x:hover { color: #fff; background: #c4372b; box-shadow: none; }
+
+/* 🗄️ Arquivados: janela com as categorias arquivadas (e as copies delas) e as copies arquivadas soltas */
+.arq-fundo { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; background: rgba(30, 26, 24, .22); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fundo-in .14s ease-out; }
+.arq-modal { width: min(640px, calc(100vw - 32px)); max-height: min(78vh, 820px); display: flex; flex-direction: column; border-radius: 20px; background: rgba(250, 249, 247, .97) !important; box-shadow: 0 40px 90px -30px rgba(30, 24, 22, .55) !important; }
+.arq-modal > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px 20px; border-bottom: 1px solid rgba(23, 24, 27, .07); font-size: 14px; }
+.arq-corpo { overflow-y: auto; padding: 6px 12px 16px; }
+.arq-corpo section { margin-top: 12px; }
+.arq-corpo h3 { display: flex; align-items: center; gap: 8px; margin: 0 8px 4px; font-size: 13px; font-weight: 600; }
+.arq-corpo h3 em { font-style: normal; font-weight: 400; font-size: 11.5px; color: var(--mute); }
+.arq-corpo h3 .arq-desarq { margin-left: auto; }
+.arq-corpo ul { list-style: none; margin: 0; padding: 0; }
+.arq-corpo li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid rgba(23, 24, 27, .05); }
+.arq-copy { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--ink); }
+.arq-copy:hover { background: rgba(23, 24, 27, .05); }
+.arq-copy b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arq-copy em { margin-left: auto; flex: none; font-style: normal; font-size: 11.5px; color: var(--mute); }
+.arq-desarq { flex: none; padding: 2px 4px; font-size: 11.5px; color: var(--mute); text-decoration: underline; text-decoration-color: rgba(23, 24, 27, .25); text-underline-offset: 3px; }
+.arq-desarq:hover { color: var(--ink); }
+.arq-vazio { margin: 4px 8px; font-size: 12px; color: var(--mute); }
+
+/* títulos Status e Categorias: recolhem e expandem a seção; um espaço separa as duas (sem traço) */
+.cats-t-btn { display: flex; align-items: center; gap: 6px; width: calc(100% - 16px); padding: 2px 0; border: 0; background: none; text-align: left; cursor: pointer; font-family: inherit; }
+.cats-t-btn:hover { color: var(--ink); }
+.cats-t-btn svg { flex: none; transition: transform .15s; }   /* a setinha logo depois do texto */
+.cats-t-btn.is-aberta svg { transform: rotate(90deg); }
+.cats-t-btn + .cats-item, .cats-t-btn + .cats-t-btn { margin-top: 0; }
+.cats .cats-t-btn:not(:first-of-type) { margin-top: 18px; }

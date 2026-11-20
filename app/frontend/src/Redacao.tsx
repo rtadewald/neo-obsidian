@@ -242,7 +242,7 @@ export function Redacao({ versao }: { versao?: number }) {
       {(aberta || cal) && <div className="redacao-divisoria" onPointerDown={arrastar} onDoubleClick={() => (escrita ? setLatW(480) : setFrac(0.48))} title="Arraste para mudar a proporção (duplo clique volta ao meio)" />}
       {cal ? (
         <aside className="redacao-lado redacao-cal glass glass--light">
-          <header className="redacao-lado-topo"><b>📅 Calendário</b><span className="mudo">arraste uma copy da tabela para um dia</span>
+          <header className="redacao-lado-topo"><b>📅 Calendário</b>
             <button className="btn-icone" onClick={() => setCal(false)} aria-label="Fechar o calendário">×</button></header>
           <CalendarioEditorial key={calVersao} onAbrir={(raiz, nome) => abrir({ raiz, nome } as Alvo)} onMudou={() => { recarregar(); avisar('Agendada') }} />
         </aside>
