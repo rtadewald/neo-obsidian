@@ -130,7 +130,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
     const px0 = caixa.current?.getBoundingClientRect().width ?? 0
     const mover = (ev: PointerEvent) => {
       if (lado && soTabela) setTabCardW(Math.round(Math.min(total, Math.max(320, px0 + lado * 2 * (ev.clientX - x0)))))
-      else if (lado) setCardW(Math.min(1, Math.max(0.25 / fator, (w0 + (lado * 2 * (ev.clientX - x0)) / total) / fator)))
+      else if (lado) setCardW(Math.min(1 / fator, Math.max(0.25 / fator, (w0 + (lado * 2 * (ev.clientX - x0)) / total) / fator)))   // pode crescer até a página inteira
       if (alto) setCardH(Math.min(1, Math.max(0.3, h0 + (ev.clientY - y0) / altura)))
     }
     const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
@@ -222,12 +222,12 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
 
   return (
     <div ref={caixa} className={`redacao ${aberta || cal ? 'com-lado' : ''} ${soCopy && (aberta || cal) ? 'so-copy' : ''}`}
-      style={{ width: soTabela ? (tabCardW ? `min(100%, ${tabCardW}px)` : '100%') : `${cardW * fatorCard * 100}%`, height: `${cardH * 100}%`, ...(soCopy && (aberta || cal) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : escrita ? { gridTemplateColumns: `${latEfetiva}px 0px minmax(0, 1fr)` } : cal ? { gridTemplateColumns: `minmax(0, ${frac}fr) 0px minmax(0, ${1 - frac}fr)` } : {}) }}>
-      <div className="redacao-borda is-esq" onPointerDown={arrastarCard(-1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
-      <div className="redacao-borda is-dir" onPointerDown={arrastarCard(1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
+      style={{ width: soTabela ? (tabCardW ? `min(100%, ${tabCardW}px)` : '100%') : `${Math.min(1, cardW * fatorCard) * 100}%`, height: `${cardH * 100}%`, ...(soCopy && (aberta || cal) ? { gridTemplateColumns: 'minmax(0, 1fr)' } : escrita ? { gridTemplateColumns: `${latEfetiva}px 0px minmax(0, 1fr)` } : cal ? { gridTemplateColumns: `minmax(0, ${frac}fr) 0px minmax(0, ${1 - frac}fr)` } : {}) }}>
+      <div className="redacao-borda is-esq" onPointerDown={arrastarCard(-1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1 / fatorCard))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
+      <div className="redacao-borda is-dir" onPointerDown={arrastarCard(1)} onDoubleClick={() => (soTabela ? setTabCardW(null) : setCardW(1 / fatorCard))} title="Arraste para mudar a largura (duplo clique ocupa tudo)" />
       <div className="redacao-borda-baixo" onPointerDown={arrastarCard(0, true)} onDoubleClick={() => setCardH(1)} title="Arraste para mudar a altura (duplo clique ocupa tudo)" />
-      <div className="redacao-canto is-esq" onPointerDown={arrastarCard(-1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
-      <div className="redacao-canto is-dir" onPointerDown={arrastarCard(1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
+      <div className="redacao-canto is-esq" onPointerDown={arrastarCard(-1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1 / fatorCard); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
+      <div className="redacao-canto is-dir" onPointerDown={arrastarCard(1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1 / fatorCard); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-tabela" hidden={soCopy && !!(aberta || cal)}>
         {est && <ModalTabela compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
           onMudar={setT} onAbrir={abrir} criacao={criacao} onCriacao={mudarCriacao}
