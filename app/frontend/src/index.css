@@ -1268,7 +1268,9 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 /* 📌 Priorizar: seção das pinadas no topo, separada das demais */
 .tabela-grupo.is-pin td { background: rgba(226, 240, 92, .28); }
 .tabela-grupo.is-pin .col-nome b { font-weight: 650; }
-.tabela-sep-pin td { height: 10px; padding: 0 !important; border-bottom: 2px solid rgba(23, 24, 27, .14); background: transparent !important; }
+.tabela-sep-pin td { height: 0; padding: 0 !important; border: 0 !important; border-bottom: 2px solid rgba(229, 72, 77, .55) !important; background: transparent !important; }
+/* a linha da última pinada não aparece: o traço vermelho do separador é a única linha entre pinadas e o resto */
+.tabela tr.is-pinada:has(+ .tabela-sep-pin) td { border-bottom-color: transparent !important; }
 /* Redação: a tabela termina na Data (à direita fica um vazio de seleção, cursor normal) e as linhas
    começam no nome, não na calha da esquerda */
 .redacao .tabela-rolo { cursor: default; }
@@ -1566,10 +1568,51 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .arq-desarq:hover { color: var(--ink); }
 .arq-vazio { margin: 4px 8px; font-size: 12px; color: var(--mute); }
 
-/* títulos Status e Categorias: recolhem e expandem a seção; um espaço separa as duas (sem traço) */
-.cats-t-btn { display: flex; align-items: center; gap: 6px; width: calc(100% - 16px); padding: 2px 0; border: 0; background: none; text-align: left; cursor: pointer; font-family: inherit; }
+/* um espaço separa Status de Categorias (sem traço) */
+.cats .cats-t-segunda { margin-top: 18px; }
+
+/* grupos do menu de categorias: setinha (hover; sempre visível quando fechado), nome discreto, n de categorias
+   escondidas quando fechado e o traço até a borda. A linha toda recolhe/mostra. */
+.cats-grupo { display: flex; align-items: center; gap: 6px; padding: 12px 8px 3px 2px; cursor: pointer; border-radius: 6px; }
+.cats-grupo hr { flex: 1; align-self: center; margin: 1px 0 0 4px; }
+.cats-grupo-seta { flex: none; color: rgba(23, 24, 27, .4); transform: rotate(90deg); transition: transform .15s, opacity .15s; opacity: 0; }
+.cats-grupo:hover .cats-grupo-seta, .cats-grupo:focus-visible .cats-grupo-seta, .cats-grupo.is-fechado .cats-grupo-seta { opacity: 1; }
+.cats-grupo.is-fechado .cats-grupo-seta { transform: none; }
+.cats-grupo-nome { font-size: 11.5px; font-weight: 500; color: rgba(23, 24, 27, .4); white-space: nowrap; }
+.cats-grupo:hover .cats-grupo-nome, .cats-grupo:hover .cats-grupo-seta { color: var(--ink-2); }
+.cats-grupo-n { font-style: normal; font-size: 10.5px; color: rgba(23, 24, 27, .4); padding: 0 6px; border-radius: 999px; background: rgba(23, 24, 27, .06); }
+.cats-grupo:focus-visible { outline: 2px solid rgba(23, 24, 27, .25); outline-offset: 1px; }
+
+/* títulos Status e Categorias em negrito (teste) */
+.cats .cats-t { font-weight: 700; color: rgba(23, 24, 27, .7); }
+
+/* nome do grupo editado ali mesmo (renomear e + Grupo) */
+.cats-grupo-campo { width: 120px; padding: 2px 6px; border: 0; border-radius: 6px; font: inherit; font-size: 12px; color: var(--ink); background: #fff; box-shadow: 0 0 0 1px rgba(23, 24, 27, .18); outline: none; }
+
+/* categoria editável na lista por status: o mesmo seletor discreto do status */
+.tabela-cat-sel { max-width: 100%; color: var(--ink-2); }
+.tabela-cat-sel.is-vazia { color: var(--mute); }
+
+/* título Categorias: ícones de nova categoria, novo grupo e arquivados só com o cursor em cima */
+.cats-t-acoes { display: flex; align-items: center; justify-content: space-between; }
+.cats-t-botoes { display: inline-flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.cats-t-acoes:hover .cats-t-botoes, .cats-t-botoes:focus-within { opacity: 1; }
+.cats-t-botoes button { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--ink-2); }
+.cats-t-botoes button:hover { background: rgba(23, 24, 27, .07); color: var(--ink); }
+
+/* grupo com cor: o nome numa pílula da cor e o traço na mesma cor */
+.cats-grupo.com-cor .cats-grupo-nome { padding: 1px 8px; border-radius: 999px; background: var(--cor-grupo); color: rgba(23, 24, 27, .65); }
+.cats-grupo.com-cor hr { border-top: 2px solid var(--cor-grupo); }
+
+/* arrastar categoria/grupo no menu: uma linha horizontal marca onde vai ficar */
+.cats-item, .cats-grupo { position: relative; }
+.cats-item.is-linha-antes::before, .cats-item.is-linha-depois::after, .cats-grupo.is-linha-antes::before, .cats-grupo.is-linha-depois::after {
+  content: ''; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 2px; background: #1d1d1f; pointer-events: none; z-index: 2; }
+.cats-item.is-linha-antes::before, .cats-grupo.is-linha-antes::before { top: -1px; }
+.cats-item.is-linha-depois::after, .cats-grupo.is-linha-depois::after { bottom: -1px; }
+
+/* títulos Status e Categorias recolhem a seção: a setinha logo depois do texto (gira quando aberta) */
+.cats-t-btn { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; }
 .cats-t-btn:hover { color: var(--ink); }
-.cats-t-btn svg { flex: none; transition: transform .15s; }   /* a setinha logo depois do texto */
+.cats-t-btn svg { flex: none; transition: transform .15s; }
 .cats-t-btn.is-aberta svg { transform: rotate(90deg); }
-.cats-t-btn + .cats-item, .cats-t-btn + .cats-t-btn { margin-top: 0; }
-.cats .cats-t-btn:not(:first-of-type) { margin-top: 18px; }

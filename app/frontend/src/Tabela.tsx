@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuCategorias, PIN, SEM, listaCategorias } from './Categorias'
+import { MenuCategorias, PASTEIS, PIN, SEM, ehDivisor, listaCategorias } from './Categorias'
 import { alternarPin, usePins } from './pins'
 import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 
@@ -44,8 +44,6 @@ export const tabelaSalva = (pasta: Pasta): EstadoTabela => guardadas[pasta]?.t ?
 export type Criacao = { cores: Record<string, string>; categorias: string[]; ordem: Record<string, string[]>; arquivadas?: string[] }
 /** Os grupos da Criação, pelo ícone (formato) do nome da copy. */
 const GRUPO_FORMATO: Record<string, string> = { '📱': '📱 Reels', '📝': '📱 Reels', '🏞️': '📱 Reels', '🏞': '📱 Reels', '💻': '📱 Reels', '📚': '📚 Aula', '💰': '💰 Ad', '📺': '📺 VSL' }
-/** Cores pastel das categorias (botão direito na categoria). */
-const PASTEIS = ['#fde2e4', '#fde8cf', '#fff3c4', '#e4f2cf', '#d4efe6', '#d6e8f7', '#e3dcf6', '#f3dcef', '#ece6dc']
 
 const dia = (p: Producao) => (p.scheduled ?? '').slice(0, 10) || new Date((p.criado ?? p.mtime) * 1000).toISOString().slice(0, 10)
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
@@ -389,7 +387,14 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
         <td className="col-data" onClick={soControle}>
           <input type="date" className={`tabela-data-in ${p.scheduled ? '' : 'is-vazia'}`} value={(p.scheduled ?? '').slice(0, 10)} title="Mudar a data (scheduled)"
             onChange={(e) => { if (/^2\d{3}-/.test(e.target.value)) onData({ raiz: p.raiz, nome: p.nome }, e.target.value) }} /></td>
-        {porStatus ? <td className="col-status col-categoria" title={p.categoria || 'Sem categoria'}>{p.categoria || <span className="tabela-vazio">—</span>}</td> : <td className="col-status" onClick={soControle}>
+        {porStatus ? <td className="col-status col-categoria" onClick={soControle}>
+          {/* a categoria muda ali mesmo, como o status (as categorias do menu, sem os grupos) */}
+          <select className={`tabela-status-sel tabela-cat-sel ${p.categoria ? '' : 'is-vazia'}`} value={p.categoria ?? ''} title="Mudar a categoria"
+            onChange={(e) => onCategoria({ raiz: p.raiz, nome: p.nome }, e.target.value)}>
+            <option value="">— Sem categoria</option>
+            {todasCategorias.filter((c) => !ehDivisor(c)).map((c) => <option key={c} value={c}>{c}</option>)}
+            {p.categoria && !todasCategorias.includes(p.categoria) && <option value={p.categoria}>{p.categoria}</option>}
+          </select></td> : <td className="col-status" onClick={soControle}>
           <select className={`tabela-status-sel is-${p.status}`} value={p.status} onChange={(e) => onStatus([{ raiz: p.raiz, nome: p.nome }], e.target.value as StatusProd)}>
             {STATUS.map((x) => <option key={x.k} value={x.k}>{x.marca} {x.nome}</option>)}</select></td>}
       </tr>
@@ -409,13 +414,14 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
             onSoltar: (d, k) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
               onStatus(ids.map((id) => { const [raiz, ...resto] = id.split('/'); return { raiz: raiz as Alvo['raiz'], nome: resto.join('/') } }), k as StatusProd) } }}
           renomear={renCat} onRenomear={(de, para) => { setRenCat(null); if (para && para !== de) onRenomearCategoria(de, para) }} lista={todasCategorias.filter((c) => !arquivadas.includes(c))} arquivadas={arquivadas.filter((c) => todasCategorias.includes(c))} contagem={contagemCat} nPins={daPasta.filter((p) => pinsSet.has(idPin(p))).length} total={daPasta.length} sel={t.filtros?.categoria ?? []}
-          cores={criacao.cores} onSel={(l) => mudar({ filtros: { ...t.filtros, categoria: l, ...(l.length ? { status: [] } : {}) } })}   // categoria tira o status
+          cores={criacao.cores} onCor={(chave, cor) => onCriacao({ cores: { [chave]: cor } })} onSel={(l) => mudar({ filtros: { ...t.filtros, categoria: l, ...(l.length ? { status: [] } : {}) } })}   // categoria tira o status
           onSoltar={(d, cat) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
             if (cat === PIN) { for (const id of ids) alternarPin(`p:${id}`, true); return }
             for (const id of ids) { const [raiz, ...resto] = id.split('/'); onCategoria({ raiz: raiz as Alvo['raiz'], nome: resto.join('/') }, cat === SEM ? '' : cat) } }}
-          onOrdem={(de, para) => { const l = todasCategorias.filter((c) => c !== de); const i = l.indexOf(para); l.splice(i < 0 ? l.length : i, 0, de); onCriacao({ categorias: l }) }}
+          onOrdem={(de, para, depois) => { const l = todasCategorias.filter((c) => c !== de); const i = l.indexOf(para); l.splice(i < 0 ? l.length : i + (depois ? 1 : 0), 0, de); onCriacao({ categorias: l }) }}
+          onRenomearDivisor={(de, para) => onCriacao({ categorias: todasCategorias.map((c) => (c === de ? para : c)) })}
           onCriar={(n) => { if (!todasCategorias.includes(n)) onCriacao({ categorias: [...todasCategorias, n] }); mudar({ filtros: { ...t.filtros, categoria: [n], status: [] } }) }}
-          onDivisor={() => onCriacao({ categorias: [...todasCategorias, `—${Date.now().toString(36)}`] })}
+          onDivisor={(n) => onCriacao({ categorias: [...todasCategorias, `—${Date.now().toString(36)}|${n.trim()}`] })}
           onTirar={(d) => onCriacao({ categorias: todasCategorias.filter((c) => c !== d) })}
           onMenu={(cat, x, y) => setMenuCor({ x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 220), cat })} />}
         <div className="tabela-coluna">
