@@ -160,7 +160,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 ## 5. A Redação (`Redacao.tsx`, `Tabela.tsx`)
 
 - **Layout:** um card só, com a tabela à esquerda e a nota (ou o calendário) à direita; divisória arrastável
-  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** abre/fecha o calendário (só sem texto selecionado); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. No modo copy, **⌘1…⌘9** (ou ⌃/⌥) vão para as abas de nota, por cima da troca de página da navbar. No modo W sem copy aberta, **⌘1** tira o filtro de status e **⌘2…⌘5** filtram Gravar, Em edição, Agendado e Publicado. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas ficam no "Mostrar publicados" do fim.
+  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** vai para a aba Calendário e volta (só sem texto selecionado; o calendário saiu da Redação); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. **⌘1…** (ou ⌃) trocam de página na ordem da navbar (⌘1 Redação, ⌘2 Calendário…), também com copy aberta e no modo W; no modo copy, **⌥1…⌥9** vão para as abas de nota. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas aparecem no fim, depois de um traço (visíveis por padrão; "Esconder publicados" guarda a escolha em `tabela-ver-pub`).
 - **Abas de notas** sobre o painel, como no Obsidian (`redacao-abas` no `localStorage`): clique numa linha abre na aba
   da frente; **⌘+clique** (ou ⌘↵ na busca ⌘O) abre numa aba nova; × ou clique do meio fecha. Enter na busca abre na
   aba da frente.
@@ -176,6 +176,10 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   No topo, a categoria especial **📌 Pinados**: só as pinadas da aba (soltar uma copy ali pina).
   Botão direito → **🗄️ Arquivar categoria**: sai do menu e da Criação (a não ser escolhida), vai para a seção
   recolhida "Arquivadas" no fim do menu (`arquivadas` no `criacao.json`); as copies não mudam.
+- **Colunas da tabela:** botão **Colunas** na barra de cima: marcar quais aparecem depois da Copy (Data, Status,
+  Categoria, Tags, Palavras, Editada) e arrastar a ordem (`tabela-colunas` no localStorage). Toda coluna muda de largura
+  pela borda direita do cabeçalho (`tabela-larguras`; duplo clique volta ao padrão); o vazio do fim fica com a sobra.
+  Com um status escolhido, a coluna Status vira Categoria. Status e categoria do menu são excludentes.
 - **Pinar status e categorias:** alfinete com o cursor sobre o item (pinado, fica vermelho e sempre à vista) ou botão
   direito → 📌 Pinar. Com o pai recolhido (a seção Status/Categorias ou o grupo), os pinados continuam à vista
   (`cats-pinados` no localStorage, chaves `st:<status>` e `cat:<nome>`; `usePinsMenu` em `Categorias.tsx`).
@@ -207,12 +211,13 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 
 ## 6. As telas
 
-A navbar tem três grupos: **Redação · Skills** | **Instagram · X · Sites** | **Agendamento**. **⌃1…** trocam de aba (também ⌥1…;
+A navbar tem três grupos: **Redação · Calendário · Skills** | **Instagram · X · Sites** | **Agendamento**. **⌃1…** trocam de aba (também ⌥1…;
 o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localStorage`; a Redação é a padrão.
 
 | Tela | Arquivo | O que faz |
 |---|---|---|
 | **Redação** | `Redacao.tsx` | seção 5 |
+| **Calendário** | `Redacao.tsx` (`calendario`) | a mesma tabela da Redação (filtros, menu, atalhos) com o calendário sempre à direita: arrastar uma linha para um dia agenda a copy. O calendário é contínuo: as semanas seguem sem quebra de mês (a virada é uma escadinha; o mês e o número da semana ficam na margem), carrega mais semanas ao rolar perto das pontas, abre com a semana de hoje no topo, ‹ › pulam de mês e o título mostra os meses à vista. O checkbox de cada copy no calendário publica (status publicado, vai para 2 Publicados); desmarcar volta para Priorizar como agendado (⌘Z desfaz). Abrir uma copy (clique na linha ou no calendário) abre um modal com o nome, as propriedades e o texto, tudo editável (Esc ou clique fora fecha; "Abrir na Redação ↗" leva para lá); ⌘+clique vai direto para a Redação. O ⌘C volta para a Redação |
 | **X** e **Sites** | `Radar.tsx` | o radar (seção 8). Botão direito num card → criar copy em Priorizar |
 | **Instagram** | `Instagram.tsx` | canais monitorados e os Reels deles, com métricas relativas ao canal (seção 8) |
 | **Agendamento** | `Calendario.tsx` | posts publicados e agendados do Instagram vindos do Metricool (seção 8) |

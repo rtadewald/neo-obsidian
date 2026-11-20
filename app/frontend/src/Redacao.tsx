@@ -12,10 +12,11 @@ import { avisar } from './porta'
  *  (`scheduled`). Todas as copies do vault. */
 const CHAVE_ABAS = 'redacao-abas'   // as copies abertas em abas (como no Obsidian) e qual está à frente
 export const EVENTO_REDACAO = 'redacao-abrir'   // a busca (⌘O) abre uma copy aqui: {alvo, nova}
-const CHAVE_CAL = 'redacao-calendario'
 const CHAVE_LARG = 'redacao-largura'   // fração da largura que a tabela ocupa (a divisória arrasta)
 
-export function Redacao({ versao }: { versao?: number }) {
+/** `calendario`: a aba Calendário da navbar — a mesma tabela à esquerda e o calendário sempre à direita; abrir uma copy
+ *  leva para a Redação (onAbrirNota). */
+export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; calendario?: boolean; onAbrirNota?: (a: Alvo, nova?: boolean) => void }) {
   const [est, setEst] = useState<EstadoCanvas | null>(() => tudoEmCache())   // abre na hora com o que o app já tem
   const [t, setT] = useState<EstadoTabela>(() => tabelaSalva('ideias'))
   // cor e ordem das categorias e das copies na Criação (dados/criacao.json)
@@ -25,7 +26,7 @@ export function Redacao({ versao }: { versao?: number }) {
     setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
     fetch('/api/criacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }).then((r) => r.json()).then(setCriacao).catch(() => avisar('Não consegui guardar.'))
   }
-  const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })
+  const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { if (calendario) return { lista: [], ativa: 0 }; try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })
   // ⌘P alterna entre o modo copy (lateral + a copy aberta) e a tabela inteira; as abas de notas continuam guardadas
   const [verTabela, setVerTabela] = useState(false)
   const aberta: Alvo | null = verTabela ? null : abas.lista[abas.ativa] ?? null
@@ -79,7 +80,8 @@ export function Redacao({ versao }: { versao?: number }) {
   // ⌘] esconde as colunas Status e Data no painel de copies (modo copy)
   const [semColunas, setSemColunas] = useState(() => { try { return localStorage.getItem('redacao-sem-colunas') === 'sim' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('redacao-sem-colunas', semColunas ? 'sim' : 'nao') } catch { /* sem storage */ } }, [semColunas])
-  const [cal, setCal] = useState<boolean>(() => { try { return localStorage.getItem(CHAVE_CAL) === 'sim' } catch { return false } })
+    const cal = !!calendario   // o calendário mora na aba Calendário (⌘C vai e volta)
+  const irCal = () => window.dispatchEvent(new CustomEvent('ir-pagina', { detail: calendario ? 'Redação' : 'Calendário' }))
   const [calVersao, setCalVersao] = useState(0)
   // divisória entre a tabela e a nota: arrastar muda a proporção (fica guardada); duplo clique volta ao meio
   const [frac, setFrac] = useState<number>(() => { try { return Number(localStorage.getItem(CHAVE_LARG)) || 0.48 } catch { return 0.48 } })
@@ -135,23 +137,18 @@ export function Redacao({ versao }: { versao?: number }) {
     document.body.classList.add('arrastando')
     window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar)
   }
-  useEffect(() => { try { localStorage.setItem(CHAVE_ABAS, JSON.stringify(abas)) } catch { /* sem storage */ } }, [abas])
+  useEffect(() => { if (calendario) return; try { localStorage.setItem(CHAVE_ABAS, JSON.stringify(abas)) } catch { /* sem storage */ } }, [abas])
   useEffect(() => {
-    const ev = (e: Event) => { const d = (e as CustomEvent<{ alvo: Alvo; nova?: boolean }>).detail; abrirEm(d.alvo, d.nova); setCal(false); setVerTabela(false) }
+    const ev = (e: Event) => { if (calendario) return; const d = (e as CustomEvent<{ alvo: Alvo; nova?: boolean }>).detail; abrirEm(d.alvo, d.nova); setVerTabela(false) }
     const tecla = (e: KeyboardEvent) => {
       // atalhos do modo esc (fora de campos e do editor, sem modal): ⌘B esconde/mostra a tabela (fica a copy) · ⌘[ categorias ·
       // ⌘] colunas Status e Data no modo copy · ⌘P esconde/mostra a copy (fica a tabela inteira) · ⌘C calendário (só sem texto selecionado, para o copiar seguir valendo)
       const alvo = e.target as HTMLElement | null
       const k = e.code
-      // modo copy: ⌘1…⌘9 (ou ⌃/⌥) vão para a 1ª…9ª aba de nota, por cima da troca de página da navbar
+      // modo copy: ⌥1…⌥9 vão para a 1ª…9ª aba de nota (⌘1… troca de página: App)
       const n = /^Digit[1-9]$/.test(k) ? Number(k.slice(5)) : 0
-      if (n && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && abertaRef.current && n <= abasRef.current.lista.length && !document.querySelector('.modal-fundo, .paleta-fundo')) {
+      if (n && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !calendario && abertaRef.current && n <= abasRef.current.lista.length && !document.querySelector('.modal-fundo, .paleta-fundo')) {
         e.preventDefault(); e.stopImmediatePropagation(); setAbas((x) => ({ ...x, ativa: n - 1 })); return
-      }
-      // modo W (navbar escondida) sem copy aberta: ⌘1 tira o filtro de status; ⌘2…⌘5 filtram Gravar, Em edição, Agendado e Publicado
-      const PASTAS = ['', 'gravar', 'edicao', 'agendado', 'publicado'] as const
-      if (n && n <= PASTAS.length && (e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && !abertaRef.current && document.querySelector('.app.modo-w') && !document.querySelector('.modal-fundo, .paleta-fundo')) {
-        e.preventDefault(); e.stopImmediatePropagation(); const st = PASTAS[n - 1]; setT((x) => ({ ...x, filtros: { ...x.filtros, status: st ? [st] : [] } })); return
       }
       // a nota abre com o cursor no editor: lá o ⌘B sem texto selecionado também esconde/mostra a tabela
       // (com seleção segue sendo negrito)
@@ -167,12 +164,11 @@ export function Redacao({ versao }: { versao?: number }) {
       else if (k === 'BracketLeft') { feito(); const m = document.querySelector('.redacao .cats')?.getBoundingClientRect().width; if (m) setCatsW(Math.round(m)); setSemCats((v) => !v) }
       else if (k === 'BracketRight') { feito(); setSemColunas((v) => !v) }
       else if (k === 'KeyP') { feito(); setVerTabela((v) => !v) }
-      else if (k === 'KeyC' && !String(window.getSelection() ?? '')) { feito(); setCal((v) => !v) }
+      else if (k === 'KeyC' && !String(window.getSelection() ?? '')) { feito(); irCal() }
     }
     window.addEventListener(EVENTO_REDACAO, ev); window.addEventListener('keydown', tecla, true)
     return () => { window.removeEventListener(EVENTO_REDACAO, ev); window.removeEventListener('keydown', tecla, true) }
-  }, [abrirEm])
-  useEffect(() => { try { localStorage.setItem(CHAVE_CAL, cal ? 'sim' : 'nao') } catch { /* sem storage */ } }, [cal])
+  }, [abrirEm, calendario])
 
   const recarregarRef = useRef<() => void>(() => {})
   const recarregar = useCallback(async () => {
@@ -205,15 +201,23 @@ export function Redacao({ versao }: { versao?: number }) {
     fetch('/api/copies/vista', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: aberta.nome }) }).catch(() => {})
   }, [chaveAberta, !!est])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const abrir = (a: Alvo, opts?: { nova?: boolean }) => { abrirEm(a, opts?.nova); setCal(false); setVerTabela(false) }
+  // no Calendário a copy abre num modal (nome, propriedades e texto, editáveis); ⌘+clique / ⌘↵ leva para a Redação
+  const [modal, setModal] = useState<Alvo | null>(null)
+  useEffect(() => {
+    if (!modal) return
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target as HTMLElement | null)?.closest?.('input, textarea, select') && !document.querySelector('.tabela-menu, .paleta-fundo')) { e.preventDefault(); e.stopPropagation(); setModal(null) } }
+    window.addEventListener('keydown', esc, true)
+    return () => window.removeEventListener('keydown', esc, true)
+  }, [modal])
+  const abrir = (a: Alvo, opts?: { nova?: boolean }) => { if (calendario) { if (opts?.nova && onAbrirNota) onAbrirNota(a, true); else setModal(a); return }; abrirEm(a, opts?.nova); setVerTabela(false) }
   const statusDe = (a: Alvo) => est?.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)?.status ?? ''
 
   // 📅 Calendário: no canto superior direito, junto das abas de copy (sem copy aberta, no topo da tabela)
   const botoes = <>
     {/* + Nova copy no canto de cima (a mesma janela do ⌘K) */}
     <button className="lateral-btn redacao-nova" onClick={() => window.dispatchEvent(new Event('nova-copy'))} title="Copy nova (⌘K)"><span>+ Nova copy</span><kbd>⌘K</kbd></button>
-    <button className={`lateral-btn ${cal ? 'is-ativa' : ''}`} onClick={() => setCal((v) => !v)}
-      title={cal ? 'Fechar o calendário' : 'Abrir o calendário: arraste uma copy da tabela para um dia para agendar'}><span>📅</span><span>Calendário</span><kbd>⌘C</kbd></button>
+    {!calendario && <button className="lateral-btn" onClick={irCal}
+      title="Ir para o Calendário: arraste uma copy da tabela para um dia para agendar"><span>📅</span><span>Calendário</span><kbd>⌘C</kbd></button>}
   </>
 
   return (
@@ -268,7 +272,7 @@ export function Redacao({ versao }: { versao?: number }) {
       {cal ? (
         <aside className="redacao-lado redacao-cal glass glass--light">
           <header className="redacao-lado-topo"><b>📅 Calendário</b>
-            <button className="btn-icone" onClick={() => setCal(false)} aria-label="Fechar o calendário">×</button></header>
+</header>
           <CalendarioEditorial key={calVersao} onAbrir={(raiz, nome) => abrir({ raiz, nome } as Alvo)} onMudou={() => { recarregar(); avisar('Agendada') }} />
         </aside>
       ) : aberta ? (
@@ -293,6 +297,16 @@ export function Redacao({ versao }: { versao?: number }) {
             onMudou={(novo) => { if (novo) setAberta(novo); recarregar(); setCalVersao((v) => v + 1) }} />
         </aside>
       ) : null}
+      {modal && <div className="modal-fundo" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(null) }}>
+        <div className="modal-nota modal-cal-nota glass glass--light" role="dialog" aria-label={modal.nome}>
+          <button className="btn-icone modal-cal-fechar" onClick={() => setModal(null)} aria-label="Fechar" title="Fechar (Esc)">×</button>
+          <button className="lateral-btn modal-cal-ir" onClick={() => { const a = modal; setModal(null); onAbrirNota?.(a, false) }} title="Abrir na Redação">Abrir na Redação ↗</button>
+          <PainelNota key={`${modal.raiz}/${modal.nome}`} alvo={modal} versao={versao} avisar={avisar}
+            prod={est?.producoes.find((x) => x.raiz === modal.raiz && x.nome === modal.nome)}
+            onLink={(nome) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) setModal({ raiz: p.raiz, nome: p.nome }) }}
+            onMudou={(novo) => { if (novo) setModal(novo); recarregar(); setCalVersao((v) => v + 1) }} />
+        </div>
+      </div>}
     </div>
   )
 }

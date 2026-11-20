@@ -606,9 +606,19 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .cal-ed-titulo { margin: 0; text-transform: capitalize; flex-shrink: 0; }
 .cal-ed-topo .mudo { flex: 1; min-width: 220px; }
 .cal-ed-grade { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 10px 6px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(23, 24, 27, .2) transparent; }
-.cal-ed-nomes { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 2px 0 8px; position: sticky; top: 0; background: inherit; z-index: 1; }
+.cal-ed-nomes { display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); padding: 6px 0 8px; margin-top: -10px; position: sticky; top: -10px; background: rgba(246, 246, 244, .94); backdrop-filter: blur(8px); z-index: 2; border-bottom: 1px solid rgba(23, 24, 27, .08); }
 .cal-ed-nomes span { text-align: center; font-size: 12px; font-weight: 500; color: var(--mute); }
-.cal-ed-semana { display: flex; flex-direction: column; }
+.cal-ed-semana { display: grid; grid-template-columns: 52px minmax(0, 1fr); }
+.cal-ed-corpo { display: flex; flex-direction: column; min-width: 0; }
+/* modo contínuo: na margem, o mês (na semana em que ele começa) e o número da semana */
+.cal-ed-margem { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 22px; font-size: 11px; color: var(--mute); }
+.cal-ed-nomes .cal-ed-margem { padding-top: 0; font-size: 11px; font-weight: 500; opacity: .7; }
+.cal-ed-margem b { font-size: 11.5px; font-weight: 600; color: var(--ink-2); text-transform: lowercase; }
+.cal-ed-nsem { min-width: 26px; padding: 2px 5px; border-radius: 7px; border: 1px solid rgba(23, 24, 27, .14); text-align: center; font-variant-numeric: tabular-nums; }
+/* a virada do mês é uma "escadinha": linha em cima dos 7 primeiros dias e à esquerda do dia 1 */
+.cal-ed-dia.is-mes-topo { border-top: 1.5px solid rgba(23, 24, 27, .32); }
+.cal-ed-dia.is-mes-esq { border-left: 1.5px solid rgba(23, 24, 27, .32); }
+.cal-ed-dia.is-mes-par { background: rgba(23, 24, 27, .018); }
 .cal-ed-lane { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; min-height: 10px; padding: 2px 2px 6px; cursor: crosshair; }
 .cal-ed-bloco { height: 22px; padding: 0 10px; border-radius: 999px 999px 999px 999px; border: 1.5px dashed hsl(var(--matiz) 70% 42%); background: hsl(var(--matiz) 85% 94%); color: hsl(var(--matiz) 60% 28%);
   font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
@@ -623,7 +633,9 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .cal-ed-num { text-align: center; font-size: 12px; font-weight: 500; color: var(--ink-2); line-height: 20px; }
 .cal-ed-dia.is-hoje .cal-ed-num { align-self: center; padding: 0 8px; border-radius: 999px; background: #1d1d1f; color: var(--lime); }
 .cal-ed-chips { display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow-y: auto; }
-.cal-ed-chip { padding: 3px 7px; border-radius: 8px; background: rgba(255, 255, 255, .55); font-size: 11px; font-weight: 500; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; }
+.cal-ed-chip { display: flex; align-items: center; gap: 5px; flex: none; padding: 3px 7px; border-radius: 8px; background: rgba(255, 255, 255, .55); font-size: 11px; font-weight: 500; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; }
+.cal-ed-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cal-ed-check { flex: none; width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: #6b8a12; }
 .cal-ed-chip:hover { background: rgba(255, 255, 255, .85); }
 .cal-ed-chip.is-publicado { background: rgba(197, 227, 60, .35); }
 .cal-ed-chip.is-edicao { box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .2); }
@@ -1328,10 +1340,10 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .cats-acoes .cats-nova { margin-top: 0; }
 
 /* Criação: botão "Mostrar publicados" no fim da tabela e o traço que separa as publicadas */
-.tabela-pub-botao td { padding: 14px 0 10px 30px !important; border: 0 !important; background: transparent !important; }
+.tabela-pub-botao td { padding: 6px 0 4px 30px !important; border: 0 !important; background: transparent !important; }
 .tabela-pub-botao button { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12px; color: var(--mute); cursor: pointer; text-decoration: underline; text-decoration-color: rgba(23, 24, 27, .25); text-underline-offset: 3px; }
 .tabela-pub-botao button:hover { color: var(--ink); text-decoration-color: currentColor; }
-.tabela-pub-sep td { padding: 10px 0 6px 30px !important; border: 0 !important; border-top: 1px solid rgba(23, 24, 27, .16) !important; background: transparent !important; }
+.tabela-pub-sep td { padding: 0 0 0 30px !important; height: 1px; border: 0 !important; border-top: 1px solid rgba(23, 24, 27, .16) !important; background: transparent !important; }
 .tabela-pub-sep span { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: rgba(23, 24, 27, .45); }
 
 /* o Status (última coluna) fica com a sobra: as linhas vão até a borda da tabela */
@@ -1567,7 +1579,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
    escondidas quando fechado e o traço até a borda. A linha toda recolhe/mostra. */
 .cats-grupo { display: flex; align-items: center; gap: 6px; padding: 12px 8px 3px 2px; cursor: pointer; border-radius: 6px; }
 .cats-grupo hr { flex: 1; align-self: center; margin: 1px 0 0 4px; }
-.cats-grupo-seta { flex: none; color: rgba(23, 24, 27, .4); transform: rotate(90deg); transition: transform .15s, opacity .15s; opacity: 0; }
+.cats-grupo-seta { flex: none; color: rgba(23, 24, 27, .4); transform: rotate(90deg); transition: transform .15s, opacity .15s; opacity: 1; }
 .cats-grupo:hover .cats-grupo-seta, .cats-grupo:focus-visible .cats-grupo-seta, .cats-grupo.is-fechado .cats-grupo-seta { opacity: 1; }
 .cats-grupo.is-fechado .cats-grupo-seta { transform: none; }
 .cats-grupo-nome { font-size: 11.5px; font-weight: 500; color: rgba(23, 24, 27, .4); white-space: nowrap; }
@@ -1630,3 +1642,26 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 @media (prefers-reduced-motion: reduce) { .cats-novo, .cats-item.is-nova { animation: none; } .cats-item.is-nova { background-color: rgba(255, 214, 64, .22); } }
 /* na Redação o texto ocupa a coluna inteira (a largura vem das bordas arrastáveis, --copy-larg) */
 .redacao .redacao-nota .cm-content { max-width: none !important; }
+/* botão Colunas: marcar e arrastar a ordem */
+.tabela-cols-menu { min-width: 240px; }
+.tabela-cols-item { position: relative; cursor: grab; }
+.tabela-cols-item input { margin: 0; accent-color: #1d1d1f; cursor: pointer; }
+.tabela-cols-item span { flex: 1; }
+.tabela-cols-item.is-fixa { cursor: default; opacity: .55; }
+.tabela-cols-alca { font-style: normal; font-size: 11px; letter-spacing: -2px; color: rgba(23, 24, 27, .3); }
+.tabela-cols-item.is-linha-antes::before, .tabela-cols-item.is-linha-depois::after { content: ''; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 2px; background: #1d1d1f; }
+.tabela-cols-item.is-linha-antes::before { top: -1px; }
+.tabela-cols-item.is-linha-depois::after { bottom: -1px; }
+/* colunas novas e o vazio do fim (fica com a sobra da largura) */
+.tabela .col-tags, .tabela .col-palavras, .tabela .col-mtime { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-2); }
+.tabela td.col-palavras { text-align: right; }
+.tabela th, .tabela td { overflow: hidden; }
+.tabela-embutida .tabela th.col-status, .tabela-embutida .tabela .col-status, .tabela-embutida .tabela .col-data { width: auto; }
+.tabela-embutida .tabela th { position: sticky; }
+.tabela th .tabela-alca { right: 0 !important; }
+
+/* Calendário: a copy abre num modal (nome, propriedades e texto editáveis) */
+.modal-nota.modal-cal-nota { width: min(900px, 92vw); height: min(86vh, 900px); }
+.modal-cal-nota .modal-topo { padding-right: 210px; }
+.modal-cal-fechar { position: absolute; top: 14px; right: 14px; z-index: 3; }
+.modal-cal-ir { position: absolute; top: 14px; right: 56px; z-index: 3; height: 32px; padding: 0 12px; font-size: 12.5px; }

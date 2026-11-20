@@ -13,17 +13,19 @@ import { NovoRapido, type TipoNovo } from './NovoRapido'
 import { Paleta } from './Paleta'
 import { Skills } from './Skills'
 
-// navbar do topo, em três grupos: Redação e Skills | radares | agendamento (Metricool).
+// navbar do topo, em três grupos: Redação, Calendário e Skills | radares | agendamento (Metricool).
 // ⌘O busca notas e abre numa aba da Redação.
-const GRUPOS = [['Redação', 'Skills'], ['Instagram', 'X', 'Sites'], ['Agendamento']] as const
+const GRUPOS = [['Redação', 'Calendário', 'Skills'], ['Instagram', 'X', 'Sites'], ['Agendamento']] as const
 const NAV = GRUPOS.flat()
 const ICONE: Record<(typeof NAV)[number], string> = {
-  Redação: 'editar', Skills: 'skills', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
+  Redação: 'editar', Calendário: 'calendario', Skills: 'skills', X: 'xlogo', Instagram: 'instagram', Sites: 'globo', Agendamento: 'publicar',
 }
 export default function App() {
   const [pagina, setPagina] = useState<string>(() => { try { const p = localStorage.getItem('pagina'); return p && (NAV as readonly string[]).includes(p) ? p : 'Redação' } catch { return 'Redação' } })
   onde.pagina = pagina   // vai ao backend (GET /api/onde): o Claude Code sabe onde o Rodrigo está
   useEffect(() => { try { localStorage.setItem('pagina', pagina) } catch { /* sem storage */ } }, [pagina])
+  // a Redação e o Calendário trocam de página entre si (⌘C, botão 📅): evento {detail: nome da página}
+  useEffect(() => { const ir = (e: Event) => { const p = (e as CustomEvent<string>).detail; if ((NAV as readonly string[]).includes(p)) setPagina(p) }; window.addEventListener('ir-pagina', ir); return () => window.removeEventListener('ir-pagina', ir) }, [])
   const [paleta, setPaleta] = useState(false)
   const [novo, setNovo] = useState<TipoNovo | null>(null)   // ⌘⇧I nova ideia · ⌘⇧N nova produção
   const [avisoApp, setAvisoApp] = useState<string | null>(null)
@@ -161,7 +163,8 @@ export default function App() {
       // ⌃1…⌃8 (ou ⌥1…, ou ⌘1… onde o navegador deixa: no Chrome o ⌘1–8 troca de aba do navegador antes da página)
       // trocam de aba, na ordem da navbar
       const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : 0
-      if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota, .redacao-nota, .app.modo-w .redacao')) {   // modo copy: abas de nota; modo W na Redação: abas da tabela (Redacao)
+      // (com uma copy aberta, o ⌥1… fica para as abas de nota: Redacao)
+      if ((e.metaKey || e.ctrlKey || e.altKey) && !e.shiftKey && n >= 1 && n <= NAV.length && !document.querySelector('.modal-fundo .modal-nota') && !(e.altKey && !e.metaKey && !e.ctrlKey && document.querySelector('.redacao-nota'))) {
         e.preventDefault()
         setPagina(NAV[n - 1])
       }
@@ -198,7 +201,8 @@ export default function App() {
       {/* o chat flutua à direita, por cima da página (a página não encolhe) */}
       <main className="corpo sem-chat">
         <section className="pagina">
-          {pagina === 'Redação' ? <Redacao versao={versao + mudou} />
+          {pagina === 'Redação' ? <Redacao key="redacao" versao={versao + mudou} />
+            : pagina === 'Calendário' ? <Redacao key="calendario" calendario versao={versao + mudou} onAbrirNota={(alvo, nova) => abrirNaRedacao(alvo, !!nova)} />
             : pagina === 'Skills' ? <Skills versao={versao + mudou} onAbrirNota={(alvo) => abrirNaRedacao(alvo, true)} />
             : pagina === 'X' ? <Radar key="x" titulo="X" fontes={['x']} />
             : pagina === 'Instagram' ? <Instagram />

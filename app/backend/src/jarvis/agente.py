@@ -13,7 +13,7 @@ from . import copies, db, notas, youtube
 from .config import APP, MODELO_CHAT, VAULT
 
 FERRAMENTAS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch", "WebFetch", "Skill", "TodoWrite"]
-PAGINAS = ["Redação", "Skills", "Instagram", "X", "Sites", "Agendamento"]
+PAGINAS = ["Redação", "Calendário", "Skills", "Instagram", "X", "Sites", "Agendamento"]
 
 
 def _ok(texto: str) -> dict:
@@ -104,7 +104,7 @@ def _achar(alvo: str) -> tuple[str, str]:
     raise FileNotFoundError(alvo)
 
 
-@tool("tela", "Mexe na tela do Rodrigo, como ele faria com o mouse: acao = pagina (alvo: Redação, Skills, Instagram, X, "
+@tool("tela", "Mexe na tela do Rodrigo, como ele faria com o mouse: acao = pagina (alvo: Redação, Calendário, Skills, Instagram, X, "
       "Sites ou Agendamento) ou abrir_nota (alvo: nome da nota, ou um pedaço dele; abre numa aba da Redação). "
       "`nova`=true abre numa aba nova em vez da da frente.", {"acao": str, "alvo": str, "nova": bool})
 async def _tela(args: dict) -> dict:

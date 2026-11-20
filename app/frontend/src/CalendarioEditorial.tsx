@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import type { Raiz } from './notas'
+import { mudarStatus } from './desfazer'
+import { avisar } from './porta'
 
 /** Calendário editorial: as notas de `1 Copies` pela propriedade `scheduled`
  *  (arraste para outro dia reagenda) e blocos de planejamento tracejados (arraste vazio numa
@@ -15,6 +17,13 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const segunda = (d: Date) => { const s = new Date(d.getFullYear(), d.getMonth(), d.getDate()); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return s }
 const addDias = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 const diffDias = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / DIA)
+/** Semana ISO (1–53): a do número que aparece na margem. */
+function semanaIso(d: Date) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7))
+  return Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / DIA + 1) / 7)
+}
+const nomeMes = (m: number) => MESES[m][0].toUpperCase() + MESES[m].slice(1)
 /** Matiz estável a partir do texto, pra cada bloco ("FIA", "VSL"...) ter sempre a mesma cor. */
 function matiz(t: string) {
   let h = 0
@@ -23,7 +32,10 @@ function matiz(t: string) {
 }
 
 export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz, nome: string) => void; onMudou?: () => void }) {
-  const [mes, setMes] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
+  // modo contínuo: as semanas seguem sem quebra de mês (a virada é a "escadinha"); rolar perto das pontas carrega mais
+  const [ini, setIni] = useState(() => addDias(segunda(new Date()), -12 * 7))
+  const [nSem, setNSem] = useState(40)
+  const [titulo, setTitulo] = useState('')
   const [itens, setItens] = useState<ItemAgenda[]>([])
   const [blocos, setBlocos] = useState<Bloco[]>([])
   const [sobreDia, setSobreDia] = useState<string | null>(null)
@@ -34,13 +46,57 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
     fetch('/api/planejamento').then((r) => r.json()).then((d) => setBlocos(d.itens)).catch(() => {})
   }, [])
   useEffect(() => { carregar() }, [carregar])
+  // ao abrir (e no botão Hoje) a semana de hoje fica no topo da grade
+  const grade = useRef<HTMLDivElement>(null)
+  const [irHoje, setIrHoje] = useState(0)
+  const pendente = useRef(true)   // só na abertura e no Hoje: reagendar ou publicar não mexe na rolagem
+  const irPara = (k: string) => {
+    const g = grade.current, el = g?.querySelector(`.cal-ed-semana[data-ini="${k}"]`) as HTMLElement | null
+    if (!g || !el) return false
+    const cab = g.querySelector('.cal-ed-nomes')?.getBoundingClientRect().bottom ?? g.getBoundingClientRect().top
+    g.scrollTop += el.getBoundingClientRect().top - cab
+    return true
+  }
+  useEffect(() => {
+    if (!pendente.current || !itens.length) return
+    const id = window.requestAnimationFrame(() => { if (irPara(iso(segunda(new Date())))) pendente.current = false })
+    return () => window.cancelAnimationFrame(id)
+  }, [irHoje, itens])   // eslint-disable-line react-hooks/exhaustive-deps
+  // carregar semanas antes mantém a vista no lugar (compensa a altura que entrou em cima)
+  const antes = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const g = grade.current
+    if (g && antes.current != null) { g.scrollTop += g.scrollHeight - antes.current; antes.current = null }
+  }, [ini])
+  const rolou = () => {
+    const g = grade.current
+    if (!g) return
+    if (g.scrollTop < 300 && antes.current == null) { antes.current = g.scrollHeight; setIni((d) => addDias(d, -8 * 7)); setNSem((n) => n + 8) }
+    else if (g.scrollHeight - g.scrollTop - g.clientHeight < 300) setNSem((n) => n + 8)
+    // título: os meses que aparecem na vista (como "Outubro – Novembro 2026")
+    const r = g.getBoundingClientRect(), cab = (g.querySelector('.cal-ed-nomes') as HTMLElement | null)?.offsetHeight ?? 0
+    const vis = [...g.querySelectorAll<HTMLElement>('.cal-ed-semana')].filter((el) => { const b = el.getBoundingClientRect(); return b.bottom > r.top + cab + 20 && b.top < r.bottom })
+    if (!vis.length) return
+    const quinta = (el: HTMLElement) => addDias(new Date(el.dataset.ini + 'T12:00'), 3)
+    const a = quinta(vis[0]), b = quinta(vis[vis.length - 1])
+    setTitulo(a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear() ? `${nomeMes(a.getMonth())} ${a.getFullYear()}`
+      : `${nomeMes(a.getMonth())}${a.getFullYear() !== b.getFullYear() ? ` ${a.getFullYear()}` : ''} – ${nomeMes(b.getMonth())} ${b.getFullYear()}`)
+  }
+  useEffect(() => { rolou() })   // eslint-disable-line react-hooks/exhaustive-deps
+  // ‹ ›: para o começo do mês anterior/seguinte ao que está no topo
+  const pularMes = (dir: -1 | 1) => {
+    const g = grade.current
+    if (!g) return
+    const r = g.getBoundingClientRect(), cab = (g.querySelector('.cal-ed-nomes') as HTMLElement | null)?.offsetHeight ?? 0
+    const primeira = [...g.querySelectorAll<HTMLElement>('.cal-ed-semana')].find((el) => el.getBoundingClientRect().bottom > r.top + cab + 20)
+    if (!primeira) return
+    const q = addDias(new Date(primeira.dataset.ini + 'T12:00'), 3)
+    const alvo = segunda(new Date(q.getFullYear(), q.getMonth() + dir, 1))
+    if (alvo < ini) { setIni(alvo); setNSem((n) => n + Math.round((ini.getTime() - alvo.getTime()) / (7 * DIA))); window.requestAnimationFrame(() => irPara(iso(alvo))); return }
+    if (!irPara(iso(alvo))) { setNSem((n) => n + 8); window.requestAnimationFrame(() => irPara(iso(alvo))) }
+  }
 
-  const semanas = useMemo(() => {
-    const ini = segunda(mes)
-    const fimMes = new Date(mes.getFullYear(), mes.getMonth() + 1, 0)
-    const n = Math.round((segunda(fimMes).getTime() - ini.getTime()) / (7 * DIA)) + 1
-    return Array.from({ length: n }, (_, w) => Array.from({ length: 7 }, (_, d) => addDias(ini, w * 7 + d)))
-  }, [mes])
+  const semanas = useMemo(() => Array.from({ length: nSem }, (_, w) => Array.from({ length: 7 }, (_, d) => addDias(ini, w * 7 + d))), [ini, nSem])
 
   const porDia = useMemo(() => {
     const m: Record<string, ItemAgenda[]> = {}
@@ -55,6 +111,16 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
     await fetch(`/api/notas/${raiz}/${encodeURIComponent(nome)}/agenda`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, de }),   // de: qual das datas da nota foi arrastada (as outras ficam)
     })
+    carregar()
+    onMudou?.()
+  }
+
+  // checkbox do chip: marcar publica (vai para 2 Publicados); desmarcar volta para Priorizar como agendado. O ⌘Z desfaz.
+  async function publicar(it: ItemAgenda, sim: boolean) {
+    const st = sim ? 'publicado' : 'agendado'
+    setItens((l) => l.map((x) => (x.raiz === it.raiz && x.nome === it.nome ? { ...x, status: st } : x)))
+    try { await mudarStatus([{ nome: it.nome, status: it.status }], st); avisar(sim ? 'Publicada' : 'Voltou para Priorizar') }
+    catch (e) { avisar((e as Error).message) }
     carregar()
     onMudou?.()
   }
@@ -81,19 +147,19 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
   return (
     <div className="cal-ed">
       <div className="cal-ed-topo">
-        <h2 className="titulo cal-ed-titulo">{MESES[mes.getMonth()][0].toUpperCase() + MESES[mes.getMonth()].slice(1)} {mes.getFullYear()}</h2>
+        <h2 className="titulo cal-ed-titulo">{titulo}</h2>
         <div className="acoes-topo">
-          <button className="pilula" onClick={() => setMes((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))} aria-label="Mês anterior">‹</button>
-          <button className="pilula" onClick={() => { const d = new Date(); setMes(new Date(d.getFullYear(), d.getMonth(), 1)) }}>Hoje</button>
-          <button className="pilula" onClick={() => setMes((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))} aria-label="Próximo mês">›</button>
+          <button className="pilula" onClick={() => pularMes(-1)} aria-label="Mês anterior">‹</button>
+          <button className="pilula" onClick={() => { pendente.current = true; setIrHoje((v) => v + 1) }}>Hoje</button>
+          <button className="pilula" onClick={() => pularMes(1)} aria-label="Próximo mês">›</button>
         </div>
       </div>
 
-      <div className="cal-ed-grade glass glass--light">
-        <div className="cal-ed-nomes">{DIAS.map((d) => <span key={d}>{d}</span>)}</div>
+      <div ref={grade} className="cal-ed-grade glass glass--light" onScroll={rolou}>
+        <div className="cal-ed-nomes"><span className="cal-ed-margem">sem</span>{DIAS.map((d) => <span key={d}>{d}</span>)}</div>
         {semanas.map((sem, si) => (
-          <SemanaEditorial key={si} semana={sem} porDia={porDia} blocos={blocos} hoje={hoje} mesAtual={mes.getMonth()}
-            sobreDia={sobreDia} onSobreDia={setSobreDia} onSoltar={soltarChave} onAbrir={onAbrir}
+          <SemanaEditorial key={iso(sem[0])} primeira={si === 0} semana={sem} porDia={porDia} blocos={blocos} hoje={hoje}
+            sobreDia={sobreDia} onSobreDia={setSobreDia} onSoltar={soltarChave} onAbrir={onAbrir} onPublicar={publicar}
             onCriarBloco={(inicio, fim) => setEditando({ inicio, fim })} onClickBloco={(b) => setEditando(b)} />
         ))}
       </div>
@@ -106,10 +172,11 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
   )
 }
 
-function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onSobreDia, onSoltar, onAbrir, onCriarBloco, onClickBloco }: {
-  semana: Date[]; porDia: Record<string, ItemAgenda[]>; blocos: Bloco[]; hoje: string; mesAtual: number
+function SemanaEditorial({ semana, primeira, porDia, blocos, hoje, sobreDia, onSobreDia, onSoltar, onAbrir, onPublicar, onCriarBloco, onClickBloco }: {
+  semana: Date[]; primeira: boolean; porDia: Record<string, ItemAgenda[]>; blocos: Bloco[]; hoje: string
   sobreDia: string | null; onSobreDia: (k: string | null) => void
   onSoltar: (raiz: Raiz, nome: string, data: string, de?: string) => void; onAbrir: (raiz: Raiz, nome: string) => void
+  onPublicar: (it: ItemAgenda, sim: boolean) => void
   onCriarBloco: (inicio: string, fim: string) => void; onClickBloco: (b: Bloco) => void
 }) {
   const [sel, setSel] = useState<{ a: number; b: number } | null>(null)
@@ -139,7 +206,10 @@ function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onS
   }
 
   return (
-    <div className="cal-ed-semana">
+    <div className="cal-ed-semana" data-ini={chaves[0]}>
+      {(() => { const d1 = semana.find((d) => d.getDate() === 1); const m = d1 ?? (primeira ? semana[3] : null)
+        return <div className="cal-ed-margem">{m && <b>{MESES[m.getMonth()].slice(0, 3)}{m.getMonth() === 0 || primeira ? ` ${String(m.getFullYear()).slice(2)}` : ''}</b>}<span className="cal-ed-nsem">{semanaIso(semana[0])}</span></div> })()}
+      <div className="cal-ed-corpo">
       <div className="cal-ed-lane" onMouseDown={iniciarSel}>
         {faixas.map(({ b, col1, col2, esq, dir }) => (
           <button key={b.id} className={`cal-ed-bloco ${esq ? 'is-esq' : ''} ${dir ? 'is-dir' : ''}`}
@@ -152,7 +222,7 @@ function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onS
         {semana.map((d, j) => {
           const k = chaves[j]
           return (
-            <div key={k} className={`cal-ed-dia ${k === hoje ? 'is-hoje' : ''} ${d.getMonth() !== mesAtual ? 'is-fora' : ''} ${sobreDia === k ? 'is-sobre' : ''}`}
+            <div key={k} className={`cal-ed-dia ${k === hoje ? 'is-hoje' : ''} ${k < hoje ? 'is-passado' : ''} ${d.getDate() <= 7 ? 'is-mes-topo' : ''} ${d.getDate() === 1 && j > 0 ? 'is-mes-esq' : ''} ${d.getMonth() % 2 ? 'is-mes-par' : ''} ${sobreDia === k ? 'is-sobre' : ''}`}
               onDragOver={(e) => { e.preventDefault(); onSobreDia(k) }} onDragLeave={() => onSobreDia(null)}
               onDrop={(e) => {
                 e.preventDefault()
@@ -162,14 +232,19 @@ function SemanaEditorial({ semana, porDia, blocos, hoje, mesAtual, sobreDia, onS
               <span className="cal-ed-num">{d.getDate() === 1 ? `1 ${MESES[d.getMonth()].slice(0, 3)}` : d.getDate()}</span>
               <div className="cal-ed-chips">
                 {(porDia[k] ?? []).map((it) => (
-                  <button key={`${it.raiz}/${it.nome}`} className={`cal-ed-chip is-${it.status}`} draggable title={it.nome}
+                  <div key={`${it.raiz}/${it.nome}`} role="button" tabIndex={0} className={`cal-ed-chip is-${it.status}`} draggable title={it.nome}
                     onDragStart={(e) => e.dataTransfer.setData('text/plain', `${it.raiz}\u0000${it.nome}\u0000${it.scheduled}`)}
-                    onClick={() => onAbrir(it.raiz, it.nome)}>{it.nome}</button>
+                    onClick={() => onAbrir(it.raiz, it.nome)} onKeyDown={(e) => { if (e.key === 'Enter') onAbrir(it.raiz, it.nome) }}>
+                    <input type="checkbox" className="cal-ed-check" checked={it.status === 'publicado'} title={it.status === 'publicado' ? 'Desmarcar: volta para Priorizar' : 'Marcar como publicada'}
+                      onClick={(e) => e.stopPropagation()} onChange={(e) => onPublicar(it, e.target.checked)} />
+                    <span>{it.nome}</span>
+                  </div>
                 ))}
               </div>
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
