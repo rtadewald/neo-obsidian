@@ -46,6 +46,8 @@ export type Criacao = { cores: Record<string, string>; categorias: string[]; ord
 const GRUPO_FORMATO: Record<string, string> = { '📱': '📱 Reels', '📝': '📱 Reels', '🏞️': '📱 Reels', '🏞': '📱 Reels', '💻': '📱 Reels', '📚': '📚 Aula', '💰': '💰 Ad', '📺': '📺 VSL' }
 
 const dia = (p: Producao) => (p.scheduled ?? '').slice(0, 10) || new Date((p.criado ?? p.mtime) * 1000).toISOString().slice(0, 10)
+/** Só a data agendada (`scheduled`): para ordenar por Data, as sem data vão sempre para o fim. */
+const agendada = (p: Producao) => (p.scheduled ?? '').slice(0, 10)
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data' }
 /** Colunas que dá para mostrar depois da Copy (botão Colunas: escolher e arrastar a ordem; fica no localStorage). */
@@ -208,7 +210,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
       && (!f?.data || (f.data === 'com') === !!p.scheduled))
     if (t.regras?.length) {   // regras do ⇅: a primeira decide; empate vai para a seguinte. Vazio vai sempre para o fim
       const val = (p: Producao, c: CampoOrdem): string | number | null => c === 'status' ? STATUS.findIndex((x) => x.k === p.status)
-        : c === 'categoria' ? (p.categoria ? semEmoji(p.categoria).toLowerCase() : null) : c === 'data' ? (dia(p) || null)
+        : c === 'categoria' ? (p.categoria ? semEmoji(p.categoria).toLowerCase() : null) : c === 'data' ? (agendada(p) || null)
         : c === 'mtime' ? p.mtime : c === 'palavras' ? p.palavras ?? 0 : c === 'formato' ? ORDEM_FORMATO.indexOf(p.formato)
         : c === 'tags' ? ((p.tags ?? []).join(' ').toLowerCase() || null) : semEmoji(p.nome).toLowerCase()
       const regras = t.regras
@@ -225,12 +227,15 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
     }
     if (porStatus) {   // por data (sem data no fim) e depois categoria
       const cat = (p: Producao) => (p.categoria ? semEmoji(p.categoria).toLowerCase() : '\uffff')
-      return l.sort((a, b) => { const x = dia(a) || '9999', y = dia(b) || '9999'; return x < y ? -1 : x > y ? 1 : cat(a).localeCompare(cat(b)) })
+      return l.sort((a, b) => { const x = agendada(a) || '9999', y = agendada(b) || '9999'; return x < y ? -1 : x > y ? 1 : cat(a).localeCompare(cat(b)) })
     }
     const { col, asc } = t.ordem
     const v = (p: Producao): string | number => col === 'data' ? dia(p) : col === 'formato' ? ORDEM_FORMATO.indexOf(p.formato)
       : col === 'nome' ? semEmoji(p.nome).toLowerCase() : p.mtime   // 'mtime': ordem antiga guardada (Em edição)
-    return l.sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1) })
+    return l.sort((a, b) => {
+      if (col === 'data') { const x = agendada(a), y = agendada(b); if (!x !== !y) return x ? -1 : 1 }   // sem data no fim, nos dois sentidos
+      const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1)
+    })
   }, [daPasta, t.ano, t.filtros, t.ordem, t.regras, t.pasta, pinsSet, arquivadas, porStatus])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // aba Criação: categoria › copy, em grupos que abrem e fecham (tudo começa fechado)
@@ -361,7 +366,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
     onCriacao(mud)
   }
   // Status e Categoria não são colunas da ordem do cabeçalho: o clique vira uma regra só (clicar de novo inverte)
-  const ordenarPor = (campo: CampoOrdem) => mudar({ regras: [{ campo, asc: t.regras?.length === 1 && t.regras[0].campo === campo ? !t.regras[0].asc : true }] })
+  // por status a data já vem ↑: lá o 1º clique na Data inverte (primeira = false)
+  const ordenarPor = (campo: CampoOrdem, primeira = true) => mudar({ regras: [{ campo, asc: t.regras?.length === 1 && t.regras[0].campo === campo ? !t.regras[0].asc : primeira }] })
   const setaDe = (campo: CampoOrdem) => t.regras?.[0]?.campo === campo ? <span className="tabela-seta">{t.regras[0].asc ? '↑' : '↓'}</span> : null
   const ordenar = (col: Coluna) => mudar({ regras: [], ordem: { col, asc: t.ordem.col === col ? !t.ordem.asc : col === 'nome' } })
   const filtrando = nFiltros(t.filtros) || t.ano
@@ -481,8 +487,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
                   {ROTULO_COL.nome}{!t.regras?.length && !porStatus && t.ordem.col === 'nome' && <span className="tabela-seta">{t.ordem.asc ? '↑' : '↓'}</span>}
                   <i className="tabela-alca" onPointerDown={redimensionar('nome')} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); setLarg(({ nome: _, ...l }) => l) }} title="Arraste para mudar a largura (duplo clique volta ao padrão)" /></th>
                 {efetivas.map((c) => (
-                  <th key={c} className={`col-${c}`} style={{ width: largDe(c) }} onClick={() => (c === 'data' ? ordenar('data') : ordenarPor(c))}>
-                    {COLS_EXTRA[c]}{c === 'data' ? (!t.regras?.length && (porStatus || t.ordem.col === 'data') && <span className="tabela-seta">{porStatus || t.ordem.asc ? '↑' : '↓'}</span>) : setaDe(c)}
+                  <th key={c} className={`col-${c}`} style={{ width: largDe(c) }} onClick={() => (c === 'data' ? (porStatus ? ordenarPor('data', false) : ordenar('data')) : ordenarPor(c))}>
+                    {COLS_EXTRA[c]}{c === 'data' ? (t.regras?.length ? setaDe('data') : ((porStatus || t.ordem.col === 'data') && <span className="tabela-seta">{porStatus || t.ordem.asc ? '↑' : '↓'}</span>)) : setaDe(c)}
                     <i className="tabela-alca" onPointerDown={redimensionar(c)} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); setLarg(({ [c]: _, ...l }) => l) }} title="Arraste para mudar a largura (duplo clique volta ao padrão)" /></th>
                 ))}
                 <th className="col-fim" /></tr>
