@@ -10,6 +10,7 @@ export type Producao = {
   tags?: string[]
   categoria?: string | null   // `categoria:` da copy: o grupo dela na Criação e no menu de categorias
   arquivado?: boolean         // `arquivado: true`: fora da Criação (botão direito → Arquivar)
+  nova?: boolean              // criada (⌘K, radar) ou com ideia plugada e ainda não aberta: "new" e 💡 na categoria
 } & Midia
 export type Formato = { emoji: string; nome: string }
 /** GET /api/copies: todas as copies do vault e os formatos. */
@@ -38,6 +39,8 @@ let tudoCache: EstadoCanvas | null = null
 let noAr: Promise<EstadoCanvas> | null = null
 let deNovo: Promise<EstadoCanvas> | null = null
 export const tudoEmCache = () => tudoCache
+/** Copies que o app acabou de criar e abriu sozinho: essa primeira abertura não conta como "vista" (o new fica). */
+export const recemCriadas = new Set<string>()
 const buscar = () => fetch('/api/copies', { cache: 'no-store' }).then((r) => r.json() as Promise<EstadoCanvas>).then((e) => { tudoCache = e; return e })
 export function carregarTudo(): Promise<EstadoCanvas> {
   if (!noAr) { noAr = buscar().finally(() => { noAr = null }); return noAr }

@@ -23,6 +23,21 @@ export function listaCategorias(producoes: Producao[], ordem: string[]): string[
   return [...ordem.filter((c) => c && c !== SEM), ...resto]
 }
 
+/** Status e categorias pinados no menu (`st:<status>` e `cat:<nome>`, no localStorage): com o pai recolhido (a seção
+ *  Status ou Categorias, ou o grupo), os pinados continuam à vista. O menu de botão direito da Tabela também pina. */
+const CHAVE_PINS = 'cats-pinados'
+const lerPins = (): string[] => { try { return JSON.parse(localStorage.getItem(CHAVE_PINS) || '[]') } catch { return [] } }
+export function usePinsMenu() {
+  const [pins, setPins] = useState<string[]>(lerPins)
+  useEffect(() => { const f = () => setPins(lerPins()); window.addEventListener('cats-pins', f); return () => window.removeEventListener('cats-pins', f) }, [])
+  const alternar = (k: string) => {
+    const l = lerPins(), n = l.includes(k) ? l.filter((x) => x !== k) : [...l, k]
+    try { localStorage.setItem(CHAVE_PINS, JSON.stringify(n)) } catch { /* sem storage */ }
+    window.dispatchEvent(new Event('cats-pins'))
+  }
+  return [pins, alternar] as const
+}
+
 /** Ícones da frente das categorias (os mesmos dos formatos do vault). */
 export const ICONES_CAT = ['📱', '💰', '📺', '📚', '🎥', '🏞️']
 const separar = (nome: string) => { const t = semEmoji(nome); return { icone: nome.slice(0, nome.length - t.length).trim(), texto: t } }
@@ -48,9 +63,10 @@ export function EditorCategoria({ inicial = '', onOk, onCancelar }: { inicial?: 
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ status, onArquivados, nArquivados, lista, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onTirar, onCor }: {
+export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, lista, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onTirar, onCor }: {
   /** Status acima das categorias: clicar filtra (⌘ soma), soltar uma copy muda o status dela. */
   status?: { lista: { k: string; rotulo: string; n: number }[]; sel: string[]; onSel: (l: string[]) => void; onSoltar: (copia: string, k: string) => void }
+  novas?: string[]   // categorias com copy nova (ainda não aberta): 💡 piscando e à vista como as pinadas
   onArquivados?: () => void   // botão 🗄️ Arquivados no fim: abre a janela com as categorias e copies arquivadas
   nArquivados?: number
   lista: string[]
@@ -73,6 +89,12 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
   onTirar: (divisor: string) => void
 }) {
   const [sobre, setSobre] = useState<string | null>(null)
+  const [pinsMarcados, alternarPin] = usePinsMenu()
+  const pins = [...pinsMarcados, ...novas.map((c) => `cat:${c}`)]   // as categorias com copy nova ficam à vista como as pinadas
+  // alfinete: aparece com o cursor sobre o item; pinado, fica sempre (clicar pina ou despina)
+  const alfinete = (k: string) => (
+    <i role="button" tabIndex={-1} className={`cats-pin ${pinsMarcados.includes(k) ? 'is-on' : ''}`} title={pinsMarcados.includes(k) ? 'Despinar' : 'Pinar: fica à vista com o grupo recolhido'}
+      onClick={(e) => { e.stopPropagation(); alternarPin(k) }}><Icone n="pin" t={12} /></i>)
   // arrastar uma categoria (ou um grupo): uma linha horizontal marca onde ela vai ficar (antes ou depois do item)
   const [linha, setLinha] = useState<{ c: string; depois: boolean } | null>(null)
   const metade = (e: React.DragEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return e.clientY > r.top + r.height / 2 }
@@ -122,7 +144,7 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
     else onSel(sel.length === 1 && sel[0] === c ? [] : [c])
   }
   const item = (c: string, rotulo: string) => c && c === renomear ? <EditorCategoria key={c} inicial={c} onOk={(n) => onRenomear(c, n)} onCancelar={() => onRenomear(c, null)} /> : (
-    <button key={c || '-'} className={`cats-item ${sel.includes(c) ? 'is-on' : ''} ${sobre === c ? 'is-sobre' : ''} ${classeLinha(c)}`}
+    <button key={c || '-'} className={`cats-item ${novas.includes(c) ? 'is-nova' : ''} ${sel.includes(c) ? 'is-on' : ''} ${sobre === c ? 'is-sobre' : ''} ${classeLinha(c)}`}
       onClick={(e) => clicar(c, e)}
       draggable={!!c && c !== PIN} onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
       onDragOver={(e) => {
@@ -136,7 +158,7 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
       onContextMenu={(e) => { if (!c || c === PIN) return; e.preventDefault(); onMenu(c, e.clientX, e.clientY) }}
       title={c === PIN ? 'Só as pinadas (📌) · solte uma copy aqui para pinar' : c ? 'Clique filtra (⌘ soma) · solte uma copy aqui para mudar a categoria · botão direito: cor, renomear' : undefined}>
       {c && c !== PIN && <i className="cats-cor" style={cores[c] ? { background: cores[c] } : undefined} />}
-      <span>{rotulo}</span><em>{c === PIN ? nPins : contagem[c] ?? 0}</em>
+      <span>{rotulo}</span>{c && c !== PIN && alfinete(`cat:${c}`)}{novas.includes(c) && <i className="cats-novo" title="Tem copy nova, ainda não aberta">💡</i>}<em>{c === PIN ? nPins : contagem[c] ?? 0}</em>
     </button>
   )
   return (
@@ -146,14 +168,15 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
       <i className="cats-alca" onPointerDown={redimensionar} onDoubleClick={() => setLarg(210)} title="Arraste para mudar a largura (duplo clique volta ao padrão)" />
       {status && <>
         <p className="cats-t">{tituloSecao('status', 'Status')}</p>
-        {!secoes.includes('status') && status.lista.map((x) => (
+        {status.lista.filter((x) => !secoes.includes('status') || pins.includes(`st:${x.k}`)).map((x) => (
           <button key={x.k} className={`cats-item ${status.sel.includes(x.k) ? 'is-on' : ''} ${sobre === `st:${x.k}` ? 'is-sobre' : ''}`}
             title="Clique mostra só este status, de todas as categorias (⌘ soma; clicar de novo tira) · solte uma copy aqui para mudar o status"
             onClick={(e) => { const l = status.sel; status.onSel(e.metaKey || e.ctrlKey ? (l.includes(x.k) ? l.filter((y) => y !== x.k) : [...l, x.k]) : l.length === 1 && l[0] === x.k ? [] : [x.k]) }}
             onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/copia')) { e.preventDefault(); setSobre(`st:${x.k}`) } }}
             onDragLeave={() => setSobre(null)}
-            onDrop={(e) => { e.preventDefault(); setSobre(null); const d = e.dataTransfer.getData('neo/copia'); if (d) status.onSoltar(d, x.k) }}>
-            <span>{x.rotulo}</span><em>{x.n}</em>
+            onDrop={(e) => { e.preventDefault(); setSobre(null); const d = e.dataTransfer.getData('neo/copia'); if (d) status.onSoltar(d, x.k) }}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuGrupo({ x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 80), c: `st:${x.k}` }) }}>
+            <span>{x.rotulo}</span>{alfinete(`st:${x.k}`)}<em>{x.n}</em>
           </button>
         ))}
       </>}
@@ -166,17 +189,18 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
           {onArquivados && <button type="button" onClick={onArquivados} title={`Arquivados (${nArquivados ?? arquivadas.length})`} aria-label="Arquivados"><Icone n="arquivo" t={13} /></button>}
         </span>
       </div>
+      {secoes.includes('cats') && lista.filter((c) => !ehDivisor(c) && pins.includes(`cat:${c}`)).map((c) => item(c, c))}
       {!secoes.includes('cats') && <>
       {(() => {
         // cada divisor abre um grupo (as categorias abaixo, até o próximo divisor). Padrão de barra lateral: setinha à
         // esquerda (aparece no hover; fechado, fica e mostra quantas categorias estão escondidas), a linha toda recolhe
         let fechado = false
         return lista.map((c, i) => {
-          if (!ehDivisor(c)) return fechado ? null : item(c, c)
+          if (!ehDivisor(c)) return fechado && !pins.includes(`cat:${c}`) ? null : item(c, c)
           const id = c.split('|')[0], nome = nomeDivisor(c)
           fechado = fechados.includes(id)
           const fim = lista.slice(i + 1).findIndex(ehDivisor)
-          const n = (fim < 0 ? lista.slice(i + 1) : lista.slice(i + 1, i + 1 + fim)).length
+          const n = (fim < 0 ? lista.slice(i + 1) : lista.slice(i + 1, i + 1 + fim)).filter((x) => !pins.includes(`cat:${x}`)).length
           const alternar = () => setFechados((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
           return (
             <div key={c} className={`cats-div cats-grupo ${classeLinha(c)} ${fechado ? 'is-fechado' : ''} ${cores[id] ? 'com-cor' : ''}`} draggable
@@ -203,7 +227,9 @@ export function MenuCategorias({ status, onArquivados, nArquivados, lista, renom
       </>}
       {menuGrupo && createPortal(
         <div className="tabela-menu glass glass--light" style={{ left: menuGrupo.x, top: menuGrupo.y }} role="menu">
-          {menuGrupo.c ? <>
+          {menuGrupo.c.startsWith('st:') ? (
+            <button onClick={() => { const k = menuGrupo.c; setMenuGrupo(null); alternarPin(k) }}>📌 {pinsMarcados.includes(menuGrupo.c) ? 'Despinar' : 'Pinar'}</button>
+          ) : menuGrupo.c ? <>
             <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); setEditGrupo(c) }}>✏️ Renomear</button>
             <button className="is-perigo" onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onTirar(c) }} title="As categorias do grupo ficam no menu">Deletar</button>
             {onCor && (() => { const id = menuGrupo.c.split('|')[0]; return <>

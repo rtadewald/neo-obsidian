@@ -91,8 +91,8 @@ async def atualizar():
     return {"status": "iniciado"}
 
 
-# ---------- coleta automática: a cada 2 h, contadas da última coleta, enquanto o app está de pé ----------
-INTERVALO_COLETA = 2 * 3600
+# ---------- coleta automática: uma vez por dia, contada da última coleta, enquanto o app está de pé ----------
+INTERVALO_COLETA = 24 * 3600
 _proxima: float | None = None
 
 
@@ -103,7 +103,7 @@ def _quando_proxima() -> float:
 
 async def _coleta_automatica():
     global _tarefa, _proxima
-    await asyncio.sleep(60)   # deixa o app subir antes da primeira (se já passou das 2 h)
+    await asyncio.sleep(60)   # deixa o app subir antes da primeira (se já passou um dia)
     while True:
         _proxima = _quando_proxima()
         espera = _proxima - time.time()
@@ -124,7 +124,7 @@ async def _ligar_coleta_automatica():
 
 @app.get("/api/radar/estado")
 def estado():
-    """Se há coleta rodando, a última coleta e quando roda a próxima (automática, a cada 2 h)."""
+    """Se há coleta rodando, a última coleta e quando roda a próxima (automática, uma vez por dia)."""
     return {"rodando": bool(_tarefa and not _tarefa.done()), "reavaliando": bool(_reav and not _reav.done()),
             "ultima": db.ultima_coleta(), "proxima": _proxima or _quando_proxima()}
 
@@ -446,7 +446,9 @@ class Nova(BaseModel):
 @app.post("/api/notas/priorizar")
 def nota_nova(corpo: Nova):
     try:
-        return notas.criar(corpo.titulo)
+        d = notas.criar(corpo.titulo)
+        copies.marcar_nova(d["nome"])
+        return d
     except FileExistsError:
         raise HTTPException(409, "já existe uma nota com esse nome")
 
@@ -541,6 +543,19 @@ def copies_categoria_renomear(corpo: RenomearCategoria):
 def copies_categoria(corpo: Categoria):
     """Muda a categoria das copies."""
     return _erros(lambda: {"mudadas": copies.definir_categoria(corpo.nomes, corpo.categoria)})
+
+
+class Vista(BaseModel):
+    nome: str
+
+
+@app.post("/api/copies/vista")
+def copies_vista(corpo: Vista):
+    """O Rodrigo abriu a nota: ela deixa de ser nova (o 💡 some da categoria)."""
+    era = corpo.nome in copies.novas()
+    if era:
+        copies.marcar_nova(corpo.nome, False)
+    return {"era_nova": era}
 
 
 @app.post("/api/copies/ideia")

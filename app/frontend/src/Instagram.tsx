@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 type Canal = { handle: string; nome: string; seguidores: number; foto: string | null; reels: number; mediana: number; coletado: number | null; erro?: string | null }
 type Video = {
   code: string; handle: string; data: number | null; views: number; curtidas: number; comentarios: number; duracao: number | null
-  legenda: string; fixado?: boolean; outlier: number | null; engajamento: number | null; capa: string | null; video: string | null; url: string
+  legenda: string; fixado?: boolean; outlier: number | null; engajamento: number | null; capa: string | null; url: string
 }
 type Estado = { rodando: boolean; etapa: string; ultima: number | null; erro: string | null }
 
@@ -34,7 +34,6 @@ export function Instagram() {
   const [canais, setCanais] = useState<Canal[]>([])
   const [videos, setVideos] = useState<Video[]>([])
   const [estado, setEstado] = useState<Estado>({ rodando: false, etapa: '', ultima: null, erro: null })
-  const [aberto, setAberto] = useState<Video | null>(null)
 
   const recarregar = useCallback(() => {
     fetch('/api/ig/canais', SEM_CACHE).then((r) => r.json()).then(setCanais).catch(() => {})
@@ -76,8 +75,7 @@ export function Instagram() {
       {vista === 'canais'
         ? <Canais canais={canais} onMudou={recarregar} onColetar={(h) => atualizar([h])} rodando={estado.rodando}
             onVer={(h) => { guardar('ig-filtro-canal', h); setVista('videos') }} />
-        : <Videos videos={videos} canais={canais} onAbrir={setAberto} />}
-      {aberto && <Player v={aberto} canal={canais.find((c) => c.handle === aberto.handle)} onFechar={() => setAberto(null)} />}
+        : <Videos videos={videos} canais={canais} onAbrir={(v) => window.open(v.url, '_blank', 'noopener')} />}
     </div>
   )
 }
@@ -162,7 +160,7 @@ function Videos({ videos, canais, onAbrir }: { videos: Video[]; canais: Canal[];
       {!videos.length && <p className="igc-vazio">Nenhum vídeo ainda. Cadastre canais na aba Canais e clique em Atualizar.</p>}
       <div className="igc-grade">
         {lista.map((v) => (
-          <article key={v.code} className="igc-video" onClick={() => onAbrir(v)}>
+          <article key={v.code} className="igc-video" title="Abrir no Instagram" onClick={() => onAbrir(v)}>
             <div className="igc-capa">{v.capa ? <img src={v.capa} alt="" loading="lazy" /> : <span className="igc-sem-capa" />}<i className="igc-ig" />
               {v.duracao ? <span className="igc-dur">{Math.floor(v.duracao / 60)}:{String(Math.round(v.duracao % 60)).padStart(2, '0')}</span> : null}</div>
             <b className="igc-titulo" title={v.legenda}>{titulo(v.legenda)}</b>
@@ -182,36 +180,6 @@ function Metricas({ v }: { v: Video }) {
       <span className={`igc-pill ${alto ? 'is-alto' : 'is-baixo'}`} title="Outlier: views ÷ mediana das views do canal">{alto ? '↗' : '↘'} {v.outlier != null ? `${v.outlier.toFixed(1).replace('.', ',')}x` : '—'}</span>
       <span className="igc-pill is-views" title={`${v.views.toLocaleString('pt-BR')} views`}>👁 {compacto(v.views)}</span>
       <span className="igc-pill is-eng" title="Engajamento: (curtidas + comentários) ÷ views">✳ {v.engajamento != null ? `${(v.engajamento * 100).toFixed(1).replace('.', ',')}%` : '—'}</span>
-    </div>
-  )
-}
-
-function Player({ v, canal, onFechar }: { v: Video; canal?: Canal; onFechar: () => void }) {
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onFechar() } }
-    window.addEventListener('keydown', esc, true); return () => window.removeEventListener('keydown', esc, true)
-  }, [onFechar])
-  return (
-    <div className="igc-player-fundo" onMouseDown={(e) => e.target === e.currentTarget && onFechar()}>
-      <div className="igc-player glass glass--light" role="dialog" aria-label="Reel">
-        <div className="igc-player-video">
-          {v.video ? <video src={v.video} poster={v.capa ?? undefined} controls autoPlay playsInline loop />
-            : v.capa ? <img src={v.capa} alt="" /> : null}
-        </div>
-        <div className="igc-player-info">
-          <header><b>@{v.handle}</b><span>{relativo(v.data)}</span><button onClick={onFechar} aria-label="Fechar">×</button></header>
-          <Metricas v={v} />
-          <dl>
-            <div><dt>Views</dt><dd>{v.views.toLocaleString('pt-BR')}</dd></div>
-            <div><dt>Curtidas</dt><dd>{v.curtidas.toLocaleString('pt-BR')}</dd></div>
-            <div><dt>Comentários</dt><dd>{v.comentarios.toLocaleString('pt-BR')}</dd></div>
-            {canal && <div><dt>Mediana do canal</dt><dd>{canal.mediana.toLocaleString('pt-BR')}</dd></div>}
-          </dl>
-          <p className="igc-legenda">{v.legenda || '(sem legenda)'}</p>
-          <a className="igc-link" href={v.url} target="_blank" rel="noreferrer">Abrir no Instagram ↗</a>
-          {!v.video && <p className="mudo">O MP4 ainda não foi baixado.</p>}
-        </div>
-      </div>
     </div>
   )
 }

@@ -39,7 +39,7 @@ export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', 
   const [salvos, setSalvos] = useState(false)
   const [rodando, setRodando] = useState(false)
   const [ultima, setUltima] = useState<Coleta>(null)
-  const [proxima, setProxima] = useState<number | undefined>()   // coleta automática a cada 2 h
+  const [proxima, setProxima] = useState<number | undefined>()   // coleta automática uma vez por dia
   const [erro, setErro] = useState('')
   const [gosto, setGosto] = useState<Gosto | null>(null)
   const [reavaliando, setReavaliando] = useState(false)
@@ -208,7 +208,7 @@ export function Radar({ foco = null, onConversar, onModo, ir, titulo = 'Radar', 
         <div className="radar-nome">
           <h1 className="titulo" title={[
             `${visiveis.length} sinais · última coleta ${quando(ultima?.fim)}`,
-            proxima ? `Próxima coleta automática às ${new Date(proxima * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (a cada 2 h, top 50 de cada fonte)` : '',
+            proxima ? `Próxima coleta automática às ${new Date(proxima * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} (uma vez por dia, top 50 de cada fonte)` : '',
             gosto && gosto.likes + gosto.deslikes > 0 ? `Aprendendo com ${gosto.likes} likes e ${gosto.deslikes} deslikes` : '',
             gosto?.gosta.length ? `Curte: ${gosto.gosta.join(', ')}` : '', gosto?.evita.length ? `Evita: ${gosto.evita.join(', ')}` : '',
           ].filter(Boolean).join('\n')}>{titulo}</h1>

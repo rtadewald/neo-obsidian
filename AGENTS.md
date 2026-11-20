@@ -176,6 +176,13 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   No topo, a categoria especial **📌 Pinados**: só as pinadas da aba (soltar uma copy ali pina).
   Botão direito → **🗄️ Arquivar categoria**: sai do menu e da Criação (a não ser escolhida), vai para a seção
   recolhida "Arquivadas" no fim do menu (`arquivadas` no `criacao.json`); as copies não mudam.
+- **Pinar status e categorias:** alfinete com o cursor sobre o item (pinado, fica vermelho e sempre à vista) ou botão
+  direito → 📌 Pinar. Com o pai recolhido (a seção Status/Categorias ou o grupo), os pinados continuam à vista
+  (`cats-pinados` no localStorage, chaves `st:<status>` e `cat:<nome>`; `usePinsMenu` em `Categorias.tsx`).
+- **Copies novas:** criar uma copy (⌘K, paleta, radar) ou plugar uma ideia numa copy marca a nota em
+  `dados/novas.json` (`copies.marcar_nova`; `/api/copies` devolve `nova: true`). A linha ganha o selo **new** e a
+  categoria um 💡 piscando, e fica à vista como pinada. Abrir a nota tira (`POST /api/copies/vista`); a abertura
+  automática logo depois de criar não conta (`recemCriadas` em `canvasApi.ts`). Renomear leva a marca junto.
 - **Links no editor:** `[[` abre um seletor de notas (nomes de `GET /api/notas-indice`); Enter grava `[[Nome]]`.
   Clique num [[link]] abre na aba da frente, ⌘+clique numa aba nova. A seta **←** nas abas volta para a copy anterior.
 - **⇧+clique** numa linha seleciona da última clicada até ela. A pinada é marcada só pelo 📌.
@@ -234,8 +241,8 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
 
 ## 8. Radar, X e Metricool
 
-- **Coleta automática a cada 2 h** (`main.py`, `_coleta_automatica`): enquanto a API está de pé, roda `radar.coletar()`
-  2 h depois do início da última coleta (uma coleta manual empurra a próxima). `GET /api/radar/estado` devolve `proxima`;
+- **Coleta automática uma vez por dia** (`main.py`, `_coleta_automatica`): enquanto a API está de pé, roda `radar.coletar()`
+  24 h depois do início da última coleta (uma coleta manual empurra a próxima). `GET /api/radar/estado` devolve `proxima`;
   o título do radar mostra no hover. Cada fonte traz o **top 50** (`TOPO` em `coletores/fontes.py`, `ALVO` em
   `coletores/x.py`): GitHub = trending do dia e da semana (a página só tem ~12 cada) completado com os repositórios
   criados nos últimos 7 dias com mais estrelas (API de busca); Hugging Face = 35 modelos + 15 spaces; Hacker News = as
@@ -274,14 +281,14 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
   **Canais** (cadastro à mão: @, link ou vários separados por espaço; card com foto, seguidores, nº de reels e mediana de
   views; × para de acompanhar e apaga os arquivos) e **Vídeos** (grade 9:16 com outlier = views ÷ mediana do canal,
   views e engajamento = (curtidas + comentários) ÷ views; filtros de canal, data, outlier mínimo e ordem, guardados no
-  `localStorage`; clicar abre o player com o MP4 baixado). Botão **Atualizar** → `POST /api/ig/atualizar` (segundo plano,
+  `localStorage`; clicar abre o Reel no Instagram, numa aba nova). Botão **Atualizar** → `POST /api/ig/atualizar` (segundo plano,
   `GET /api/ig/estado`). Coleta: um agente (Sonnet) abre o Chrome "Claude Profile" (conta teste.asimov) e, para cada
   canal, navega a `/<canal>/reels/` e roda `SCRIPT`: lê seguidores e foto do og: da página do perfil, intercepta as
   respostas que a página busca (a grade traz views/curtidas/comentários/capa; abrir um reel na própria página, com clique
   e `history.back`, traz legenda, `taken_at`, duração e `video_versions`) e baixa `neo-igc-<prefixo>-<canal>.json` em
   ~/Downloads. A API `/api/v1/users/web_profile_info` e `/api/v1/feed/user` dão 404 nessa conta: não use. Depois o
-  backend baixa fotos, capas e MP4 (`dados/ig/{fotos,capas,videos}`; os links do Instagram expiram). `POR_CANAL = 24`
-  (os mais recentes, fixados incluídos); ~180 MB por canal. Dados: `dados/ig/canais.json` e `dados/ig/videos.json`.
+  backend baixa só fotos e capas (`dados/ig/{fotos,capas}`; os links do Instagram expiram); os MP4 não. `POR_CANAL = 24`
+  (os mais recentes, fixados incluídos). Dados: `dados/ig/canais.json` e `dados/ig/videos.json`.
   Rotas: `GET/POST /api/ig/canais`, `DELETE /api/ig/canais/{handle}`, `GET /api/ig/videos`, `GET /api/ig/arquivo/{tipo}/{nome}`.
   As listas vêm com `cache: 'no-store'` (o Chrome guardava a resposta em HTML de quando o Vite estava subindo).
 - **Feed do Instagram no radar (desligado)**: `COLETAR_FEED_IG = False` em `radar.py`. **Instagram** (`coletores/instagram_radar.py`, aba Instagram; o `coletores/instagram.py` é outro: os Reels do próprio @rodrigotadewald para o Metricool): roda junto com a coleta do X. Duas fontes: a grade de Reels
@@ -373,7 +380,7 @@ app/backend/src/jarvis/
   config.py                   VAULT, APP, DADOS (o caminho do vault é fixo aqui)
   notas.py                    status, mover, renomear (+ links), lixeira, agenda, pins do Obsidian
   copies.py                   as copies (lista, mídia, criar, status, tags, categoria, arquivar) e a Criação (cor/ordem)
-  instagram_canais.py         Instagram: canais, coleta pelo Chrome, MP4, métricas
+  instagram_canais.py         Instagram: canais, coleta pelo Chrome, capas, métricas
   porta.py                    eventos SSE, vigia do vault, onde
   agente.py                   o chat da direita: Claude Agent SDK no vault (ferramentas rotas, app, tela, youtube)
   radar.py · preferencias.py · db.py · coletores/{fontes,x,x_curtir}.py   radar e like no X
@@ -390,7 +397,7 @@ app/frontend/src/
 ```
 
 `Desempenho.tsx` (Meta Ads, `/api/ads`) está guardado fora da navbar. Saíram na limpeza de 19/11/2026: o ModalNota
-(modal de nota com versões), EmBreve, o selo NOVO (`novas.json`), as abas Winners/Pinados/Skills da tabela e o CSS sem uso. Saíram de vez: o Canvas (Canvas.tsx, Canvases.tsx, PaletaCanvas.tsx,
+(modal de nota com versões), EmBreve, o selo NOVO antigo, as abas Winners/Pinados/Skills da tabela e o CSS sem uso. Saíram de vez: o Canvas (Canvas.tsx, Canvases.tsx, PaletaCanvas.tsx,
 Desenho.tsx), a página Calendário (virou o calendário da Redação; Skills voltou a ser página da navbar) e os códigos NEO.
 Não traga de volta sem pedido.
 

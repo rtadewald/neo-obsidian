@@ -196,9 +196,29 @@ def _todas() -> dict:
     return {"producoes": producoes}
 
 
+# ---------- copies novas: criadas (⌘K, radar) ou com uma ideia plugada, até o Rodrigo abrir a nota uma vez ----------
+
+NOVAS = DADOS / "novas.json"
+_trava_novas = threading.Lock()
+
+
+def novas() -> list[str]:
+    return _json(NOVAS, [])
+
+
+def marcar_nova(nome: str, sim: bool = True):
+    with _trava_novas:
+        l = [n for n in novas() if n != nome] + ([nome] if sim else [])
+        DADOS.mkdir(parents=True, exist_ok=True)
+        NOVAS.write_text(json.dumps(l, ensure_ascii=False), encoding="utf-8")
+
+
 def estado() -> dict:
     """Todas as copies do vault e os formatos: o que a Redação lista."""
-    return {**_todas(), "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
+    t, n = _todas(), set(novas())
+    if n:
+        t["producoes"] = [p | {"nova": True} if p["nome"] in n else p for p in t["producoes"]]
+    return {**t, "formatos": [{"emoji": f, "nome": ROTULO_FORMATO[f]} for f in FORMATOS]}
 
 
 # ---------- Criação (Redação): cor e ordem das categorias e das copies; arquivar ----------
@@ -257,6 +277,7 @@ def _nova_copy(titulo: str, corpo: str, categoria: str | None = None, extras: di
     cab = ["status: ideia", "scheduled:", "notion:", "tags:", f'categoria: "{categoria}"' if categoria else "categoria:"]
     cab += [f'{k}: "{v}"' for k, v in (extras or {}).items() if v]
     notas._escrever(p, "---\n" + "\n".join(cab) + "\n---\n\n" + (corpo.strip() + "\n" if corpo.strip() else ""))
+    marcar_nova(p.stem)
     return p
 
 
@@ -292,6 +313,7 @@ def criar_entrada(conteudo: str, ideia: str | None = None, pos: dict | None = No
     if ideia:   # plugar numa copy que já existe: vira uma entrada na seção "## Entradas" da nota
         p = _caminho_ideia(ideia)
         notas._escrever(p, _com_entrada(_ler(p, None), conteudo, (pronto or {}).get("titulo") or ""))
+        marcar_nova(p.stem)
         return {"nome": p.stem, "raiz": achar(p.stem)[0]}
     url = conteudo if re.fullmatch(r"https?://\S+", conteudo) else ""
     fm = {"url": url, "tipo": "texto", "thumb": ""}
@@ -348,6 +370,9 @@ def _caminho_ideia(ideia: str) -> Path:
 
 def renomeou(raiz: str, antes: str, raiz_depois: str, depois: str):
     """Renomeou, mudou status ou publicou: a ordem da Criação segue o nome novo."""
+    if antes != depois and antes in novas():
+        marcar_nova(antes, False)
+        marcar_nova(depois)
     velho, novo = f"{raiz}/{antes}", f"{raiz_depois}/{depois}"
     d = criacao()
     if any(velho in v for v in d["ordem"].values()):

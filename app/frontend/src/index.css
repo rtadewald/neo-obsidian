@@ -1081,21 +1081,6 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .igc-pill.is-baixo { background: rgba(228, 72, 77, .1); color: #c2393e; }
 .igc-pill.is-views { background: rgba(61, 111, 224, .1); color: #2f5fc9; }
 .igc-pill.is-eng { background: rgba(240, 150, 40, .12); color: #b86a12; }
-.igc-player-fundo { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; background: rgba(30, 26, 24, .35); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
-.igc-player { display: flex; gap: 18px; padding: 16px; border-radius: 22px; max-height: calc(100vh - 48px); max-width: calc(100vw - 48px); background: rgba(250, 249, 247, .97) !important; }
-.igc-player-video { flex: none; height: min(78vh, 760px); aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden; background: #000; }
-.igc-player-video video, .igc-player-video img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.igc-player-info { width: 320px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.igc-player-info header { display: flex; align-items: center; gap: 10px; }
-.igc-player-info header b { font-size: 15px; }
-.igc-player-info header span { font-size: 12.5px; color: var(--mute); }
-.igc-player-info header button { margin-left: auto; border: 0; background: none; font-size: 22px; line-height: 1; color: var(--mute); cursor: pointer; }
-.igc-player-info dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
-.igc-player-info dl div { padding: 8px 10px; border-radius: 10px; background: rgba(23, 24, 27, .04); }
-.igc-player-info dt { font-size: 11px; color: var(--mute); }
-.igc-player-info dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.igc-legenda { flex: 1; min-height: 0; overflow-y: auto; margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; }
-.igc-link { align-self: flex-start; font-size: 13px; font-weight: 600; color: var(--ink); }
 
 /* ---------- Redação: a tabela das copies com a nota (ou o calendário) à direita, como no Obsidian (Redacao.tsx) ---------- */
 .redacao { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-height: 0; }
@@ -1211,8 +1196,16 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .redacao-borda.is-dir::after { right: 2px; }
 .redacao-borda:hover::after { opacity: 1; }
 /* a copy manda: o texto numa coluna central, como no Obsidian (com a lateral ou só a copy) */
-.redacao .redacao-nota :is(.modal-topo, .modal-corpo) { padding-inline: max(26px, calc((100% - 1200px) / 2)); }   /* texto + sumário */
-.redacao .redacao-nota:has(.modal-corpo.sem-sumario) :is(.modal-topo, .modal-corpo) { padding-inline: max(26px, calc((100% - 800px) / 2)); }
+.redacao .redacao-nota { --copy-w: calc(var(--copy-larg, 1100px) + 400px); }   /* texto + sumário */
+.redacao .redacao-nota:has(.modal-corpo.sem-sumario) { --copy-w: var(--copy-larg, 1100px); }
+.redacao .redacao-nota :is(.modal-topo, .modal-corpo) { padding-inline: max(26px, calc((100% - var(--copy-w)) / 2)); }
+.editor .cm-lp-props { max-width: none; }
+/* bordas da coluna do texto: invisíveis até o cursor chegar perto; arrastar muda a largura (--copy-larg) */
+.copy-borda { position: absolute; top: 56px; bottom: 12px; z-index: 5; width: 14px; cursor: col-resize; }
+.copy-borda.is-esq { left: calc(max(26px, (100% - var(--copy-w)) / 2) - 22px); }
+.copy-borda.is-dir { right: calc(max(26px, (100% - var(--copy-w)) / 2) - 22px); }
+.copy-borda::after { content: ''; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; border-radius: 2px; background: rgba(23, 24, 27, .22); opacity: 0; transition: opacity .15s; }
+.copy-borda:hover::after, body.arrastando .copy-borda::after { opacity: 1; }
 
 /* seleção por caixa arrastável na tabela */
 .tabela-rolo { position: relative; }
@@ -1291,7 +1284,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 /* menu de categorias à esquerda da tabela */
 .tabela-corpo { flex: 1; min-height: 0; display: flex; }
 .tabela-coluna { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cats { flex: none; width: 210px; overflow-y: auto; padding: 12px 8px 16px 14px; border-right: 1px solid rgba(23, 24, 27, .07); display: flex; flex-direction: column; gap: 1px; }
+.cats { flex: none; width: 210px; overflow-y: auto; padding: 32px 8px 16px 14px; border-right: 1px solid rgba(23, 24, 27, .07); display: flex; flex-direction: column; gap: 1px; }
 .cats-t { margin: 2px 8px 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: rgba(23, 24, 27, .45); }
 .cats-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
 .cats-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1623,3 +1616,19 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .redacao-abas-cal { flex: none; display: inline-flex; align-items: center; gap: 2px; }   /* os botões do canto não encolhem atrás das abas */
 /* as abas de nota encolhem (com reticências) para o + Nova copy e o Calendário caberem sempre no canto */
 .redacao-aba { min-width: 70px; flex: 0 1 220px; }
+
+/* alfinete dos status e categorias: aparece com o cursor sobre; pinado, fica sempre */
+.cats-pin { display: none; align-items: center; color: rgba(23, 24, 27, .35); cursor: pointer; border-radius: 4px; padding: 1px; }
+.cats-pin:hover { color: var(--ink); background: rgba(23, 24, 27, .07); }
+.cats-item:hover .cats-pin, .cats-pin.is-on { display: inline-flex; }
+.cats-pin.is-on { color: #d64545; }
+
+/* copies novas (⌘K, radar), até abrir uma vez: "new" na linha e 💡 piscando na categoria */
+.tabela-novo { margin-left: 7px; padding: 0 6px; border-radius: 6px; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #8a6a00; background: #fff3c4; vertical-align: 1px; }
+.cats-novo { font-style: normal; font-size: 14px; line-height: 1; animation: cats-pisca 1.4s ease-in-out infinite; }
+.cats-item.is-nova { animation: cats-fundo 1.4s ease-in-out infinite; }
+@keyframes cats-pisca { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 4px rgba(255, 190, 0, 1)) drop-shadow(0 0 9px rgba(255, 170, 0, .7)); } 50% { opacity: .55; filter: drop-shadow(0 0 1px rgba(255, 190, 0, .4)); } }
+@keyframes cats-fundo { 0%, 100% { background-color: rgba(255, 214, 64, .30); } 50% { background-color: rgba(255, 214, 64, .06); } }
+@media (prefers-reduced-motion: reduce) { .cats-novo, .cats-item.is-nova { animation: none; } .cats-item.is-nova { background-color: rgba(255, 214, 64, .22); } }
+/* na Redação o texto ocupa a coluna inteira (a largura vem das bordas arrastáveis, --copy-larg) */
+.redacao .redacao-nota .cm-content { max-width: none !important; }

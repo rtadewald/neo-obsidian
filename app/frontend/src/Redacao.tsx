@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { PainelNota } from './PainelNota'
 import { ModalTabela, tabelaSalva, type Criacao, type EstadoTabela } from './Tabela'
-import { carregarTudo, onde, post, tudoEmCache, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
+import { carregarTudo, onde, post, recemCriadas, tudoEmCache, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 import { desfazerUltima, mudarStatus, registrarAcao } from './desfazer'
 import { lembrarAberta } from './Paleta'
 import { avisar } from './porta'
@@ -60,6 +60,19 @@ export function Redacao({ versao }: { versao?: number }) {
   const fechar = (i: number) => setAbas(({ lista, ativa }) => { const r = fecharLista(lista, i); return { ...r, ativa: i < ativa ? ativa - 1 : r.ativa } })
   // ⌘B ou o botão ⇤ nas abas esconde a tabela: só a copy ou o calendário
   const [soCopy, setSoCopy] = useState(false)
+  // largura da coluna do texto da copy: as bordas surgem perto das laterais do texto; arrastar muda (simétrico, a coluna
+  // fica no centro), duplo clique volta ao padrão. Fica guardada.
+  const COPY_PADRAO = 1100
+  const [largCopy, setLargCopy] = useState<number>(() => { try { return Number(localStorage.getItem('copy-largura')) || COPY_PADRAO } catch { return COPY_PADRAO } })
+  useEffect(() => { try { localStorage.setItem('copy-largura', String(largCopy)) } catch { /* sem storage */ } }, [largCopy])
+  const arrastarCopy = (lado: 1 | -1) => (e: React.PointerEvent) => {
+    e.preventDefault()
+    const x0 = e.clientX, w0 = largCopy
+    const mover = (ev: PointerEvent) => setLargCopy(Math.round(Math.min(2400, Math.max(480, w0 + 2 * lado * (ev.clientX - x0)))))
+    const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
+    document.body.classList.add('arrastando')
+    window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar)
+  }
   // ⌘[ esconde o menu de categorias da tabela (fica guardado)
   const [semCats, setSemCats] = useState(() => { try { return localStorage.getItem('redacao-sem-cats') === 'sim' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('redacao-sem-cats', semCats ? 'sim' : 'nao') } catch { /* sem storage */ } }, [semCats])
@@ -182,6 +195,16 @@ export function Redacao({ versao }: { versao?: number }) {
     setEst((e) => e && { ...e, producoes: e.producoes.map((p) => (k.has(`${p.raiz}/${p.nome}`) ? { ...p, ...m } : p)) })
   }
 
+  // abrir uma copy nova (⌘K, radar) tira o "new" dela; a abertura automática logo depois de criar não conta
+  const chaveAberta = aberta ? `${aberta.raiz}/${aberta.nome}` : ''
+  useEffect(() => {
+    if (!aberta || !est) return
+    if (recemCriadas.has(aberta.nome)) { recemCriadas.delete(aberta.nome); return }
+    if (!est.producoes.some((p) => p.nome === aberta.nome && p.nova)) return
+    naHora([aberta], { nova: false })
+    fetch('/api/copies/vista', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: aberta.nome }) }).catch(() => {})
+  }, [chaveAberta, !!est])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const abrir = (a: Alvo, opts?: { nova?: boolean }) => { abrirEm(a, opts?.nova); setCal(false); setVerTabela(false) }
   const statusDe = (a: Alvo) => est?.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)?.status ?? ''
 
@@ -249,7 +272,9 @@ export function Redacao({ versao }: { versao?: number }) {
           <CalendarioEditorial key={calVersao} onAbrir={(raiz, nome) => abrir({ raiz, nome } as Alvo)} onMudou={() => { recarregar(); avisar('Agendada') }} />
         </aside>
       ) : aberta ? (
-        <aside className="redacao-lado redacao-nota glass glass--light">
+        <aside className="redacao-lado redacao-nota glass glass--light" style={{ '--copy-larg': `${largCopy}px` } as React.CSSProperties}>
+          {([-1, 1] as const).map((l) => <i key={l} className={`copy-borda ${l < 0 ? 'is-esq' : 'is-dir'}`} onPointerDown={arrastarCopy(l)}
+            onDoubleClick={() => setLargCopy(COPY_PADRAO)} title="Arraste para mudar a largura do texto (duplo clique volta ao padrão)" />)}
           <nav className="redacao-abas" role="tablist">
             <button className="redacao-voltar btn-icone" onClick={voltar} disabled={!pilha.length} title={pilha.length ? `Voltar para ${pilha[pilha.length - 1].nome}` : 'Nada para voltar'} aria-label="Voltar para a copy anterior">←</button>
             {abas.lista.map((a, i) => (

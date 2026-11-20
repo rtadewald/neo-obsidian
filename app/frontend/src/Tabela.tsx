@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuCategorias, PASTEIS, PIN, SEM, ehDivisor, listaCategorias } from './Categorias'
+import { MenuCategorias, PASTEIS, PIN, SEM, ehDivisor, listaCategorias, usePinsMenu } from './Categorias'
 import { alternarPin, usePins } from './pins'
 import { ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 
@@ -123,7 +123,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const comecarLaco = (e: React.PointerEvent<HTMLDivElement>) => {
     inicioArraste.current = e.target
     const alvo = e.target as HTMLElement
-    // a calha à esquerda do ponto de status (o recuo da célula Copy, o ícone) é área de seleção, não de abrir a copy
+    // a calha à esquerda do ponto de status (o recuo da célula Copy, o ícone): arrastar dali faz a seleção por caixa
     const calha = alvo.matches('td.col-nome, td.col-formato')
     if (e.button !== 0 || alvo.closest('input, select, button, a, th, .tabela-alca, .tabela-grupo') || (!calha && alvo.closest('.col-nome'))) return
     const rolo = e.currentTarget, r0 = rolo.getBoundingClientRect()
@@ -149,9 +149,9 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
       window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar)
       window.removeEventListener('pointercancel', soltar); window.removeEventListener('dragstart', arrastou); window.removeEventListener('blur', soltar)
       document.body.classList.remove('lacando'); setLaco(null)
-      // clique sem arrastar na calha ou num vazio limpa a seleção. O clique que vem logo depois não abre a copy
-      // (num outro canto da linha, o clique segue abrindo a copy, como antes)
-      if (!ligado && !calha && alvo.closest('tr[data-chave]')) return
+      // clique sem arrastar em qualquer ponto da linha (calha incluída) abre a copy; num vazio, limpa a seleção.
+      // Arrastar a partir da calha continua sendo a seleção por caixa (e o clique que vem depois não abre)
+      if (!ligado && alvo.closest('tr[data-chave]')) return
       if (!ligado) setSel(new Set())
       engolirClique.current = true
       window.setTimeout(() => { engolirClique.current = false }, 0)
@@ -288,6 +288,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   // arrastar na Criação: categoria sobre categoria muda a ordem; copy sobre copy muda a posição (ou a categoria)
   const [sobre, setSobre] = useState<string | null>(null)
   const [menuCor, setMenuCor] = useState<{ x: number; y: number; cat: string } | null>(null)
+  const [pinsMenu, alternarPinMenu] = usePinsMenu()
   // 🗄️ Arquivados (botão no fim do menu): janela com as categorias arquivadas e as copies delas, e as copies arquivadas soltas
   const [verArquivados, setVerArquivados] = useState(false)
   useEffect(() => {
@@ -365,6 +366,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   // nas células de Status e Data só o seletor/campo segura o clique; o resto da célula abre a copy, como a linha toda
   const soControle = (e: React.MouseEvent) => { if ((e.target as HTMLElement).closest('select, input, button')) e.stopPropagation() }
   const pinTag = <span className="tabela-pin" title="Priorizada (botão direito → Tirar de Priorizar)">📌</span>
+  const novoTag = <em className="tabela-novo" title="Nova: ainda não foi aberta">new</em>
   const linha = (p: Producao, nivel = 0, pin = false, comoGalho = false) => {
     const k = chaveDe(p), cor = nivel ? criacao.cores[catDe(p)] : undefined
     const galho = nivel > 0 || comoGalho   // comoGalho: as linhas sem categoria (publicadas do fim, filtro de status) com a bolinha e o ícone junto do nome
@@ -383,8 +385,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
         <td className="col-formato">{!galho && (p.formato || '📄')}</td>
         <td className="col-nome" onDoubleClick={(e) => { e.stopPropagation(); setRenomeando(k) }}>{galho ? <div className="tabela-galho">
           {!porStatus && <i className={`ponto is-${p.status}`} title={STATUS.find((x) => x.k === p.status)?.nome} />}
-          <div><b>{pin && pinTag}<span className="tabela-ic">{p.formato || '📄'}</span>{nomeOuCampo(p)}</b></div></div>
-          : <b>{nomeOuCampo(p)}{pin && pinTag}</b>}</td>
+          <div><b>{pin && pinTag}<span className="tabela-ic">{p.formato || '📄'}</span>{nomeOuCampo(p)}{p.nova && novoTag}</b></div></div>
+          : <b>{nomeOuCampo(p)}{pin && pinTag}{p.nova && novoTag}</b>}</td>
         <td className="col-data" onClick={soControle}>
           <input type="date" className={`tabela-data-in ${p.scheduled ? '' : 'is-vazia'}`} value={(p.scheduled ?? '').slice(0, 10)} title="Mudar a data (scheduled)"
             onChange={(e) => { if (/^2\d{3}-/.test(e.target.value)) onData({ raiz: p.raiz, nome: p.nome }, e.target.value) }} /></td>
@@ -424,6 +426,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
           onCriar={(n) => { if (!todasCategorias.includes(n)) onCriacao({ categorias: [...todasCategorias, n] }); mudar({ filtros: { ...t.filtros, categoria: [n], status: [] } }) }}
           onDivisor={(n) => onCriacao({ categorias: [...todasCategorias, `—${Date.now().toString(36)}|${n.trim()}`] })}
           onTirar={(d) => onCriacao({ categorias: todasCategorias.filter((c) => c !== d) })}
+          novas={[...new Set(baseCriacao.filter((p) => p.nova && p.categoria).map((p) => p.categoria as string))]}
           onMenu={(cat, x, y) => setMenuCor({ x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 220), cat })} />}
         <div className="tabela-coluna">
         <section className="tabela-filtros">
@@ -531,6 +534,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
         })(), document.body)}
         {menuCor && createPortal(
           <div className="tabela-menu tabela-cores glass glass--light" style={{ left: menuCor.x, top: menuCor.y }} role="menu" onMouseLeave={() => setMenuCor(null)}>
+            <button onClick={() => { alternarPinMenu(`cat:${menuCor.cat}`); setMenuCor(null) }}>📌 {pinsMenu.includes(`cat:${menuCor.cat}`) ? 'Despinar' : 'Pinar'}</button>
             <button onClick={() => { setRenCat(menuCor.cat); setMenuCor(null) }}>✏️ Renomear</button>
             {(() => { const c = menuCor.cat, sim = arquivadas.includes(c)
               return <button onClick={() => { setMenuCor(null); onCriacao({ arquivadas: sim ? arquivadas.filter((x) => x !== c) : [...arquivadas, c] })

@@ -5,8 +5,8 @@
   do X), e um script na página do Instagram lê, pela API interna do site, o perfil (nome, foto, seguidores) e os Reels
   recentes de cada canal (views, curtidas, comentários, data, legenda, capa, MP4). O JSON chega como download em
   ~/Downloads (a saída do javascript_tool é curta). Só leitura: não curte, não segue, não comenta.
-- Depois o backend baixa capas, fotos e os MP4 (`dados/ig/capas`, `dados/ig/videos`, `dados/ig/fotos`): os links do
-  Instagram expiram em horas.
+- Depois o backend baixa só capas e fotos (`dados/ig/capas`, `dados/ig/fotos`): os links do Instagram expiram em
+  horas. Os MP4 não são baixados: clicar no Reel abre ele no Instagram.
 - Métricas: outlier = views ÷ mediana das views do canal (nos Reels coletados); engajamento = (curtidas + comentários)
   ÷ views.
 """
@@ -29,7 +29,7 @@ CANAIS = PASTA / "canais.json"
 VIDEOS = PASTA / "videos.json"
 CAPAS, MP4S, FOTOS = PASTA / "capas", PASTA / "videos", PASTA / "fotos"
 DOWNLOADS = Path.home() / "Downloads"
-POR_CANAL = 24          # os últimos N Reels de cada canal (os MP4 ocupam ~3-8 MB cada)
+POR_CANAL = 24          # os últimos N Reels de cada canal
 _trava = threading.Lock()
 estado: dict = {"rodando": False, "etapa": "", "ultima": None, "erro": None}
 
@@ -119,7 +119,6 @@ def videos() -> list[dict]:
         out.append({**v, "outlier": round(views / m, 2) if m else None,
                     "engajamento": round((v.get("curtidas", 0) + v.get("comentarios", 0)) / views, 4) if views else None,
                     "capa": f"/api/ig/arquivo/capas/{v['code']}.jpg" if (CAPAS / f"{v['code']}.jpg").is_file() else None,
-                    "video": f"/api/ig/arquivo/videos/{v['code']}.mp4" if (MP4S / f"{v['code']}.mp4").is_file() else None,
                     "url": f"https://www.instagram.com/reel/{v['code']}/"})
     return sorted(out, key=lambda v: -(v.get("data") or 0))
 
@@ -280,7 +279,7 @@ async def _baixar(cli: httpx.AsyncClient, url: str | None, destino: Path) -> boo
 
 
 async def atualizar(so: list[str] | None = None) -> dict:
-    """Coleta os canais (todos, ou só `so`), grava as métricas e baixa capas, fotos e MP4."""
+    """Coleta os canais (todos, ou só `so`), grava as métricas e baixa capas e fotos."""
     if estado["rodando"]:
         return {"status": "já rodando"}
     estado.update(rodando=True, etapa="abrindo o Instagram no Chrome", erro=None)
@@ -312,12 +311,12 @@ async def atualizar(so: list[str] | None = None) -> dict:
                                      "views": r.get("views") or antigo.get("views", 0), "curtidas": r.get("curtidas", 0),
                                      "comentarios": r.get("comentarios", 0), "duracao": r.get("duracao"),
                                      "legenda": r.get("legenda", ""), "fixado": r.get("fixado", False), "coletado": agora,
-                                     "_capa": r.get("capa"), "_mp4": r.get("mp4")}
+                                     "_capa": r.get("capa")}
             fotos = {h: c.pop("_foto", None) for h, c in por_h.items()}
             _gravar(CANAIS, lista)
             _gravar(VIDEOS, {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")} for k, v in vs.items()})
-        # downloads (fora da trava): fotos, capas e MP4, 4 de cada vez
-        estado["etapa"] = "baixando capas e vídeos"
+        # downloads (fora da trava): fotos e capas, 4 de cada vez (os MP4 não: o Reel abre no Instagram)
+        estado["etapa"] = "baixando as capas"
         sem = asyncio.Semaphore(4)
         async with httpx.AsyncClient(follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as cli:
             async def um(url, destino):
@@ -325,7 +324,7 @@ async def atualizar(so: list[str] | None = None) -> dict:
                     await _baixar(cli, url, destino)
             tarefas = [um(u, FOTOS / f"{h}.jpg") for h, u in fotos.items() if u]
             for k, v in vs.items():
-                tarefas += [um(v.get("_capa"), CAPAS / f"{k}.jpg"), um(v.get("_mp4"), MP4S / f"{k}.mp4")]
+                tarefas.append(um(v.get("_capa"), CAPAS / f"{k}.jpg"))
             await asyncio.gather(*tarefas)
         estado["ultima"] = agora
         return {"status": "ok", "canais": len(dados), "reels": sum(len(d.get("reels", [])) for d in dados)}

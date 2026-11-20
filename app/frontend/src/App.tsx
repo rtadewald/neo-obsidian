@@ -3,7 +3,7 @@ import { Calendario } from './Calendario'
 import { Chat, EVENTO_CHAT } from './Chat'
 import { editorAtual, selecao } from './Editor'
 import { PASTA } from './notas'
-import { onde, type Alvo } from './canvasApi'
+import { onde, recemCriadas, type Alvo } from './canvasApi'
 import { EVENTO_AVISO, assinarEventos, vigiarOnde } from './porta'
 import { Icone } from './Icone'
 import { Radar } from './Radar'
@@ -216,7 +216,7 @@ export default function App() {
 
       {novo && <NovoRapido tipo={novo} onFechar={() => setNovo(null)}
         onCriado={(_c, msg, nota) => {   // a copy nova abre numa aba nova da Redação
-          setNovo(null); setMudou((n) => n + 1)
+          setNovo(null); setMudou((n) => n + 1); recemCriadas.add(nota.nome)
           abrirNaRedacao({ raiz: nota.raiz, nome: nota.nome } as Alvo, true)
           avisarApp(msg)
         }} />}
@@ -225,7 +225,7 @@ export default function App() {
         onAbrir={(raiz, nome) => { setPaleta(false); abrirNaRedacao({ raiz, nome } as Alvo, false) }}
         onImportar={(raiz, nome) => { setPaleta(false); abrirNaRedacao({ raiz, nome } as Alvo, true) }}
         onCriar={(t) => { setPaleta(false); fetch('/api/copies/ideia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ titulo: t }) })
-          .then((r) => r.json()).then((d) => { if (d.nome) { setMudou((n) => n + 1); abrirNaRedacao({ raiz: (d.raiz ?? 'priorizar'), nome: d.nome } as Alvo, true) } }).catch(() => {}) }} />}
+          .then((r) => r.json()).then((d) => { if (d.nome) { setMudou((n) => n + 1); recemCriadas.add(d.nome); abrirNaRedacao({ raiz: (d.raiz ?? 'priorizar'), nome: d.nome } as Alvo, true) } }).catch(() => {}) }} />}
 
     </div>
   )
