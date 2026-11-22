@@ -18,7 +18,7 @@ export type Formato = { emoji: string; nome: string }
 export type EstadoCanvas = { producoes: Producao[]; formatos: Formato[] }
 export type Alvo = { raiz: Raiz; nome: string }
 
-export const ORDEM_FORMATO = ['📱', '💰', '🏞️', '📝', '📺', '🎥', '🗣️', '🎙️']
+export const ORDEM_FORMATO = ['📱', '💻', '🗣️', '🏞️', '🎥', '💰', '📜', '🎣', '📺', '📝', '🎙️']
 export const STATUS: { k: StatusProd; nome: string; marca: string }[] = [
   { k: 'ideia', nome: 'Ideia', marca: '💡' },
   { k: 'gravar', nome: 'Gravar', marca: '🔴' },   // copy pronta, falta gravar

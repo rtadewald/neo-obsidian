@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuCategorias, PASTEIS, PIN, SEM, arquivadaCat, ehDivisor, idGrupo, listaCategorias, nomeDivisor, rotuloCat, usePinsMenu, type ModeloCats } from './Categorias'
+import { MenuCategorias, PASTEIS, PIN, SEM, arquivadaCat, ehDivisor, grupoDe, idGrupo, listaCategorias, nomeDivisor, rotuloCat, tipoCat, usePinsMenu, type ModeloCats, type TipoCat } from './Categorias'
 import { alternarPin, usePins } from './pins'
 import { FIM, ORDEM_FORMATO, STATUS, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 
@@ -18,7 +18,7 @@ export type EstadoTabela = {
 }
 type Filtros = { status?: string[]; categoria?: string[]; data?: '' | 'com' | 'sem' }
 const nFiltros = (f?: Filtros) => (f?.status?.length ?? 0) + (f?.categoria?.length ?? 0) + (f?.data ? 1 : 0)
-type CampoOrdem = 'nome' | 'status' | 'categoria' | 'data' | 'mtime' | 'palavras' | 'formato' | 'tags'
+type CampoOrdem = 'nome' | 'status' | 'categoria' | 'data' | 'mtime' | 'palavras' | 'formato' | 'tags' | 'formatos'
 type Regra = { campo: CampoOrdem; asc: boolean }
 const CAMPOS: [CampoOrdem, string][] = [['nome', 'Nome'], ['status', 'Status'], ['categoria', 'Categoria'], ['data', 'Data'],
   ['mtime', 'Editada'], ['palavras', 'Palavras'], ['formato', 'Formato'], ['tags', 'Tags']]
@@ -41,9 +41,9 @@ const guardar = (pasta: string, g: Partial<Guardado>) => {
 /** Abre a pasta como ela estava quando o Rodrigo saiu (ou nova, na primeira vez). */
 export const tabelaSalva = (pasta: Pasta): EstadoTabela => guardadas[pasta]?.t ?? tabelaNova(pasta)
 
-export type Criacao = { cores: Record<string, string>; icones?: Record<string, string>; categorias: string[]; ordem: Record<string, string[]>; arquivadas?: string[] }
+export type Criacao = { cores: Record<string, string>; icones?: Record<string, string>; tipos?: Record<string, string>; categorias: string[]; ordem: Record<string, string[]>; arquivadas?: string[] }
 /** Os grupos da Criação, pelo ícone (formato) do nome da copy. */
-const GRUPO_FORMATO: Record<string, string> = { '📱': '📱 Reels', '📝': '📱 Reels', '🏞️': '📱 Reels', '🏞': '📱 Reels', '💻': '📱 Reels', '📚': '📚 Aula', '💰': '💰 Ad', '📺': '📺 VSL' }
+const GRUPO_FORMATO: Record<string, string> = { '📱': '📱 Reels', '📝': '📱 Reels', '🏞️': '📱 Reels', '🏞': '📱 Reels', '💻': '📱 Reels', '🗣️': '📱 Reels', '🗣': '📱 Reels', '🎥': '🎥 YouTube', '📚': '📚 Aula', '💰': '💰 Ad', '📜': '💰 Ad', '🎣': '💰 Ad', '📺': '📺 VSL' }
 
 const dia = (p: Producao) => (p.scheduled ?? '').slice(0, 10) || new Date((p.criado ?? p.mtime) * 1000).toISOString().slice(0, 10)
 /** Só a data agendada (`scheduled`): para ordenar por Data, as sem data vão sempre para o fim. */
@@ -51,8 +51,15 @@ const agendada = (p: Producao) => (p.scheduled ?? '').slice(0, 10)
 const semEmoji = (n: string) => n.replace(/^[^\p{L}\p{N}]+/u, '')
 const ROTULO_COL: Record<Coluna, string> = { formato: '', nome: 'Copy', data: 'Data' }
 /** Colunas que dá para mostrar depois da Copy (botão Colunas: escolher e arrastar a ordem; fica no localStorage). */
-type ColExtra = 'data' | 'status' | 'categoria' | 'tags' | 'palavras' | 'mtime'
-const COLS_EXTRA: Record<ColExtra, string> = { data: 'Data', status: 'Status', categoria: 'Categoria', tags: 'Tags', palavras: 'Palavras', mtime: 'Editada' }
+type ColExtra = 'data' | 'status' | 'categoria' | 'tags' | 'palavras' | 'mtime' | 'formatos'
+const COLS_EXTRA: Record<ColExtra, string> = { data: 'Data', status: 'Status', categoria: 'Categoria', tags: 'Tags', palavras: 'Palavras', mtime: 'Editada', formatos: 'Formatos' }
+/** Coluna Formatos: os formatos da mesma copy (a família é o nome sem o emoji e sem "VSL - ", "LP - ", "ISCA - "). */
+// o Reels é um só (📱 dica/hack, 🗣️ opinião/dúvida ou 💻 projeto autoral): ocupa uma posição, com o tipo que a copy tem
+const REELS: [string, string][] = [['📱', 'Dica/Hack'], ['🗣️', 'Opinião / Dúvida'], ['💻', 'Projeto autoral']]
+const FORMATOS_ORG: [string, string][] = [['🏞️', 'Carrossel']]
+const FORMATOS_PAGO: [string, string][] = [['💰', 'Ad VSL'], ['📜', 'Ad LP'], ['🎣', 'Ad Isca']]
+const semVS = (f: string) => f.replace('\uFE0F', '')
+const familia = (nome: string) => semEmoji(nome).replace(/^(VSL|LP|ISCA|Isca|Ads?|AD)\b\s*[-–—:]?\s*/i, '').trim().toLowerCase()
 /** As colunas são escolhidas por modo: vendo um status (lista corrida) ou vendo as categorias (grupos); cada um guarda as suas. */
 type ModoCols = 'status' | 'categorias'
 const COLS_PADRAO: Record<ModoCols, ColExtra[]> = { status: ['data', 'categoria'], categorias: ['data', 'status'] }
@@ -221,6 +228,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const anos = useMemo(() => [...new Set(daPasta.map((p) => dia(p).slice(0, 4)))].sort().reverse(), [daPasta])
   const arquivadas = useMemo(() => criacao.arquivadas ?? [], [criacao.arquivadas])
   const todasCategorias = useMemo(() => listaCategorias(est.producoes, criacao.categorias), [est.producoes, criacao.categorias])
+  // as famílias de copy (mesmo nome em formatos diferentes), para a coluna Formatos
+  const familias = useMemo(() => { const m = new Map<string, Producao[]>(); for (const p of est.producoes) { const k = familia(p.nome); if (k) m.set(k, [...(m.get(k) ?? []), p]) } return m }, [est.producoes])
   // dois níveis: grupo (principal) › categoria (secundário); o ícone da categoria herda o do grupo; grupo arquivado leva os filhos
   const modeloCats: ModeloCats = useMemo(() => ({ categorias: todasCategorias, icones: criacao.icones, arquivadas }), [todasCategorias, criacao.icones, arquivadas])
   const rotulo = (c: string) => rotuloCat(modeloCats, c)
@@ -236,7 +245,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
       const val = (p: Producao, c: CampoOrdem): string | number | null => c === 'status' ? STATUS.findIndex((x) => x.k === p.status)
         : c === 'categoria' ? (p.categoria ? semEmoji(p.categoria).toLowerCase() : null) : c === 'data' ? (agendada(p) || null)
         : c === 'mtime' ? p.mtime : c === 'palavras' ? p.palavras ?? 0 : c === 'formato' ? ORDEM_FORMATO.indexOf(p.formato)
-        : c === 'tags' ? ((p.tags ?? []).join(' ').toLowerCase() || null) : semEmoji(p.nome).toLowerCase()
+        : c === 'tags' ? ((p.tags ?? []).join(' ').toLowerCase() || null) : c === 'formatos' ? (familias.get(familia(p.nome))?.length ?? 0) : semEmoji(p.nome).toLowerCase()
       const regras = t.regras
       return l.sort((a, b) => {
         for (const r of regras) {
@@ -304,10 +313,11 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const cols = colsModo[modoCols]
   const setCols = (l: ColExtra[]) => setColsModo((m) => ({ ...m, [modoCols]: l }))
   const efetivas: ColExtra[] = semColunas ? [] : cols
+  const [colSobre, setColSobre] = useState<{ c: ColExtra; depois: boolean } | null>(null)   // linha que marca onde a coluna arrastada cai
   // larguras das colunas: arrastar a borda direita do cabeçalho de qualquer coluna (o vazio da direita fica com a sobra)
   const [larg, setLarg] = useState<Record<string, number>>(() => { try { return JSON.parse(localStorage.getItem('tabela-larguras') || '{}') } catch { return {} } })
   useEffect(() => { try { localStorage.setItem('tabela-larguras', JSON.stringify(larg)) } catch { /* sem storage */ } }, [larg])
-  const LARG_PADRAO: Record<string, number> = { nome: 380, status: 150, data: 120, categoria: 170, tags: 160, palavras: 90, mtime: 110 }
+  const LARG_PADRAO: Record<string, number> = { nome: 380, status: 150, data: 120, categoria: 170, tags: 160, palavras: 90, mtime: 110, formatos: 230 }
   const largDe = (c: string) => larg[c] ?? LARG_PADRAO[c] ?? 120
   // como numa planilha: a alça na borda direita muda só aquela coluna e empurra as da direita (a Data fica com a sobra;
   // passou da largura do painel, a tabela rola para o lado)
@@ -457,6 +467,16 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
     fecha()
     return [...soltas.map((x) => <option key={x} value={x}>{rotulo(x)}</option>), ...out]
   }, [listaMenu, criacao.icones])   // eslint-disable-line react-hooks/exhaustive-deps
+  // quadro (orgânico) ou funil (pago): soltar no título da outra seção, arrastar ou botão direito
+  const trocarTipo = (c: string, tipo: TipoCat) => {
+    const v = tipo === 'funil' ? 'funil' : ''
+    if (ehDivisor(c)) { onCriacao({ tipos: { [idGrupo(c)]: v } }); return }
+    const g = grupoDe(todasCategorias, c)
+    if (g && tipoCat(todasCategorias, criacao.tipos, g) !== tipo) {   // sai do grupo da outra seção: fica solta no topo da lista
+      const l = todasCategorias.filter((x) => x !== c); l.unshift(c)
+      onCriacao({ categorias: l, tipos: { [c]: v } })
+    } else onCriacao({ tipos: { [c]: v } })
+  }
   const celula = (p: Producao, c: ColExtra) => {
     const a = { raiz: p.raiz, nome: p.nome }
     if (c === 'data') return <td key={c} className="col-data" onClick={soControle}>
@@ -472,6 +492,18 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
         {opcoesCat}
         {p.categoria && !todasCategorias.includes(p.categoria) && <option value={p.categoria}>{p.categoria}</option>}
       </select></td>
+    if (c === 'formatos') {   // os que a copy tem (ligados, clicar abre a nota), um traço e os que não tem (apagados)
+      const fam = familias.get(familia(p.nome)) ?? [p]
+      const nota = (f: string) => (semVS(p.formato) === semVS(f) ? p : fam.find((x) => semVS(x.formato) === semVS(f)))
+      const reels = REELS.find(([f]) => nota(f)) ?? (['📱', 'Reels'] as [string, string])
+      const todos = [reels, ...FORMATOS_ORG, ...FORMATOS_PAGO]
+      const tem = todos.filter(([f]) => nota(f)), nao = todos.filter(([f]) => !nota(f))
+      return <td key={c} className="col-formatos" onClick={(e) => e.stopPropagation()}>
+        {tem.map(([f, rot]) => { const n = nota(f)!; return <button key={f} className="fmt-on" title={`${rot}: ${n.nome}`} onClick={() => onAbrir({ raiz: n.raiz, nome: n.nome })}>{f}</button> })}
+        {tem.length > 0 && nao.length > 0 && <i className="fmt-sep" aria-hidden="true" />}
+        {nao.map(([f, rot]) => <span key={f} className="fmt-off" title={`${rot}: não tem`}>{f}</span>)}
+      </td>
+    }
     if (c === 'tags') return <td key={c} className="col-tags" title={(p.tags ?? []).join(' ')}>{(p.tags ?? []).join(' ')}</td>
     if (c === 'palavras') return <td key={c} className="col-palavras">{p.palavras ?? ''}</td>
     return <td key={c} className="col-mtime">{dataBr(p.mtime)}</td>
@@ -522,11 +554,17 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
           onSoltar={(d, cat) => { const x = JSON.parse(d) as { id: string }; const ids = sel.has(x.id) ? [...sel] : [x.id]
             if (cat === PIN) { for (const id of ids) alternarPin(`p:${id}`, true); return }
             for (const id of ids) { const [raiz, ...resto] = id.split('/'); onCategoria({ raiz: raiz as Alvo['raiz'], nome: resto.join('/') }, cat === SEM ? '' : cat) } }}
-          onOrdem={(de, para, depois) => onCriacao({ categorias: moverNaLista(todasCategorias, de, para, !!depois) })}
-          onRenomearDivisor={(de, para) => onCriacao({ categorias: todasCategorias.map((c) => (c === de ? para : c)) })}
+          onOrdem={(de, para, depois) => {   // soltar perto de uma categoria/grupo da outra seção troca o tipo
+            const l = moverNaLista(todasCategorias, de, para, !!depois), t = tipoCat(todasCategorias, criacao.tipos, para)
+            onCriacao({ categorias: l, tipos: { [ehDivisor(de) ? idGrupo(de) : de]: t === 'funil' ? 'funil' : '' } }) }}
+          tipos={criacao.tipos ?? {}}
+          onTipo={trocarTipo}
+          onRenomearDivisor={(de, para, icone) => onCriacao({ categorias: todasCategorias.map((c) => (c === de ? para : c)), ...(icone ? { icones: { [idGrupo(de)]: icone } } : {}) })}
           onArquivarGrupo={(d) => onCriacao({ arquivadas: [...arquivadas, idGrupo(d)] })}
-          onCriar={(n, icone) => { if (!todasCategorias.includes(n)) onCriacao({ categorias: [...todasCategorias, n], ...(icone ? { icones: { [n]: icone } } : {}) }); mudar({ filtros: { ...t.filtros, categoria: [n], status: [] } }) }}
-          onDivisor={(n) => onCriacao({ categorias: [...todasCategorias, `—${Date.now().toString(36)}|${n.trim()}`] })}
+          onCriar={(n, icone, tipo: TipoCat) => {   // nasce solta (no topo da lista), na seção onde foi criada
+            if (!todasCategorias.includes(n)) onCriacao({ categorias: [n, ...todasCategorias], ...(icone ? { icones: { [n]: icone } } : {}), ...(tipo === 'funil' ? { tipos: { [n]: 'funil' } } : {}) })
+            mudar({ filtros: { ...t.filtros, categoria: [n], status: [] } }) }}
+          onDivisor={(n, ic, tipo: TipoCat) => { const id = `—${Date.now().toString(36)}`; onCriacao({ categorias: [...todasCategorias, `${id}|${n.trim()}`], ...(tipo === 'funil' ? { tipos: { [id]: 'funil' } } : {}), ...(ic ? { icones: { [id]: ic } } : {}) }) }}
           onTirar={(d) => onCriacao({ categorias: todasCategorias.filter((c) => c !== d) })}
           novas={[...new Set(baseCriacao.filter((p) => p.nova && p.categoria).map((p) => p.categoria as string))]}
           onMenu={(cat, x, y) => setMenuCor({ x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 220), cat })} />}
@@ -562,7 +600,14 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
                   {ROTULO_COL.nome}{setaDe('nome')}
                   <i className="tabela-alca" onPointerDown={redimensionar('nome')} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); setLarg(({ nome: _, ...l }) => l) }} title="Arraste para mudar a largura (duplo clique volta ao padrão)" /></th>
                 {efetivas.map((c) => (
-                  <th key={c} className={`col-${c}`} style={{ width: largDe(c) }} onClick={() => (c === 'data' ? (porStatus ? ordenarPor('data', false) : ordenar('data')) : ordenarPor(c))}>
+                  <th key={c} className={`col-${c} ${colSobre?.c === c ? (colSobre.depois ? 'is-col-depois' : 'is-col-antes') : ''}`} style={{ width: largDe(c) }}
+                    draggable onDragStart={(e) => { if (document.body.classList.contains('arrastando')) { e.preventDefault(); return } e.dataTransfer.setData('neo/col-tabela', c); e.dataTransfer.effectAllowed = 'move' }}   // arrastar o cabeçalho muda a ordem da coluna
+                    onDragOver={(e) => { if (!e.dataTransfer.types.includes('neo/col-tabela')) return; e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); const d = e.clientX > r.left + r.width / 2; setColSobre((x) => (x?.c === c && x.depois === d ? x : { c, depois: d })) }}
+                    onDragLeave={() => setColSobre(null)}
+                    onDrop={(e) => { e.preventDefault(); const de = e.dataTransfer.getData('neo/col-tabela') as ColExtra; const d = colSobre?.depois ?? false; setColSobre(null)
+                      if (!de || de === c) return; const l = cols.filter((x) => x !== de); l.splice(l.indexOf(c) + (d ? 1 : 0), 0, de); setCols(l) }}
+                    onDragEnd={() => setColSobre(null)}
+                    onClick={() => (c === 'data' ? (porStatus ? ordenarPor('data', false) : ordenar('data')) : ordenarPor(c))}>
                     {COLS_EXTRA[c]}{c === 'data' ? (t.regras?.length ? setaDe('data') : ((porStatus || t.ordem.col === 'data') && <span className="tabela-seta">{porStatus || t.ordem.asc ? '↑' : '↓'}</span>)) : setaDe(c)}
                     <i className="tabela-alca" onPointerDown={redimensionar(c)} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); setLarg(({ [c]: _, ...l }) => l) }} title="Arraste para mudar a largura (duplo clique volta ao padrão)" /></th>
                 ))}
@@ -662,6 +707,8 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
           <div className="tabela-menu tabela-cores glass glass--light" style={{ left: menuCor.x, top: menuCor.y }} role="menu" onMouseLeave={() => setMenuCor(null)}>
             <button onClick={() => { alternarPinMenu(`cat:${menuCor.cat}`); setMenuCor(null) }}>📌 {pinsMenu.includes(`cat:${menuCor.cat}`) ? 'Despinar' : 'Pinar'}</button>
             <button onClick={() => { setRenCat(menuCor.cat); setMenuCor(null) }}>✏️ Renomear</button>
+            {(() => { const c = menuCor.cat, outro: TipoCat = tipoCat(todasCategorias, criacao.tipos, c) === 'funil' ? 'quadro' : 'funil'
+              return <button onClick={() => { setMenuCor(null); trocarTipo(c, outro) }}>{outro === 'funil' ? '💸 Mover para Funis' : '🎬 Mover para Quadros'}</button> })()}
             {(() => { const c = menuCor.cat, sim = arquivadas.includes(c)
               return <button onClick={() => { setMenuCor(null); onCriacao({ arquivadas: sim ? arquivadas.filter((x) => x !== c) : [...arquivadas, c] })
                 if (!sim && t.filtros?.categoria?.includes(c)) mudar({ filtros: { ...t.filtros, categoria: t.filtros.categoria.filter((x) => x !== c) } }) }}>

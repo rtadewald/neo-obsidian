@@ -20,11 +20,12 @@ from .config import DADOS
 
 FM = re.compile(r"^---\n(.*?)\n---\n?", re.S)
 LINK = re.compile(r"\[\[([^\]|#]+)")
-FORMATOS = ["📱", "📺", "📝", "💰", "🏞️", "🎥", "🎙️", "🗣️"]
-ROTULO_FORMATO = {"📱": "Reels", "📺": "VSL", "📝": "Feed", "💰": "Ad", "🏞️": "Carrossel", "🎥": "YouTube",
-                  "🎙️": "Live", "🗣️": "Stories"}
+# orgânico: 📱 dica/hack · 💻 projeto autoral · 🗣️ opinião/dúvida · 🏞️ carrossel · 🎥 YouTube; pago: 💰 ad VSL · 📜 ad LP · 🎣 ad isca
+FORMATOS = ["📱", "💻", "🗣️", "🏞️", "🎥", "💰", "📜", "🎣", "📺", "📝", "🎙️"]
+ROTULO_FORMATO = {"📱": "Dica/Hack", "💻": "Projeto autoral", "🗣️": "Opinião / Dúvida", "🏞️": "Carrossel", "🎥": "YouTube",
+                  "💰": "Ad VSL", "📜": "Ad LP", "🎣": "Ad Isca", "📺": "VSL", "📝": "Feed", "🎙️": "Live"}
 # emojis de formato que já existem no vault (para reconhecer o formato de notas antigas)
-MARCAS_FORMATO = FORMATOS + ["📩", "🎣", "📚", "💻", "🧑🏼‍🏫", "✅", "🔥", "📦"]
+MARCAS_FORMATO = FORMATOS + ["📩", "📚", "🧑🏼‍🏫", "✅", "🔥", "📦"]
 WINNER = "🔥"   # tag de copy que performou acima da média (o card ganha borda vermelha)
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"}
 
@@ -225,20 +226,21 @@ def estado() -> dict:
 # Dois níveis (22/11/2026): os grupos (`—<id>|<nome>` na lista) são o principal e as categorias abaixo deles, o
 # secundário. A nota guarda só o nome do secundário (`categoria: "Dicas & Hacks"`); o ícone fica em `icones`: o do
 # grupo vale para os filhos, e o filho pode ter o seu. `arquivadas` guarda categorias e ids de grupo (`—<id>`).
+# `tipos`: "funil" (pago) para grupos e categorias soltas; o resto é quadro (orgânico). A categoria num grupo segue o grupo.
 
 CRIACAO = DADOS / "criacao.json"
 
 
 def criacao() -> dict:
     d = _json(CRIACAO, {})
-    return {"cores": d.get("cores", {}), "icones": d.get("icones", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}),
+    return {"cores": d.get("cores", {}), "icones": d.get("icones", {}), "tipos": d.get("tipos", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}),
             "arquivadas": d.get("arquivadas", [])}
 
 
 @_travado
 def salvar_criacao(mudanca: dict) -> dict:
     d = criacao()
-    for k in ("cores", "icones", "ordem"):
+    for k in ("cores", "icones", "tipos", "ordem"):
         if isinstance(mudanca.get(k), dict):
             d[k] = {**d[k], **mudanca[k]}
             d[k] = {c: v for c, v in d[k].items() if v not in (None, "", [])}
@@ -509,7 +511,7 @@ def renomear_categoria(de: str, para: str) -> int:
             n += 1
     d = criacao()
     salvar_criacao({"cores": {para: d["cores"].get(de), de: None}, "ordem": {para: d["ordem"].get(de), de: None},
-                    "icones": {para: d["icones"].get(de), de: None},
+                    "icones": {para: d["icones"].get(de), de: None}, "tipos": {para: d["tipos"].get(de), de: None},
                     "categorias": [para if c == de else c for c in d["categorias"]],
                     "arquivadas": [para if c == de else c for c in d["arquivadas"]]})
     return n

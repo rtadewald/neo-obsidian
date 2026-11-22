@@ -1719,3 +1719,35 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 /* a cor do grupo: bolinha antes do nome (o nome fica no estilo do título) */
 .cats-grupo-nome { display: inline-flex; align-items: center; gap: 6px; }
 .cats-grupo-cor { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); }
+
+/* Status: a Ideia (a entrada de tudo) fica em negrito */
+.cats-item.is-especial span { font-weight: 600; }
+/* Quadros (orgânico) e Funis (pago): duas seções; soltar no título troca o tipo */
+.cats .cats-t-terceira { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(23, 24, 27, .09); }
+.cats .cats-t.is-sobre { background: rgba(226, 240, 92, .35); border-radius: 6px; }
+
+/* arrastar o cabeçalho de uma coluna: uma linha vertical marca onde ela cai */
+.tabela th[draggable] { cursor: grab; }
+.tabela th.is-col-antes { box-shadow: inset 2px 0 0 #1d1d1f; }
+.tabela th.is-col-depois { box-shadow: inset -2px 0 0 #1d1d1f; }
+
+/* coluna Formatos: os que a copy tem, ligados (clicar abre), um traço, e os que não tem, apagados */
+.tabela td.col-formatos { white-space: nowrap; }
+.col-formatos .fmt-on, .col-formatos .fmt-off { display: inline-grid; place-items: center; width: 22px; height: 22px; font-size: 14px; border-radius: 6px; vertical-align: middle; }
+.col-formatos .fmt-on { cursor: pointer; }
+.col-formatos .fmt-on:hover { background: rgba(23, 24, 27, .08); }
+.col-formatos .fmt-off { filter: grayscale(1); opacity: .28; }
+.col-formatos .fmt-sep { display: inline-block; width: 1px; height: 14px; margin: 0 5px; background: rgba(23, 24, 27, .2); vertical-align: middle; }
+
+/* hierarquia: o grupo (pai) é maior e mais escuro, com o ícone; as categorias dele vêm recuadas, sem ícone */
+.cats .cats-grupo .cats-grupo-nome, .cats .cats-grupo.com-cor .cats-grupo-nome { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.cats .cats-grupo .cats-grupo-ic { font-weight: 400; margin-right: 0; }
+.cats .cats-grupo { padding-top: 10px; }
+.cats-item.is-filho { padding-left: 26px; }
+
+/* o grupo (pai) com o mesmo alinhamento dos itens: bolinha no mesmo lugar, nome em seguida, setinha à direita */
+.cats .cats-grupo { gap: 8px; padding: 6px 8px; margin-top: 4px; }
+.cats .cats-grupo .cats-grupo-nome { flex: 1; min-width: 0; gap: 6px; }
+.cats .cats-grupo .cats-grupo-seta { margin-left: auto; }
+.cats .cats-grupo .cats-grupo-cor { display: none; }
+.cats-item.is-filho { padding-left: 24px; }

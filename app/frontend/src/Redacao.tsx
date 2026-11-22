@@ -23,7 +23,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
   const [criacao, setCriacao] = useState<Criacao>({ cores: {}, categorias: [], ordem: {} })
   useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {}) }, [])
   const mudarCriacao = (m: Partial<Criacao>) => {
-    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, icones: { ...c.icones, ...(m.icones ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
+    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, icones: { ...c.icones, ...(m.icones ?? {}) }, tipos: { ...c.tipos, ...(m.tipos ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
     fetch('/api/criacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }).then((r) => r.json()).then(setCriacao).catch(() => avisar('Não consegui guardar.'))
   }
   const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { if (calendario) return { lista: [], ativa: 0 }; try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })

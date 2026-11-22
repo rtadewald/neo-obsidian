@@ -28,6 +28,15 @@ export function grupoDe(lista: string[], nome: string): string | null {
 }
 /** O ícone da categoria (secundário). */
 export const iconeCat = (m: ModeloCats, nome: string): string => (nome ? m.icones?.[nome] ?? '' : '')
+/** Quadro (orgânico) ou funil (pago): o do grupo vale para as categorias dele; sem grupo, o da própria categoria. */
+export type TipoCat = 'quadro' | 'funil'
+export function tipoCat(lista: string[], tipos: Record<string, string> | undefined, c: string): TipoCat {
+  const t = tipos ?? {}
+  if (ehDivisor(c)) return t[idGrupo(c)] === 'funil' ? 'funil' : 'quadro'
+  const g = grupoDe(lista, c)
+  if (g) return t[idGrupo(g)] === 'funil' ? 'funil' : 'quadro'
+  return t[c] === 'funil' ? 'funil' : 'quadro'
+}
 export const rotuloCat = (m: ModeloCats, nome: string) => { const i = iconeCat(m, nome); return i ? `${i} ${nome}` : nome }
 /** Arquivada: ela mesma ou o grupo dela. */
 export function arquivadaCat(m: ModeloCats, nome: string): boolean {
@@ -55,7 +64,7 @@ try {
 export function listaCategorias(producoes: Producao[], ordem: string[]): string[] {
   const nas = [...new Set(producoes.map((p) => p.categoria).filter((c): c is string => !!c))]
   const resto = nas.filter((c) => !ordem.includes(c)).sort((a, b) => semEmoji(a).localeCompare(semEmoji(b)))
-  return [...ordem.filter((c) => c && c !== SEM), ...resto]
+  return [...resto, ...ordem.filter((c) => c && c !== SEM)]   // as que só existem nas notas entram soltas no topo (no fim cairiam no último grupo)
 }
 
 /** Status e categorias pinados no menu (`st:<status>` e `cat:<nome>`, no localStorage): com o pai recolhido (a seção
@@ -100,14 +109,16 @@ export function EditorCategoria({ inicial = '', icone: icone0 = '', semIcone, pl
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, lista, icones = {}, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onArquivarGrupo, onTirar, onCor }: {
+export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, lista, icones = {}, tipos = {}, onTipo, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onArquivarGrupo, onTirar, onCor }: {
   /** Status acima das categorias: clicar filtra (⌘ soma), soltar uma copy muda o status dela. */
   status?: { lista: { k: string; rotulo: string; n: number }[]; sel: string[]; onSel: (l: string[]) => void; onSoltar: (copia: string, k: string) => void }
   novas?: string[]   // categorias com copy nova (ainda não aberta): 💡 piscando e à vista como as pinadas
   onArquivados?: () => void   // botão 🗄️ Arquivados no fim: abre a janela com as categorias e copies arquivadas
   nArquivados?: number
   lista: string[]
-  icones?: Record<string, string>   // ícone dos grupos (—id) e das categorias que não herdam
+  icones?: Record<string, string>   // ícone de cada categoria
+  tipos?: Record<string, string>   // 'funil' (pago) para grupos (—id) e categorias soltas; o resto é quadro (orgânico)
+  onTipo?: (chave: string, tipo: TipoCat) => void   // soltar no título da outra seção ou botão direito: vira quadro/funil
   renomear: string | null   // a categoria sendo renomeada ali mesmo (botão direito → Renomear)
   onRenomear: (de: string, para: string | null, icone?: string | null) => void   // para null = desistiu; icone null = herda do grupo
   arquivadas: string[]   // ficam numa seção recolhida no fim (botão direito desarquiva)
@@ -119,9 +130,9 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
   onSel: (l: string[]) => void
   onSoltar: (copia: string, cat: string) => void   // copia = JSON do arraste da tabela
   onOrdem: (de: string, para: string, depois?: boolean) => void   // depois: logo abaixo de `para` (soltar num grupo)
-  onCriar: (nome: string, icone: string | null) => void
+  onCriar: (nome: string, icone: string | null, tipo: TipoCat) => void
   onMenu: (cat: string, x: number, y: number) => void
-  onDivisor: (nome: string, icone: string | null) => void   // põe um grupo (divisor) com esse nome no fim da lista
+  onDivisor: (nome: string, icone: string | null, tipo: TipoCat) => void   // põe um grupo (divisor) com esse nome no fim da lista
   onRenomearDivisor?: (de: string, para: string, icone: string | null) => void
   onArquivarGrupo?: (divisor: string) => void   // o grupo e as categorias dele saem do menu (voltam por Arquivados)
   onCor?: (chave: string, cor: string) => void   // cor de um grupo (a chave é o id do divisor; '' tira)
@@ -140,7 +151,7 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
   const metade = (e: React.DragEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return e.clientY > r.top + r.height / 2 }
   useEffect(() => { const fim = () => setLinha(null); window.addEventListener('dragend', fim); window.addEventListener('drop', fim); return () => { window.removeEventListener('dragend', fim); window.removeEventListener('drop', fim) } }, [])
   const classeLinha = (c: string) => (linha?.c === c ? (linha.depois ? 'is-linha-depois' : 'is-linha-antes') : '')
-  const [criando, setCriando] = useState(false)
+  const [criando, setCriando] = useState<TipoCat | null>(null)   // a seção onde a categoria nova vai nascer
   // botão direito num grupo: menu com Renomear e Deletar (fecha com clique fora ou Esc)
   const [menuGrupo, setMenuGrupo] = useState<{ x: number; y: number; c: string } | null>(null)
   useEffect(() => {
@@ -179,9 +190,10 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
     if (e.metaKey || e.ctrlKey) onSel(sel.includes(c) ? sel.filter((x) => x !== c) : [...sel, c])
     else onSel(sel.length === 1 && sel[0] === c ? [] : [c])
   }
-  const item = (c: string, rotulo: string) => c && c === renomear ? <EditorCategoria key={c} inicial={c} icone={icones[c]}
+  // dentro de um grupo a categoria fica sem ícone e recuada (o ícone é do grupo); solta, mostra o dela
+  const item = (c: string, rotulo: string, filho = false) => c && c === renomear ? <EditorCategoria key={c} inicial={c} icone={icones[c]}
       onOk={(n, ic) => onRenomear(c, n, ic)} onCancelar={() => onRenomear(c, null)} /> : (
-    <button key={c || '-'} className={`cats-item ${novas.includes(c) ? 'is-nova' : ''} ${sel.includes(c) ? 'is-on' : ''} ${sobre === c ? 'is-sobre' : ''} ${classeLinha(c)}`}
+    <button key={c || '-'} className={`cats-item ${filho ? 'is-filho' : ''} ${novas.includes(c) ? 'is-nova' : ''} ${sel.includes(c) ? 'is-on' : ''} ${sobre === c ? 'is-sobre' : ''} ${classeLinha(c)}`}
       onClick={(e) => clicar(c, e)}
       draggable={!!c && c !== PIN} onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
       onDragOver={(e) => {
@@ -218,7 +230,7 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
           const discretos = visiveis.filter((x) => DISCRETOS.includes(x.k))
           return <>
             {visiveis.filter((x) => !DISCRETOS.includes(x.k)).map((x) => (
-              <button key={x.k} className={`cats-item ${status.sel.includes(x.k) ? 'is-on' : ''} ${sobre === `st:${x.k}` ? 'is-sobre' : ''}`}
+              <button key={x.k} className={`cats-item ${x.k === 'ideia' ? 'is-especial' : ''} ${status.sel.includes(x.k) ? 'is-on' : ''} ${sobre === `st:${x.k}` ? 'is-sobre' : ''}`}
                 title="Clique mostra só este status, de todas as categorias (⌘ soma; clicar de novo tira) · solte uma copy aqui para mudar o status"
                 onClick={clique(x.k)} {...soltar(x.k)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuGrupo({ x: Math.min(e.clientX, window.innerWidth - 200), y: Math.min(e.clientY, window.innerHeight - 80), c: `st:${x.k}` }) }}>
@@ -237,59 +249,76 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
           </>
         })()}
       </>}
-      <div className="cats-t cats-t-segunda cats-t-acoes">
-        {tituloSecao('cats', 'Funis')}
-        {/* ações discretas, só com o cursor sobre o título (o botão direito no vazio do menu tem as mesmas) */}
-        <span className="cats-t-botoes">
-          <button type="button" onClick={() => setCriando(true)} title="Nova categoria" aria-label="Nova categoria"><Icone n="mais" t={13} /></button>
-          <button type="button" onClick={() => setEditGrupo('+')} title="Novo grupo" aria-label="Novo grupo"><Icone n="grupo" t={13} /></button>
-          {onArquivados && <button type="button" onClick={onArquivados} title={`Arquivados (${nArquivados ?? 0})`} aria-label="Arquivados"><Icone n="arquivo" t={13} /></button>}
-        </span>
-      </div>
-      {secoes.includes('cats') && lista.filter((c) => !ehDivisor(c) && pins.includes(`cat:${c}`)).map((c) => item(c, rotuloCat(modelo, c)))}
-      {!secoes.includes('cats') && <>
-      {(() => {
-        // cada divisor abre um grupo (as categorias abaixo, até o próximo divisor). Padrão de barra lateral: setinha à
-        // esquerda (aparece no hover; fechado, fica e mostra quantas categorias estão escondidas), a linha toda recolhe
-        let fechado = false
-        return lista.map((c, i) => {
-          if (!ehDivisor(c)) return fechado && !pins.includes(`cat:${c}`) ? null : item(c, rotuloCat(modelo, c))
-          const id = c.split('|')[0], nome = nomeDivisor(c)
-          fechado = fechados.includes(id)
-          const fim = lista.slice(i + 1).findIndex(ehDivisor)
-          const n = (fim < 0 ? lista.slice(i + 1) : lista.slice(i + 1, i + 1 + fim)).filter((x) => !pins.includes(`cat:${x}`)).length
-          const alternar = () => setFechados((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
-          return (
-            <div key={c} className={`cats-div cats-grupo ${classeLinha(c)} ${fechado ? 'is-fechado' : ''} ${cores[id] ? 'com-cor' : ''}`} draggable
-              style={cores[id] ? { '--cor-grupo': cores[id] } as React.CSSProperties : undefined}
-              role="button" tabIndex={0} aria-expanded={!fechado}
-              title={`${fechado ? 'Mostrar' : 'Esconder'} as categorias de ${nome || 'este grupo'} · botão direito: renomear ou deletar · arraste muda o lugar`}
-              onClick={() => { if (editGrupo !== c) alternar() }}
-              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && editGrupo !== c) { e.preventDefault(); alternar() } }}
-              onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
-              onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/categoria')) { e.preventDefault(); const d = metade(e); setLinha((l) => (l?.c === c && l.depois === d ? l : { c, depois: d })) } }}
-              onDrop={(e) => { e.preventDefault(); const depois = linha?.c === c && linha.depois; setLinha(null); const k = e.dataTransfer.getData('neo/categoria'); if (k && k !== c) onOrdem(k, c, !!depois) }}
-              onContextMenu={(e) => { e.preventDefault(); setMenuGrupo({ x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 230), c }) }}>
-              <svg className="cats-grupo-seta" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3.5 3-3.5 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              {editGrupo === c ? <EditorCategoria inicial={nome} semIcone placeholder="Nome do grupo"
-                  onOk={(v, ic) => { setEditGrupo(null); onRenomearDivisor?.(c, comNome(c, v), ic) }} onCancelar={() => setEditGrupo(null)} />
-                : <span className="cats-grupo-nome">{cores[id] && <i className="cats-grupo-cor" style={{ background: cores[id] }} />}{nome || 'Grupo'}</span>}
-              {fechado && <em className="cats-grupo-n">{n}</em>}
-              <hr /></div>)
-        })
-      })()}
-      {(contagem[''] ?? 0) > 0 && item('', SEM)}
-      {(criando || editGrupo === '+') && <div className="cats-acoes">
-        {criando && <EditorCategoria onOk={(n, ic) => { setCriando(false); onCriar(n, ic) }} onCancelar={() => setCriando(false)} />}
-        {editGrupo === '+' && <EditorCategoria semIcone placeholder="Nome do grupo" onOk={(n, ic) => { setEditGrupo(null); onDivisor(n, ic) }} onCancelar={() => setEditGrupo(null)} />}
-      </div>}
-      </>}
+      {(['quadro', 'funil'] as TipoCat[]).map((tipo, k) => {
+        // Quadros (orgânico) e Funis (pago): cada seção mostra os grupos e categorias do seu tipo, na ordem da lista
+        const chave = tipo === 'funil' ? 'cats' : 'quadros'
+        const daSecao = lista.filter((c) => tipoCat(lista, tipos, c) === tipo)
+        const aberta = !secoes.includes(chave)
+        return (
+          <div key={tipo} className="cats-secao">
+            <div className={`cats-t ${k === 0 ? 'cats-t-segunda' : 'cats-t-terceira'} cats-t-acoes ${sobre === `sec:${tipo}` ? 'is-sobre' : ''}`}
+              onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/categoria')) { e.preventDefault(); setSobre(`sec:${tipo}`) } }}
+              onDragLeave={() => setSobre(null)}
+              onDrop={(e) => { e.preventDefault(); setSobre(null); const c = e.dataTransfer.getData('neo/categoria'); if (c) onTipo?.(c, tipo) }}
+              title={`Solte aqui uma categoria ou grupo para virar ${tipo === 'funil' ? 'funil' : 'quadro'}`}>
+              {tituloSecao(chave, tipo === 'funil' ? 'Funis' : 'Quadros')}
+              {/* ações discretas, só com o cursor sobre o título (o botão direito no vazio do menu tem as mesmas) */}
+              <span className="cats-t-botoes">
+                <button type="button" onClick={() => setCriando(tipo)} title={`Nova categoria (${tipo})`} aria-label="Nova categoria"><Icone n="mais" t={13} /></button>
+                <button type="button" onClick={() => setEditGrupo(`+${tipo}`)} title={`Novo grupo (${tipo === 'funil' ? 'funis' : 'quadros'})`} aria-label="Novo grupo"><Icone n="grupo" t={13} /></button>
+                {k === 1 && onArquivados && <button type="button" onClick={onArquivados} title={`Arquivados (${nArquivados ?? 0})`} aria-label="Arquivados"><Icone n="arquivo" t={13} /></button>}
+              </span>
+            </div>
+            {!aberta && daSecao.filter((c) => !ehDivisor(c) && pins.includes(`cat:${c}`)).map((c) => item(c, rotuloCat(modelo, c)))}
+            {aberta && <>
+            {(() => {
+              // cada divisor abre um grupo (as categorias abaixo, até o próximo divisor). Padrão de barra lateral: setinha à
+              // esquerda (aparece no hover; fechado, fica e mostra quantas categorias estão escondidas), a linha toda recolhe
+              let fechado = false
+              return daSecao.map((c, i) => {
+                if (!ehDivisor(c)) { const filho = !!grupoDe(daSecao, c); return fechado && !pins.includes(`cat:${c}`) ? null : item(c, filho ? c : rotuloCat(modelo, c), filho) }
+                const id = c.split('|')[0], nome = nomeDivisor(c)
+                fechado = fechados.includes(id)
+                const fim = daSecao.slice(i + 1).findIndex(ehDivisor)
+                const n = (fim < 0 ? daSecao.slice(i + 1) : daSecao.slice(i + 1, i + 1 + fim)).filter((x) => !pins.includes(`cat:${x}`)).length
+                const alternar = () => setFechados((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
+                return (
+                  <div key={c} className={`cats-div cats-grupo ${classeLinha(c)} ${fechado ? 'is-fechado' : ''} ${cores[id] ? 'com-cor' : ''}`} draggable
+                    style={cores[id] ? { '--cor-grupo': cores[id] } as React.CSSProperties : undefined}
+                    role="button" tabIndex={0} aria-expanded={!fechado}
+                    title={`${fechado ? 'Mostrar' : 'Esconder'} as categorias de ${nome || 'este grupo'} · botão direito: renomear, mover, arquivar · arraste muda o lugar (para a outra seção, troca o tipo)`}
+                    onClick={() => { if (editGrupo !== c) alternar() }}
+                    onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && editGrupo !== c) { e.preventDefault(); alternar() } }}
+                    onDragStart={(e) => { e.dataTransfer.setData('neo/categoria', c); e.dataTransfer.effectAllowed = 'move' }}
+                    onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/categoria')) { e.preventDefault(); const d = metade(e); setLinha((l) => (l?.c === c && l.depois === d ? l : { c, depois: d })) } }}
+                    onDrop={(e) => { e.preventDefault(); const depois = linha?.c === c && linha.depois; setLinha(null); const k2 = e.dataTransfer.getData('neo/categoria'); if (k2 && k2 !== c) onOrdem(k2, c, !!depois) }}
+                    onContextMenu={(e) => { e.preventDefault(); setMenuGrupo({ x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 260), c }) }}>
+                    {/* o pai alinhado como os outros itens: bolinha (com a cor do grupo), ícone, nome; a setinha fica à direita */}
+                    <i className="cats-cor" style={cores[id] ? { background: cores[id] } : undefined} />
+                    {editGrupo === c ? <EditorCategoria inicial={nome} icone={icones[id]} placeholder="Nome do grupo"
+                        onOk={(v, ic) => { setEditGrupo(null); onRenomearDivisor?.(c, comNome(c, v), ic) }} onCancelar={() => setEditGrupo(null)} />
+                      : <span className="cats-grupo-nome">{icones[id] && <b className="cats-grupo-ic">{icones[id]}</b>}{nome || 'Grupo'}</span>}
+                    {fechado && <em className="cats-grupo-n">{n}</em>}
+                    <svg className="cats-grupo-seta" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2l3.5 3-3.5 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </div>)
+              })
+            })()}
+            {tipo === 'quadro' && (contagem[''] ?? 0) > 0 && item('', SEM)}
+            {(criando === tipo || editGrupo === `+${tipo}`) && <div className="cats-acoes">
+              {criando === tipo && <EditorCategoria onOk={(n, ic) => { setCriando(null); onCriar(n, ic, tipo) }} onCancelar={() => setCriando(null)} />}
+              {editGrupo === `+${tipo}` && <EditorCategoria placeholder="Nome do grupo" onOk={(n, ic) => { setEditGrupo(null); onDivisor(n, ic, tipo) }} onCancelar={() => setEditGrupo(null)} />}
+            </div>}
+            </>}
+          </div>)
+      })}
       {menuGrupo && createPortal(
         <div className="tabela-menu glass glass--light" style={{ left: menuGrupo.x, top: menuGrupo.y }} role="menu">
           {menuGrupo.c.startsWith('st:') ? (
             <button onClick={() => { const k = menuGrupo.c; setMenuGrupo(null); alternarPin(k) }}>📌 {pinsMarcados.includes(menuGrupo.c) ? 'Despinar' : 'Pinar'}</button>
           ) : menuGrupo.c ? <>
             <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); setEditGrupo(c) }}>✏️ Renomear</button>
+            {onTipo && (() => { const t = tipoCat(lista, tipos, menuGrupo.c), outro: TipoCat = t === 'funil' ? 'quadro' : 'funil'
+              return <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onTipo(c, outro) }}>{outro === 'funil' ? '💸 Mover para Funis' : '🎬 Mover para Quadros'}</button> })()}
             {onArquivarGrupo && <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onArquivarGrupo(c) }} title="O grupo e as categorias dele saem do menu (voltam por Arquivados, no fim)">🗄️ Arquivar</button>}
             <button className="is-perigo" onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onTirar(c) }} title="As categorias do grupo ficam no menu">Deletar</button>
             {onCor && (() => { const id = menuGrupo.c.split('|')[0]; return <>
@@ -301,8 +330,10 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
                 <button className={`tabela-sem-cor ${cores[id] ? '' : 'is-on'}`} title="Sem cor" aria-label="Sem cor" onClick={() => { onCor(id, ''); setMenuGrupo(null) }} />
               </div></> })()}
           </> : <>   {/* botão direito no vazio do menu: as mesmas ações do título Categorias */}
-            <button onClick={() => { setMenuGrupo(null); setCriando(true) }}>＋ Nova categoria</button>
-            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+') }}>☰ Novo grupo</button>
+            <button onClick={() => { setMenuGrupo(null); setCriando('quadro') }}>＋ Nova categoria (quadro)</button>
+            <button onClick={() => { setMenuGrupo(null); setCriando('funil') }}>＋ Nova categoria (funil)</button>
+            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+quadro') }}>☰ Novo grupo (quadros)</button>
+            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+funil') }}>☰ Novo grupo (funis)</button>
             {onArquivados && <button onClick={() => { setMenuGrupo(null); onArquivados() }}>🗄️ Arquivados ({nArquivados ?? arquivadas.length})</button>}
           </>}
         </div>, document.body)}
