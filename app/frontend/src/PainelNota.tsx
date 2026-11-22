@@ -1,3 +1,4 @@
+import { arquivadaCat, ehDivisor, rotuloCat, type ModeloCats } from './Categorias'
 import { exportarPdf } from './exportarPdf'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EditorView } from '@codemirror/view'
@@ -7,7 +8,7 @@ import type { Extra } from './propriedades'
 import { Icone } from './Icone'
 import { mudarStatus as statusComDesfazer } from './desfazer'
 import { PASTA, obsidian, type Raiz } from './notas'
-import { STATUS, type Alvo, type Producao } from './canvasApi'
+import { FIM, STATUS, type Alvo, type Producao, type StatusProd } from './canvasApi'
 
 /** O painel de uma nota (cabeçalho, propriedades, editor e sumário): a Redação e a página Skills usam. */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
@@ -31,6 +32,7 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
   const [texto, setTexto] = useState('')
   const [estado, setEstado] = useState<Estado>('salvo')
   const [titulo, setTitulo] = useState<string | null>(null)
+  const cursorTitulo = useRef<number | null>(null)   // clique no título: o cursor entra onde foi o clique (null = seleciona tudo)
   // o sumário da direita pode sair (vale para todas as notas e para a página Skills; fica guardado)
   const [semSumario, setSemSumario] = useState(() => { try { return localStorage.getItem('sumario-oculto') === '1' } catch { return false } })
   const alternarSumario = () => setSemSumario((v) => { try { localStorage.setItem('sumario-oculto', v ? '0' : '1') } catch { /* sem storage */ } return !v })
@@ -104,7 +106,7 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
   const mudarStatus = (s: string) => {
     if (!prod || s === (stLocal ?? prod.status)) return
     setStLocal(s)
-    const msg = s === 'publicado' ? 'Publicada' : prod.raiz === 'publicados' ? 'Voltou para Priorizar' : undefined
+    const msg = FIM.includes(s as StatusProd) ? (prod.raiz === 'publicados' ? undefined : 'Foi para Publicados') : prod.raiz === 'publicados' ? 'Voltou para Priorizar' : undefined
     return executar(async () => {
       const r = await statusComDesfazer([{ nome: alvo.nome, status: prod.status }], s)
       const n = r.notas[0]
@@ -127,6 +129,12 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
     if (v && v !== alvo.nome) await executar(() => acao(alvo, { acao: 'renomear', novo: v }))
   }
 
+  // as categorias da Criação (dados/criacao.json): o campo categoria vira um select
+  const [categorias, setCategorias] = useState<{ v: string; r: string }[] | undefined>()
+  useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+    const m: ModeloCats = { categorias: d.categorias ?? [], icones: d.icones ?? {}, arquivadas: d.arquivadas ?? [] }
+    setCategorias(m.categorias.filter((c) => !ehDivisor(c) && !arquivadaCat(m, c)).map((c) => ({ v: c, r: rotuloCat(m, c) })))
+  }).catch(() => {}) }, [])
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
 
   const extra: Extra = prod ? {
@@ -135,6 +143,7 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
     onDatas: mudarDatas,
     onPublicado: (sim) => mudarStatus(sim ? 'publicado' : prod.scheduled ? 'agendado' : 'edicao'),
     onLink,
+    categorias,
   } : { onLink }
 
   if (!nota) return <div className="modal-corpo"><p className="mudo">Carregando…</p></div>
@@ -147,9 +156,16 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
           {titulo !== null ? (
             <form onSubmit={(e) => { e.preventDefault(); confirmarTitulo() }}>
               <input className="ideias-titulo-campo" autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} onBlur={confirmarTitulo}
-                onFocus={(e) => e.target.select()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitulo(null) } }} aria-label="Nome da nota" />
+                onFocus={(e) => { const c = cursorTitulo.current; cursorTitulo.current = null; if (c === null) e.target.select(); else e.target.setSelectionRange(c, c) }}
+                onDoubleClick={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitulo(null) } }} aria-label="Nome da nota" />
             </form>
-          ) : fixo ? <h1 title="Duplo clique seleciona o título inteiro para renomear" onDoubleClick={(e) => { e.preventDefault(); window.getSelection()?.removeAllRanges(); setTitulo(alvo.nome) }}>{alvo.nome.split('/').pop()}</h1>
+          ) : fixo ? <h1 className="is-editavel" title="Clique para renomear (duplo clique seleciona tudo)" onClick={(e) => {
+              // a posição do clique no texto vira a posição do cursor no campo
+              const d = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
+              const off = d.caretPositionFromPoint?.(e.clientX, e.clientY)?.offset ?? d.caretRangeFromPoint?.(e.clientX, e.clientY)?.startOffset ?? null
+              const visto = alvo.nome.split('/').pop() ?? alvo.nome
+              cursorTitulo.current = off === null ? null : alvo.nome.length - visto.length + Math.min(off, visto.length)
+              setTitulo(alvo.nome) }}>{alvo.nome.split('/').pop()}</h1>
             : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
         </div>
         {/* o estado só aparece quando pede atenção (conflito com o Obsidian ou erro ao salvar) */}

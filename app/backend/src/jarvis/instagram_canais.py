@@ -7,7 +7,7 @@
   ~/Downloads (a saída do javascript_tool é curta). Só leitura: não curte, não segue, não comenta.
 - Depois o backend baixa só capas e fotos (`dados/ig/capas`, `dados/ig/fotos`): os links do Instagram expiram em
   horas. Os MP4 não são baixados: clicar no Reel abre ele no Instagram.
-- Métricas: outlier = views ÷ mediana das views do canal (nos Reels coletados); engajamento = (curtidas + comentários)
+- Métricas: outlier = curtidas ÷ mediana das curtidas do canal (views podem ser pagas; curtidas ocultas ficam de fora); engajamento = (curtidas + comentários)
   ÷ views.
 """
 import asyncio
@@ -29,7 +29,9 @@ CANAIS = PASTA / "canais.json"
 VIDEOS = PASTA / "videos.json"
 CAPAS, MP4S, FOTOS = PASTA / "capas", PASTA / "videos", PASTA / "fotos"
 DOWNLOADS = Path.home() / "Downloads"
-POR_CANAL = 24          # os últimos N Reels de cada canal
+POR_CANAL = 10          # os últimos N Reels de cada canal por coleta (os de antes ficam no videos.json)
+MAX_DIAS = 30           # Reels mais antigos que isso não entram (nem os fixados antigos)
+LOTE = 5                # perfis por agente: com muitos numa rodada só, o agente desiste depois dos primeiros
 _trava = threading.Lock()
 estado: dict = {"rodando": False, "etapa": "", "ultima": None, "erro": None}
 
@@ -61,13 +63,13 @@ def handle_de(txt: str) -> str:
 # ---------- canais ----------
 
 def canais() -> list[dict]:
-    """Os canais com as contagens: reels coletados e a mediana das views."""
+    """Os canais com as contagens: reels coletados e a mediana das curtidas (a base do outlier)."""
     vs = _ler(VIDEOS, {})
     out = []
     for c in _ler(CANAIS, []):
         meus = [v for v in vs.values() if v["handle"] == c["handle"]]
-        views = [v["views"] for v in meus if v.get("views")]
-        out.append({**c, "reels": len(meus), "mediana": int(statistics.median(views)) if views else 0,
+        curt = [n for v in meus if (n := _curtidas(v))]
+        out.append({**c, "reels": len(meus), "mediana": int(statistics.median(curt)) if curt else 0,
                     "foto": f"/api/ig/arquivo/fotos/{c['handle']}.jpg" if (FOTOS / f"{c['handle']}.jpg").is_file() else None})
     return sorted(out, key=lambda c: -(c.get("seguidores") or 0))
 
@@ -105,18 +107,28 @@ def remover(handle: str):
 
 # ---------- vídeos e métricas ----------
 
+def _curtidas(v: dict) -> int | None:
+    """Curtidas confiáveis do reel, ou None quando o dono escondeu (o Instagram devolve um número fixo e baixo, ex. 3)."""
+    c = v.get("curtidas") or 0
+    if v.get("ocultas") or (c <= 5 and (v.get("views") or 0) >= 10000):
+        return None
+    return c
+
+
 def videos() -> list[dict]:
-    """Todos os reels coletados, com outlier (views ÷ mediana do canal) e engajamento."""
+    """Todos os reels coletados, com outlier (curtidas ÷ mediana das curtidas do canal: views podem vir de tráfego
+    pago, curtidas não) e engajamento."""
     vs = list(_ler(VIDEOS, {}).values())
     medianas: dict[str, float] = {}
     for h in {v["handle"] for v in vs}:
-        views = [v["views"] for v in vs if v["handle"] == h and v.get("views")]
-        medianas[h] = statistics.median(views) if views else 0
+        curt = [n for v in vs if v["handle"] == h and (n := _curtidas(v))]
+        medianas[h] = statistics.median(curt) if curt else 0
     out = []
     for v in vs:
         m = medianas.get(v["handle"]) or 0
         views = v.get("views") or 0
-        out.append({**v, "outlier": round(views / m, 2) if m else None,
+        c = _curtidas(v)
+        out.append({**v, "ocultas": c is None, "outlier": round(c / m, 2) if m and c is not None else None,
                     "engajamento": round((v.get("curtidas", 0) + v.get("comentarios", 0)) / views, 4) if views else None,
                     "capa": f"/api/ig/arquivo/capas/{v['code']}.jpg" if (CAPAS / f"{v['code']}.jpg").is_file() else None,
                     "url": f"https://www.instagram.com/reel/{v['code']}/"})
@@ -185,7 +197,8 @@ window.__igcDone = false; window.__igcN = 0;
       saida.reels.push({ code: c, data: d.taken_at || g.taken_at || null, views: g.play_count || d.play_count || (grade[c] || {}).views || 0,
         curtidas: g.like_count || d.like_count || 0, comentarios: g.comment_count || d.comment_count || 0, duracao: d.video_duration || null,
         legenda: (d.caption && d.caption.text) || '', capa: (img && img.url) || (grade[c] || {}).capa || null, mp4: vid && vid.url,
-        fixado: !!((g.clips_tab_pinned_user_ids || d.clips_tab_pinned_user_ids || []).length) });
+        fixado: !!((g.clips_tab_pinned_user_ids || d.clips_tab_pinned_user_ids || []).length),
+        ocultas: !!(g.like_and_view_counts_disabled || d.like_and_view_counts_disabled) });
       window.__igcN = saida.reels.length;
     }
   } catch (e) { saida.erro = String(e).slice(0, 160) }
@@ -278,8 +291,53 @@ async def _baixar(cli: httpx.AsyncClient, url: str | None, destino: Path) -> boo
         return False
 
 
+async def _salvar(dados: list[dict]) -> None:
+    """Grava as métricas de um lote (canais.json e videos.json acumulam) e baixa as fotos e capas dele."""
+    agora = time.time()
+    with _trava:
+        lista = _ler(CANAIS, [])
+        vs = _ler(VIDEOS, {})
+        por_h = {c["handle"]: c for c in lista}
+        novos: dict[str, str] = {}   # code -> capa (só as deste lote)
+        fotos: dict[str, str] = {}
+        for d in dados:
+            c = por_h.get(d["handle"])
+            if not c:
+                continue
+            if d.get("erro"):
+                c["erro"] = d["erro"]
+                continue
+            p = d.get("perfil") or {}
+            c.update(nome=p.get("nome") or c.get("nome", ""), seguidores=p.get("seguidores") or c.get("seguidores", 0),
+                     coletado=agora, erro=None)
+            if p.get("foto"):
+                fotos[d["handle"]] = p["foto"]
+            for r in d.get("reels", []):
+                if r.get("data") and r["data"] < agora - MAX_DIAS * 86400:
+                    continue
+                antigo = vs.get(r["code"], {})
+                vs[r["code"]] = {**antigo, "code": r["code"], "handle": d["handle"], "data": r.get("data"),
+                                 "views": r.get("views") or antigo.get("views", 0), "curtidas": r.get("curtidas", 0),
+                                 "comentarios": r.get("comentarios", 0), "duracao": r.get("duracao"),
+                                 "legenda": r.get("legenda", ""), "fixado": r.get("fixado", False), "ocultas": r.get("ocultas", False),
+                                 "coletado": agora}
+                if r.get("capa"):
+                    novos[r["code"]] = r["capa"]
+        _gravar(CANAIS, lista)
+        _gravar(VIDEOS, vs)
+    # downloads (fora da trava): fotos e capas, 4 de cada vez (os MP4 não: o Reel abre no Instagram)
+    sem = asyncio.Semaphore(4)
+    async with httpx.AsyncClient(follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as cli:
+        async def um(url, destino):
+            async with sem:
+                await _baixar(cli, url, destino)
+        await asyncio.gather(*[um(u, FOTOS / f"{h}.jpg") for h, u in fotos.items()],
+                             *[um(u, CAPAS / f"{k}.jpg") for k, u in novos.items()])
+
+
 async def atualizar(so: list[str] | None = None) -> dict:
-    """Coleta os canais (todos, ou só `so`), grava as métricas e baixa capas e fotos."""
+    """Coleta os canais (todos, ou só `so`) em lotes; cada lote já grava as métricas e baixa capas e fotos
+    (parar no meio não perde o que foi coletado)."""
     if estado["rodando"]:
         return {"status": "já rodando"}
     estado.update(rodando=True, etapa="abrindo o Instagram no Chrome", erro=None)
@@ -288,45 +346,21 @@ async def atualizar(so: list[str] | None = None) -> dict:
         handles = [c["handle"] for c in lista if not so or c["handle"] in so]
         if not handles:
             return {"status": "sem canais"}
-        dados = await _coletar(handles)
-        estado["etapa"] = "gravando as métricas"
-        agora = time.time()
-        with _trava:
-            lista = _ler(CANAIS, [])
-            vs = _ler(VIDEOS, {})
-            por_h = {c["handle"]: c for c in lista}
-            for d in dados:
-                c = por_h.get(d["handle"])
-                if not c:
-                    continue
-                if d.get("erro"):
-                    c["erro"] = d["erro"]
-                    continue
-                p = d.get("perfil") or {}
-                c.update(nome=p.get("nome") or c.get("nome", ""), seguidores=p.get("seguidores") or c.get("seguidores", 0),
-                         coletado=agora, erro=None, _foto=p.get("foto"))
-                for r in d.get("reels", []):
-                    antigo = vs.get(r["code"], {})
-                    vs[r["code"]] = {**antigo, "code": r["code"], "handle": d["handle"], "data": r.get("data"),
-                                     "views": r.get("views") or antigo.get("views", 0), "curtidas": r.get("curtidas", 0),
-                                     "comentarios": r.get("comentarios", 0), "duracao": r.get("duracao"),
-                                     "legenda": r.get("legenda", ""), "fixado": r.get("fixado", False), "coletado": agora,
-                                     "_capa": r.get("capa")}
-            fotos = {h: c.pop("_foto", None) for h, c in por_h.items()}
-            _gravar(CANAIS, lista)
-            _gravar(VIDEOS, {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")} for k, v in vs.items()})
-        # downloads (fora da trava): fotos e capas, 4 de cada vez (os MP4 não: o Reel abre no Instagram)
-        estado["etapa"] = "baixando as capas"
-        sem = asyncio.Semaphore(4)
-        async with httpx.AsyncClient(follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as cli:
-            async def um(url, destino):
-                async with sem:
-                    await _baixar(cli, url, destino)
-            tarefas = [um(u, FOTOS / f"{h}.jpg") for h, u in fotos.items() if u]
-            for k, v in vs.items():
-                tarefas.append(um(v.get("_capa"), CAPAS / f"{k}.jpg"))
-            await asyncio.gather(*tarefas)
-        estado["ultima"] = agora
+        dados = []
+        for i in range(0, len(handles), LOTE):
+            lote = handles[i:i + LOTE]
+            estado["etapa"] = f"coletando {i + 1}–{i + len(lote)} de {len(handles)}" if len(handles) > LOTE else "abrindo o Instagram no Chrome"
+            try:
+                d = await _coletar(lote)
+            except RuntimeError as e:
+                if "pediu login" in str(e) or "não achei o perfil" in str(e) or "permissão" in str(e):   # sem como seguir: para tudo
+                    raise
+                d = [{"handle": h, "erro": str(e)[:160]} for h in lote]   # um lote ruim não derruba os outros
+            await _salvar(d)
+            dados += d
+        if all(d.get("erro") for d in dados):
+            raise RuntimeError("nenhum canal coletado")
+        estado["ultima"] = time.time()
         return {"status": "ok", "canais": len(dados), "reels": sum(len(d.get("reels", [])) for d in dados)}
     except Exception as e:  # noqa: BLE001
         estado["erro"] = f"{type(e).__name__}: {e}"[:300]

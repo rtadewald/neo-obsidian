@@ -1,7 +1,9 @@
 import type { Raiz } from './notas'
 
 type Midia = { links: string[]; imagem: string | null; video?: string | null; copia: boolean }
-export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado'
+export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado' | 'ativo' | 'inativo' | 'arquivado'
+/** Os de conclusão (moram em 2 Publicados): saem da lista padrão da Criação. */
+export const FIM: StatusProd[] = ['publicado', 'ativo', 'inativo', 'arquivado']
 export type Producao = {
   nome: string; raiz: 'priorizar' | 'publicados'; status: StatusProd; scheduled: string | null; ano: string
   formato: string; origem?: string | null; previa: string; mtime: number; datas?: string[]
@@ -9,7 +11,6 @@ export type Producao = {
   winner?: boolean   // tag 🔥 na nota: performou acima da média
   tags?: string[]
   categoria?: string | null   // `categoria:` da copy: o grupo dela na Criação e no menu de categorias
-  arquivado?: boolean         // `arquivado: true`: fora da Criação (botão direito → Arquivar)
   nova?: boolean              // criada (⌘K, radar) ou com ideia plugada e ainda não aberta: "new" e 💡 na categoria
 } & Midia
 export type Formato = { emoji: string; nome: string }
@@ -23,7 +24,10 @@ export const STATUS: { k: StatusProd; nome: string; marca: string }[] = [
   { k: 'gravar', nome: 'Gravar', marca: '🔴' },   // copy pronta, falta gravar
   { k: 'edicao', nome: 'Em edição', marca: '🧑🏼‍🔧' },
   { k: 'agendado', nome: 'Agendado', marca: '🔹' },
-  { k: 'publicado', nome: 'Publicado', marca: '✅' },
+  { k: 'publicado', nome: 'Publicado', marca: '✅' },   // orgânico
+  { k: 'ativo', nome: 'Ativo', marca: '🟢' },           // VSL e ads no ar
+  { k: 'inativo', nome: 'Inativo', marca: '⏸️' },      // VSL e ads parados
+  { k: 'arquivado', nome: 'Arquivado', marca: '🗄️' },  // fora das listas (só no filtro dele e em Arquivados)
 ]
 
 export async function post<T = unknown>(rota: string, corpo: unknown, metodo = 'POST'): Promise<T> {

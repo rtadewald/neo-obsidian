@@ -1,8 +1,8 @@
 """As copies do vault para a Redação do Neo-Obsidian: listar (com status, categoria, mídia), criar, mudar status,
-tags, winner, categoria e arquivar, e a cor/ordem das categorias e das copies na Criação (`dados/criacao.json`).
+tags, winner e categoria, e a cor/ordem das categorias e das copies na Criação (`dados/criacao.json`).
 
 - copy → as notas de `1 Copies/1 Priorizar` e `2 Publicados`; o status vem do nome/pasta (ver notas.py).
-- `categoria:` no frontmatter agrupa a Criação; `arquivado: true` tira a copy da Criação.
+- `categoria:` no frontmatter agrupa a Criação. Arquivar é o status `arquivado` (21/11/2026; saiu o `arquivado: true`).
 - O Canvas (mapa mental, canvas, layout, desenho, `grupo:`) saiu em 19/11/2026.
 """
 import functools
@@ -176,7 +176,7 @@ def _linha(raiz: str, nome: str, p: Path) -> dict:
              "previa": notas._previa(t), "mtime": st.st_mtime, "criado": criado,
              "palavras": len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo)))),
              "winner": WINNER in tags, "tags": tags,
-             "categoria": _valor(fm, "categoria") or None, "arquivado": _valor(fm, "arquivado") == "true", **midia}
+             "categoria": _valor(fm, "categoria") or None, **midia}
     _LINHAS[p] = (chave, linha)
     return linha
 
@@ -222,19 +222,23 @@ def estado() -> dict:
 
 
 # ---------- Criação (Redação): cor e ordem das categorias e das copies; arquivar ----------
+# Dois níveis (22/11/2026): os grupos (`—<id>|<nome>` na lista) são o principal e as categorias abaixo deles, o
+# secundário. A nota guarda só o nome do secundário (`categoria: "Dicas & Hacks"`); o ícone fica em `icones`: o do
+# grupo vale para os filhos, e o filho pode ter o seu. `arquivadas` guarda categorias e ids de grupo (`—<id>`).
 
 CRIACAO = DADOS / "criacao.json"
 
 
 def criacao() -> dict:
     d = _json(CRIACAO, {})
-    return {"cores": d.get("cores", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}), "arquivadas": d.get("arquivadas", [])}
+    return {"cores": d.get("cores", {}), "icones": d.get("icones", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}),
+            "arquivadas": d.get("arquivadas", [])}
 
 
 @_travado
 def salvar_criacao(mudanca: dict) -> dict:
     d = criacao()
-    for k in ("cores", "ordem"):
+    for k in ("cores", "icones", "ordem"):
         if isinstance(mudanca.get(k), dict):
             d[k] = {**d[k], **mudanca[k]}
             d[k] = {c: v for c, v in d[k].items() if v not in (None, "", [])}
@@ -244,15 +248,6 @@ def salvar_criacao(mudanca: dict) -> dict:
     DADOS.mkdir(parents=True, exist_ok=True)
     CRIACAO.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
     return d
-
-
-def arquivar_nota(raiz: str, nome: str, sim: bool = True) -> dict:
-    """`arquivado: true` na nota (sai da Criação); desarquivar tira a chave."""
-    p = notas._caminho(raiz, nome)
-    if not p or not p.is_file():
-        raise FileNotFoundError(nome)
-    notas._escrever(p, _definir(_ler(p, None), "arquivado", "true" if sim else None))
-    return {"ok": True}
 
 
 # ---------- escrita ----------
@@ -450,16 +445,19 @@ def achar(nome: str) -> tuple[str, str]:
 
 
 def mudar_status(nome: str, status: str) -> dict:
-    """ideia | gravar | edicao | agendado | publicado. Publicar move para 2 Publicados; despublicar volta para Priorizar.
+    """ideia | gravar | edicao | agendado (1 Priorizar) · publicado | ativo | inativo | arquivado (2 Publicados): a pasta
+    acompanha o status e a propriedade `status:` fica gravada.
     A posição do card no canvas vai junto (como no app)."""
     raiz, nome = achar(nome)
     if raiz not in notas.PASTAS:
         raise ValueError("só copies (1 Priorizar ou 2 Publicados) têm status")
-    if status not in ("ideia", "gravar", "edicao", "agendado", "publicado"):
-        raise ValueError("status é ideia, gravar, edicao, agendado ou publicado")
+    if status not in notas.STATUS_VAULT:
+        raise ValueError("status é ideia, gravar, edicao, agendado, publicado, ativo, inativo ou arquivado")
     antes = (raiz, nome)
-    if status == "publicado":
+    if status in notas.FIM:
         d = notas.mover(raiz, nome, "publicados") if raiz != "publicados" else {"raiz": raiz, "nome": nome}
+        if status != notas.status(d["raiz"], d["nome"]):
+            d = notas.mudar_status(d["raiz"], d["nome"], status)
     else:
         d = notas.mover(raiz, nome, "priorizar") if raiz == "publicados" else {"raiz": raiz, "nome": nome}
         if status != notas.status(d["raiz"], d["nome"]):
@@ -511,6 +509,7 @@ def renomear_categoria(de: str, para: str) -> int:
             n += 1
     d = criacao()
     salvar_criacao({"cores": {para: d["cores"].get(de), de: None}, "ordem": {para: d["ordem"].get(de), de: None},
+                    "icones": {para: d["icones"].get(de), de: None},
                     "categorias": [para if c == de else c for c in d["categorias"]],
                     "arquivadas": [para if c == de else c for c in d["arquivadas"]]})
     return n

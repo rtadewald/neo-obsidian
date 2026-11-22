@@ -37,7 +37,7 @@ Claude no terminal, citando a nota pelo nome; o Claude mexe nas notas e na tela 
    antes de ler e já apagou uma nota real. Leia, guarde em variável, depois escreva. Em operação em lote no vault,
    faça backup antes (no scratchpad) e confira o diff.
 4. **Nada se apaga de verdade.** Apagar uma nota manda para `.trash/` do vault (a lixeira do Obsidian), via
-   `notas.para_lixeira`. Arquivar (`arquivado: true`) só tira a copy da Criação.
+   `notas.para_lixeira`. Arquivar é o status `arquivado` (vai para Publicados e some das listas).
 5. **Frontmatter se edita por linha.** Mude só a chave que precisa (`copies._definir`, `notas._definir_scheduled`,
    `notas._marcar_publicado`, ou o painel de propriedades no front). Não reescreva o bloco inteiro: o Obsidian e os
    plugins (Templater, Dataview) dependem do formato.
@@ -78,7 +78,7 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 ```
 1 Copies/
   1 Priorizar/         copies vivas: backlog, em edição, agendadas
-  2 Publicados/        copies publicadas (status: publicado)
+  2 Publicados/        copies concluídas (status: publicado, ativo, inativo ou arquivado)
 2 Notas/Engine/
   templates/           T - Copy.md é o frontmatter de toda copy nova
   attachments/         imagens coladas (![[Pasted image ….png]])
@@ -90,17 +90,22 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 
 | Status (código no app) | Rótulo no app | Como está no vault |
 |---|---|---|
-| `ideia` | 💡 Ideia | `status: ideia` (ou sem a propriedade; `priorizar` antigo ainda é lido), em `1 Priorizar/` |
+| `ideia` | 💡 Ideia | `status: ideia` (ou sem a propriedade), em `1 Priorizar/` |
 | `gravar` | Gravar | `status: gravar` |
 | `edicao` | Em edição | `status: edicao` |
 | `agendado` | Agendado | `status: agendado` |
-| `publicado` | Publicado | em `2 Publicados/`, com `status: publicado` (a propriedade `publicado:` saiu de todas as notas em 19/11/2026) |
+| `publicado` | ✅ Publicado | em `2 Publicados/`, com `status: publicado` (orgânico; sem a propriedade em Publicados também é publicado) |
+| `ativo` | 🟢 Ativo | em `2 Publicados/`, `status: ativo` (VSL e ads no ar) |
+| `inativo` | ⏸️ Inativo | em `2 Publicados/`, `status: inativo` (VSL e ads parados; em 21/11/2026 as 333 💰/📺 publicadas viraram inativo) |
+| `arquivado` | 🗄️ Arquivado | em `2 Publicados/`, `status: arquivado`: some das listas (só no filtro dele e em Arquivados; substituiu o `arquivado: true` em 21/11/2026) |
 
 - Mudar entre os status de Priorizar **só grava a propriedade** (`notas.mudar_status`); o nome da nota não muda.
   Desde 19/11/2026 as marcas no nome (`🧑🏼‍🔧`, `🔹`, `👁️`) saíram: 33 notas migradas para a propriedade, e o 👁️ que
   sobrava em 28 nomes também.
-- Publicar **move** para `2 Publicados/` e grava `status: publicado` (`notas.mover`).
-  Despublicar faz o caminho inverso (`status: ideia`, volta para `1 Priorizar/`).
+- Os de conclusão (`notas.FIM`: publicado, ativo, inativo, arquivado) **movem** para `2 Publicados/` e gravam o `status:`
+  (`copies.mudar_status` → `notas.mover` + `notas.mudar_status`). Voltar para um dos outros faz o caminho inverso (volta
+  para `1 Priorizar/`). No calendário, o checkbox conclui como ativo (💰 📺) ou publicado. No menu da Redação, Ativo é item
+  normal (depois de Agendado); Publicado e Inativo são links sublinhados discretos, sem contagem, embaixo, e Arquivado só um ícone.
 - **Priorizar é o pin** (botão direito → 📌 Priorizar; ids `p:raiz/nome` em `canvas-pinados`): as pinadas ficam no topo da
   própria categoria (ou da lista), com 📌, fundo amarelo e um traço separando das demais, fora dos filtros e da ordenação.
 - Copy nova (⌘K, ⌥N ou "+ Nova copy" na Redação) nasce com o frontmatter do `T-Copy.md` (`status: ideia`,
@@ -131,11 +136,9 @@ emoji conhecido aparece como `📄`. O nome sem marcas nem emoji é o título da
 
 | Chave | Em quê | O que é |
 |---|---|---|
-| `publicado` | copy | `true` só em `2 Publicados/` (o app mantém) |
 | `scheduled` | copy | `"AAAA-MM-DD"`, a data de publicação; o calendário editorial lê e grava |
 | `tags` | todas | lista YAML; vazia fica `tags:` (nunca apague a chave) |
-| `categoria` | copy | agrupa a Criação e o menu de categorias da Redação |
-| `arquivado` | copy | `true`: fora da Criação (botão direito → Arquivar) |
+| `categoria` | copy | agrupa a Criação e o menu de categorias da Redação. No painel de propriedades da nota é um select com as categorias do `criacao.json` (sempre gravada entre aspas) |
 | `notion` | copy | link do card no Notion (base "Edição e Publicação - 2026"); vários cards da mesma copy (versões, LP/VSL, retestes) viram lista. O painel mostra como "Notion ↗" |
 | `origin` | ideia | wikilink do projeto/tema pai (padrão do vault) |
 | `fontes` | ideia | lista de `[[…]]` das entradas ligadas (legado) |
@@ -160,33 +163,42 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 ## 5. A Redação (`Redacao.tsx`, `Tabela.tsx`)
 
 - **Layout:** um card só, com a tabela à esquerda e a nota (ou o calendário) à direita; divisória arrastável
-  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** vai para a aba Calendário e volta (só sem texto selecionado; o calendário saiu da Redação); **⌘D** manda para a lixeira as selecionadas ou a copy aberta (pede confirmação). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. **⌘1…** (ou ⌃) trocam de página na ordem da navbar (⌘1 Redação, ⌘2 Calendário…), também com copy aberta e no modo W; no modo copy, **⌥1…⌥9** vão para as abas de nota. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas aparecem no fim, depois de um traço (visíveis por padrão; "Esconder publicados" guarda a escolha em `tabela-ver-pub`).
+  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** vai para a aba Calendário e volta (só sem texto selecionado; o calendário saiu da Redação); **⌘A** seleciona todas as copies visíveis na tabela (Esc limpa a seleção); **⌘D** ou **⌘⌫** mandam para a lixeira as selecionadas ou a copy aberta (pede confirmação; no editor o ⌘⌫ segue apagando a linha). Um clique no título da copy aberta abre a edição do nome com o cursor onde foi o clique (duplo clique seleciona tudo). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. **⌘1…** (ou ⌃) trocam de página na ordem da navbar (⌘1 Redação, ⌘2 Calendário…), também com copy aberta e no modo W; no modo copy, **⌥1…⌥9** vão para as abas de nota. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas aparecem no fim, depois de um traço (visíveis por padrão; "Esconder publicados" guarda a escolha em `tabela-ver-pub`).
 - **Abas de notas** sobre o painel, como no Obsidian (`redacao-abas` no `localStorage`): clique numa linha abre na aba
   da frente; **⌘+clique** (ou ⌘↵ na busca ⌘O) abre numa aba nova; × ou clique do meio fecha. Enter na busca abre na
   aba da frente.
 - **Abas da tabela:** Criação · Gravar | Em edição · Agendado · Publicados, com o ícone de cada status, o nome e o número (Priorizar e Winners saíram em 19/11/2026).
   - **Criação:** as copies com ícone de formato (📱 📝 🏞️ 💻 📚 💰 📺, `GRUPO_FORMATO`) agrupadas pela **categoria**
-    (`categoria:` da copy; sem ela, "Sem categoria" no fim). Publicadas (por padrão) ou com `arquivado: true` ficam de fora.
+    (`categoria:` da copy; sem ela, "Sem categoria" no fim). Ordem padrão (sem status escolhido): **ativos** no topo, depois as **pinadas**, depois as em andamento (ideia, gravar, edição, agendado); publicado e inativo ficam no bloco "Mostrar publicados" do fim, **recolhido por padrão** (`tabela-ver-pub-2`); arquivado não aparece (só no filtro dele).
     Botão direito na categoria → cor pastel (a linha e as copies dela ficam na cor). Arrastar categoria sobre
     categoria muda a ordem; arrastar copy sobre copy muda a posição (e a categoria, se for de outro grupo). Cor e ordem em
     `dados/criacao.json` (`GET/POST /api/criacao`).
-- **Menu de categorias** à esquerda da tabela (`Categorias.tsx`): Todas, cada categoria (com a contagem da aba) e
-  "+ Nova categoria" (entra na lista do `criacao.json`, mesmo sem copy; criar e renomear abrem ali mesmo um editor com ícones prontos 📱 💰 📺 📚 🎥 🏞️ e o nome). Clique filtra (⌘ soma), soltar uma copy (ou a
+- **Categorias em dois níveis** (22/11/2026): os **grupos** (divisores `—<id>|<nome>` na lista do `criacao.json`) são
+  o principal (só nome e cor) e as **categorias** abaixo deles, o secundário (ícone e nome). Toda copy fica num
+  secundário. A nota guarda só o nome (`categoria: "Dicas & Hacks"`); o ícone da categoria fica em `icones` no
+  `criacao.json` (`iconeCat`/`rotuloCat` em `Categorias.tsx`). Arrastar um grupo leva as categorias dele junto e o
+  bloco cai antes ou depois do grupo de destino, nunca no meio (`moverNaLista` em `Tabela.tsx`). Em 22/11/2026
+  as 251 notas perderam o emoji do nome; "💰 VSL FIA/FID" viraram "Ads VSL FIA/FID" e "📺 VSL FIA/FID", "VSL FIA/FID"
+  (backup em `dados/antes-categorias-*`). Arquivar vale para os dois: `arquivadas` guarda nomes de categoria e ids de
+  grupo (grupo arquivado leva as categorias dele; `arquivadaCat`). O ícone **Arquivados** fica no título "Funis" (aparece no hover) e no botão direito do vazio do menu.
+- **Menu de categorias** à esquerda da tabela (`Categorias.tsx`): a seção se chama **Funis**; os grupos (nome em caixa alta e uma bolinha com a cor; botão direito: Renomear
+  , Arquivar, Deletar, cor), cada categoria (com a contagem da aba) e "+ Nova categoria" (entra na lista do
+  `criacao.json`, mesmo sem copy; criar e renomear abrem ali mesmo um editor com o ícone e o nome). Clique filtra (⌘ soma), soltar uma copy (ou a
   seleção) muda a categoria, arrastar categoria muda a ordem, botão direito: cor, renomear, apagar (só vazia).
   No topo, a categoria especial **📌 Pinados**: só as pinadas da aba (soltar uma copy ali pina).
-  Botão direito → **🗄️ Arquivar categoria**: sai do menu e da Criação (a não ser escolhida), vai para a seção
-  recolhida "Arquivadas" no fim do menu (`arquivadas` no `criacao.json`); as copies não mudam.
+  Botão direito → **🗄️ Arquivar** (categoria ou grupo): sai do menu e da Criação (a não ser escolhida) e aparece na
+  janela **Arquivados** (ícone no título "Funis" ou botão direito no vazio do menu), de onde desarquiva; as copies não mudam.
 - **Colunas da tabela:** botão **Colunas** na barra de cima: marcar quais aparecem depois da Copy (Data, Status,
-  Categoria, Tags, Palavras, Editada) e arrastar a ordem (`tabela-colunas` no localStorage). Toda coluna muda de largura
+  Categoria, Tags, Palavras, Editada) e arrastar a ordem (`tabela-colunas-modo` no localStorage, uma lista por modo). Toda coluna muda de largura
   pela borda direita do cabeçalho (`tabela-larguras`; duplo clique volta ao padrão); o vazio do fim fica com a sobra.
-  Com um status escolhido, a coluna Status vira Categoria. Status e categoria do menu são excludentes.
+  A escolha de colunas é por modo, cada um com a sua (`tabela-colunas-modo`): vendo um status (padrão Data, Categoria) e vendo as categorias (padrão Data, Status); as marcadas sempre aparecem. Status e categoria do menu são excludentes.
 - **Pinar status e categorias:** alfinete com o cursor sobre o item (pinado, fica vermelho e sempre à vista) ou botão
   direito → 📌 Pinar. Com o pai recolhido (a seção Status/Categorias ou o grupo), os pinados continuam à vista
   (`cats-pinados` no localStorage, chaves `st:<status>` e `cat:<nome>`; `usePinsMenu` em `Categorias.tsx`).
 - **Copies novas:** criar uma copy (⌘K, paleta, radar) ou plugar uma ideia numa copy marca a nota em
   `dados/novas.json` (`copies.marcar_nova`; `/api/copies` devolve `nova: true`). A linha ganha o selo **new** e a
   categoria um 💡 piscando, e fica à vista como pinada. Abrir a nota tira (`POST /api/copies/vista`); a abertura
-  automática logo depois de criar não conta (`recemCriadas` em `canvasApi.ts`). Renomear leva a marca junto.
+  automática logo depois de criar não conta (`recemCriadas` em `canvasApi.ts`). Renomear leva a marca junto. O botão direito na linha também marca ou tira à mão ("💡 Marcar como new" / "Tirar o new", `POST /api/copies/nova {nome, sim}`).
 - **Links no editor:** `[[` abre um seletor de notas (nomes de `GET /api/notas-indice`); Enter grava `[[Nome]]`.
   Clique num [[link]] abre na aba da frente, ⌘+clique numa aba nova. A seta **←** nas abas volta para a copy anterior.
 - **⇧+clique** numa linha seleciona da última clicada até ela. A pinada é marcada só pelo 📌.
@@ -217,7 +229,7 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
 | Tela | Arquivo | O que faz |
 |---|---|---|
 | **Redação** | `Redacao.tsx` | seção 5 |
-| **Calendário** | `Redacao.tsx` (`calendario`) | a mesma tabela da Redação (filtros, menu, atalhos) com o calendário sempre à direita: arrastar uma linha para um dia agenda a copy. O calendário é contínuo: as semanas seguem sem quebra de mês (a virada é uma escadinha; o mês e o número da semana ficam na margem), carrega mais semanas ao rolar perto das pontas, abre com a semana de hoje no topo, ‹ › pulam de mês e o título mostra os meses à vista. O checkbox de cada copy no calendário publica (status publicado, vai para 2 Publicados); desmarcar volta para Priorizar como agendado (⌘Z desfaz). Abrir uma copy (clique na linha ou no calendário) abre um modal com o nome, as propriedades e o texto, tudo editável (Esc ou clique fora fecha; "Abrir na Redação ↗" leva para lá); ⌘+clique vai direto para a Redação. O ⌘C volta para a Redação |
+| **Calendário** | `Redacao.tsx` (`calendario`) | a mesma tabela da Redação (filtros, menu, atalhos) com o calendário sempre à direita: arrastar uma linha para um dia agenda a copy. O calendário é contínuo: as semanas seguem sem quebra de mês (a virada é uma escadinha; o mês fica na margem). Acima dele, ícones filtram o tipo de copy pelo emoji do nome (Todos por padrão; 📱 🏞️ 💰 📺 📚 🎥 Outros; clicar soma ou tira; `cal-tipos` no localStorage), carrega mais semanas ao rolar perto das pontas, abre com a semana de hoje no topo, ‹ › pulam de mês e o título mostra os meses à vista. O checkbox de cada copy no calendário publica (status publicado, vai para 2 Publicados); desmarcar volta para Priorizar como agendado (⌘Z desfaz). Abrir uma copy (clique na linha ou no calendário) abre um modal com o nome, as propriedades e o texto, tudo editável (Esc ou clique fora fecha; "Abrir na Redação ↗" leva para lá); ⌘+clique vai direto para a Redação. O ⌘C volta para a Redação |
 | **X** e **Sites** | `Radar.tsx` | o radar (seção 8). Botão direito num card → criar copy em Priorizar |
 | **Instagram** | `Instagram.tsx` | canais monitorados e os Reels deles, com métricas relativas ao canal (seção 8) |
 | **Agendamento** | `Calendario.tsx` | posts publicados e agendados do Instagram vindos do Metricool (seção 8) |
@@ -284,16 +296,17 @@ o ⌘1–8 o Chrome guarda para as abas dele). A página atual fica no `localSto
   espera 12 s a extensão conectar e tenta de novo. Não precisa deixar o perfil aberto.
 - **Instagram: canais monitorados** (`instagram_canais.py`, `Instagram.tsx`, aba Instagram, 19/11/2026). Duas vistas:
   **Canais** (cadastro à mão: @, link ou vários separados por espaço; card com foto, seguidores, nº de reels e mediana de
-  views; × para de acompanhar e apaga os arquivos) e **Vídeos** (grade 9:16 com outlier = views ÷ mediana do canal,
-  views e engajamento = (curtidas + comentários) ÷ views; filtros de canal, data, outlier mínimo e ordem, guardados no
-  `localStorage`; clicar abre o Reel no Instagram, numa aba nova). Botão **Atualizar** → `POST /api/ig/atualizar` (segundo plano,
-  `GET /api/ig/estado`). Coleta: um agente (Sonnet) abre o Chrome "Claude Profile" (conta teste.asimov) e, para cada
+  curtidas; × para de acompanhar e apaga os arquivos) e **Vídeos** (grade 9:16 com outlier = curtidas ÷ mediana das curtidas do canal (views podem vir de tráfego pago;
+  curtidas ocultas, `like_and_view_counts_disabled` ou ≤ 5 com 10 mil+ views, viram "oculto" e saem da mediana), curtidas,
+  views e engajamento = (curtidas + comentários) ÷ views; filtros de canal, data e outlier mínimo e, depois de um traço, os botões de ordem (Outlier, Curtidas, Views, Mais recentes,
+  Engajamento), guardados no `localStorage`; clicar abre o Reel no Instagram, numa aba nova). Botão **Atualizar** → `POST /api/ig/atualizar` (segundo plano,
+  `GET /api/ig/estado`). Cada lote já grava (parar no meio não perde o coletado) e Reels com mais de `MAX_DIAS = 30` dias não entram; parar a API cancela a coleta (`on_event shutdown`). Coleta em lotes de `LOTE = 5` canais, um agente por lote (com muitos numa rodada só ele desistia depois dos primeiros; um lote que falha não derruba os outros, e `estado.etapa` mostra "coletando 6–10 de 49"): um agente (Sonnet) abre o Chrome "Claude Profile" (conta teste.asimov) e, para cada
   canal, navega a `/<canal>/reels/` e roda `SCRIPT`: lê seguidores e foto do og: da página do perfil, intercepta as
   respostas que a página busca (a grade traz views/curtidas/comentários/capa; abrir um reel na própria página, com clique
   e `history.back`, traz legenda, `taken_at`, duração e `video_versions`) e baixa `neo-igc-<prefixo>-<canal>.json` em
   ~/Downloads. A API `/api/v1/users/web_profile_info` e `/api/v1/feed/user` dão 404 nessa conta: não use. Depois o
-  backend baixa só fotos e capas (`dados/ig/{fotos,capas}`; os links do Instagram expiram); os MP4 não. `POR_CANAL = 24`
-  (os mais recentes, fixados incluídos). Dados: `dados/ig/canais.json` e `dados/ig/videos.json`.
+  backend baixa só fotos e capas (`dados/ig/{fotos,capas}`; os links do Instagram expiram); os MP4 não. `POR_CANAL = 10`
+  (os mais recentes de cada coleta, fixados incluídos; o `videos.json` acumula: Reels de coletas antigas ficam, os repetidos só atualizam as métricas). Dados: `dados/ig/canais.json` e `dados/ig/videos.json`.
   Rotas: `GET/POST /api/ig/canais`, `DELETE /api/ig/canais/{handle}`, `GET /api/ig/videos`, `GET /api/ig/arquivo/{tipo}/{nome}`.
   As listas vêm com `cache: 'no-store'` (o Chrome guardava a resposta em HTML de quando o Vite estava subindo).
 - **Feed do Instagram no radar (desligado)**: `COLETAR_FEED_IG = False` em `radar.py`. **Instagram** (`coletores/instagram_radar.py`, aba Instagram; o `coletores/instagram.py` é outro: os Reels do próprio @rodrigotadewald para o Metricool): roda junto com a coleta do X. Duas fontes: a grade de Reels
@@ -361,10 +374,10 @@ copiado do Neo Stitch.
 
 | Rota | Para quê |
 |---|---|
-| `GET /api/copies` | todas as copies (status, formato, categoria, `arquivado`, mídia) e os formatos. Cada nota fica em cache pelo mtime: só as que mudaram são relidas |
-| `POST /api/copies/status` · `tags` · `winner` · `categoria` · `categoria/renomear` · `arquivar` | ações nas copies (pelo nome) |
+| `GET /api/copies` | todas as copies (status, formato, categoria, mídia) e os formatos. Cada nota fica em cache pelo mtime: só as que mudaram são relidas |
+| `POST /api/copies/status` · `tags` · `winner` · `categoria` · `categoria/renomear` | ações nas copies (pelo nome) |
 | `POST /api/copies/ideia` · `entrada` | copy nova em Priorizar · copy a partir de link/texto (ou `pronto` do radar) |
-| `GET/POST /api/criacao` | cor e ordem das categorias e das copies na Criação (`dados/criacao.json`) |
+| `GET/POST /api/criacao` | grupos e categorias (lista com divisores), `icones`, cores, `arquivadas` e a ordem das copies na Criação (`dados/criacao.json`) |
 | `GET/PUT /api/notas/{raiz}/{nome}` | ler · salvar (com `mtime`; conflito se mudou por fora) |
 | `POST /api/notas/{raiz}/{nome}/acao` | `mover` · `status` · `renomear` · `lixeira` |
 | `POST /api/notas/{raiz}/{nome}/agenda` · `GET /api/notas/agenda` | `scheduled` · calendário editorial |

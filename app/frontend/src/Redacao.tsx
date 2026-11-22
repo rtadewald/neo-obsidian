@@ -23,7 +23,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
   const [criacao, setCriacao] = useState<Criacao>({ cores: {}, categorias: [], ordem: {} })
   useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {}) }, [])
   const mudarCriacao = (m: Partial<Criacao>) => {
-    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
+    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, icones: { ...c.icones, ...(m.icones ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
     fetch('/api/criacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }).then((r) => r.json()).then(setCriacao).catch(() => avisar('Não consegui guardar.'))
   }
   const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { if (calendario) return { lista: [], ativa: 0 }; try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })
@@ -91,7 +91,8 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
     const r = caixa.current?.getBoundingClientRect()
     if (!r) return
     e.preventDefault()
-    const mover = (ev: PointerEvent) => (escrita ? setLatW(Math.round(Math.min(900 + (semCats ? catsW : 0), Math.max(260, ev.clientX - r.left + (semCats ? catsW : 0))))) : setFrac(Math.min(0.85, Math.max(0.12, (ev.clientX - r.left) / r.width))))
+    const mover = (ev: PointerEvent) => (escrita ? setLatW(Math.round(Math.min(r.width - 320 + (semCats ? catsW : 0), Math.max(260, ev.clientX - r.left + (semCats ? catsW : 0))))) :   // a copy fica com pelo menos 320 px
+      setFrac(Math.min(0.85, Math.max(0.12, (ev.clientX - r.left) / r.width))))
     const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); document.body.classList.remove('arrastando') }
     document.body.classList.add('arrastando')
     window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar)
@@ -236,7 +237,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
             fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {})   // a lista e a cor já vêm com o nome novo
             setT((x) => (x.filtros?.categoria?.includes(de) ? { ...x, filtros: { ...x.filtros, categoria: x.filtros.categoria.map((c) => (c === de ? para : c)) } } : x))
             await recarregar() }}
-          onArquivar={async (a, sim) => { naHora([a], { arquivado: sim }); await post('arquivar', { raiz: a.raiz, nome: a.nome, sim }); avisar(sim ? 'Arquivada (fora da Criação)' : 'Desarquivada'); await recarregar() }}
+          onNova={async (a, sim) => { naHora([a], { nova: sim }); await fetch('/api/copies/nova', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: a.nome, sim }) }); avisar(sim ? 'Marcada como new' : 'Saiu o new'); await recarregar() }}
           onStatus={async (alvos, st: StatusProd) => {
             const antes = alvos.map((a) => ({ nome: a.nome, status: statusDe(a) }))
             naHora(alvos, { status: st })

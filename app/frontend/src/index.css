@@ -606,15 +606,14 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .cal-ed-titulo { margin: 0; text-transform: capitalize; flex-shrink: 0; }
 .cal-ed-topo .mudo { flex: 1; min-width: 220px; }
 .cal-ed-grade { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 10px 6px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(23, 24, 27, .2) transparent; }
-.cal-ed-nomes { display: grid; grid-template-columns: 52px repeat(7, minmax(0, 1fr)); padding: 6px 0 8px; margin-top: -10px; position: sticky; top: -10px; background: rgba(246, 246, 244, .94); backdrop-filter: blur(8px); z-index: 2; border-bottom: 1px solid rgba(23, 24, 27, .08); }
+.cal-ed-nomes { display: grid; grid-template-columns: 40px repeat(7, minmax(0, 1fr)); padding: 6px 0 8px; margin-top: -10px; position: sticky; top: -10px; background: rgba(246, 246, 244, .94); backdrop-filter: blur(8px); z-index: 2; border-bottom: 1px solid rgba(23, 24, 27, .08); }
 .cal-ed-nomes span { text-align: center; font-size: 12px; font-weight: 500; color: var(--mute); }
-.cal-ed-semana { display: grid; grid-template-columns: 52px minmax(0, 1fr); }
+.cal-ed-semana { display: grid; grid-template-columns: 40px minmax(0, 1fr); }
 .cal-ed-corpo { display: flex; flex-direction: column; min-width: 0; }
 /* modo contínuo: na margem, o mês (na semana em que ele começa) e o número da semana */
 .cal-ed-margem { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 22px; font-size: 11px; color: var(--mute); }
 .cal-ed-nomes .cal-ed-margem { padding-top: 0; font-size: 11px; font-weight: 500; opacity: .7; }
 .cal-ed-margem b { font-size: 11.5px; font-weight: 600; color: var(--ink-2); text-transform: lowercase; }
-.cal-ed-nsem { min-width: 26px; padding: 2px 5px; border-radius: 7px; border: 1px solid rgba(23, 24, 27, .14); text-align: center; font-variant-numeric: tabular-nums; }
 /* a virada do mês é uma "escadinha": linha em cima dos 7 primeiros dias e à esquerda do dia 1 */
 .cal-ed-dia.is-mes-topo { border-top: 1.5px solid rgba(23, 24, 27, .32); }
 .cal-ed-dia.is-mes-esq { border-left: 1.5px solid rgba(23, 24, 27, .32); }
@@ -637,7 +636,8 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .cal-ed-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cal-ed-check { flex: none; width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: #6b8a12; }
 .cal-ed-chip:hover { background: rgba(255, 255, 255, .85); }
-.cal-ed-chip.is-publicado { background: rgba(197, 227, 60, .35); }
+.cal-ed-chip.is-publicado, .cal-ed-chip.is-ativo { background: rgba(197, 227, 60, .35); }
+.cal-ed-chip.is-inativo { background: rgba(23, 24, 27, .06); color: var(--mute); }
 .cal-ed-chip.is-edicao { box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .2); }
 .cal-ed-editor { width: min(320px, calc(100vw - 32px)); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
 .cal-ed-editor input { height: 38px; padding: 0 12px; border-radius: 10px; background: rgba(255, 255, 255, .7); font: inherit; }
@@ -652,6 +652,9 @@ body.arrastando iframe, body.arrastando video { pointer-events: none; }
 .ponto.is-edicao { background: #e0b43a; }
 .ponto.is-agendado { background: #4d8de0; }
 .ponto.is-publicado { background: #59b33c; }
+.ponto.is-ativo { background: #1fae5b; box-shadow: 0 0 0 2px rgba(31, 174, 91, .25); }
+.ponto.is-inativo { background: #a9a7a2; }
+.ponto.is-arquivado { background: #6f6c66; }
 .pasta { position: relative; }
 
 .pasta.is-edicao { --pasta-fundo: #d9a92c; --pasta-frente: linear-gradient(180deg, #f1cc62, #e6b740); }
@@ -1077,6 +1080,11 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .igc-filtros select.is-on { border-color: #3d6fe0; color: #2552c4; background-color: rgba(61, 111, 224, .07); }
 .igc-limpar { padding: 8px 12px; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .igc-filtros .igc-conta { margin-left: auto; }
+.igc-sep { width: 1px; height: 22px; margin: 0 4px; background: rgba(23, 24, 27, .16); }
+.igc-ordem { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(23, 24, 27, .05); }
+.igc-ordem button { padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 13px; color: var(--mute); }
+.igc-ordem button:hover { color: var(--ink); }
+.igc-ordem button.is-on { background: #fff; color: var(--ink); font-weight: 500; box-shadow: 0 1px 3px rgba(23, 24, 27, .12); }
 .igc-vazio { margin: 40px auto; text-align: center; color: var(--ink-2); }
 .igc-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 .igc-video { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 10px; border-radius: 16px; background: rgba(255, 255, 255, .8); border: 1px solid rgba(23, 24, 27, .07); cursor: pointer; transition: box-shadow .15s, transform .15s; }
@@ -1087,10 +1095,11 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .igc-dur { position: absolute; left: 8px; bottom: 8px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; font-weight: 600; }
 .igc-titulo { margin: 4px 2px 0; font-size: 13.5px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .igc-meta { display: flex; justify-content: space-between; margin: 0 2px; font-size: 12px; color: var(--ink-2); }
-.igc-metricas { display: flex; gap: 5px; }
+.igc-metricas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .igc-pill { flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 4px; padding: 5px 4px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .igc-pill.is-alto { background: rgba(52, 168, 83, .12); color: #1f8a3e; }
 .igc-pill.is-baixo { background: rgba(228, 72, 77, .1); color: #c2393e; }
+.igc-pill.is-curt { background: rgba(225, 48, 108, .1); color: #c2185b; }
 .igc-pill.is-views { background: rgba(61, 111, 224, .1); color: #2f5fc9; }
 .igc-pill.is-eng { background: rgba(240, 150, 40, .12); color: #b86a12; }
 
@@ -1145,6 +1154,9 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .tabela-status-sel.is-edicao { border-color: rgba(230, 180, 40, .6); color: #8a6a0a; }
 .tabela-status-sel.is-agendado { border-color: rgba(61, 111, 224, .5); color: #2f5fc9; }
 .tabela-status-sel.is-publicado { border-color: rgba(52, 168, 83, .5); color: #1f8a3e; }
+.tabela-status-sel.is-ativo { border-color: rgba(31, 174, 91, .6); color: #128a45; font-weight: 600; }
+.tabela-status-sel.is-inativo { border-color: rgba(23, 24, 27, .15); color: var(--mute); }
+.tabela-status-sel.is-arquivado { border-color: rgba(23, 24, 27, .15); color: #6f6c66; }
 .tabela-data-in { border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--ink-2); cursor: pointer; padding: 3px 4px; border-radius: 7px; }
 .tabela-data-in:hover { background: rgba(23, 24, 27, .05); }
 .tabela-embutida .col-status { width: 130px; }
@@ -1573,7 +1585,8 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .arq-vazio { margin: 4px 8px; font-size: 12px; color: var(--mute); }
 
 /* um espaço separa Status de Categorias (sem traço) */
-.cats .cats-t-segunda { margin-top: 18px; }
+/* um divisor fino separa Status de Categorias */
+.cats .cats-t-segunda { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(23, 24, 27, .09); }
 
 /* grupos do menu de categorias: setinha (hover; sempre visível quando fechado), nome discreto, n de categorias
    escondidas quando fechado e o traço até a borda. A linha toda recolhe/mostra. */
@@ -1605,7 +1618,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .cats-t-botoes button:hover { background: rgba(23, 24, 27, .07); color: var(--ink); }
 
 /* grupo com cor: o nome numa pílula da cor e o traço na mesma cor */
-.cats-grupo.com-cor .cats-grupo-nome { padding: 1px 8px; border-radius: 999px; background: var(--cor-grupo); color: rgba(23, 24, 27, .65); }
+.cats-grupo.com-cor .cats-grupo-nome { padding: 1px 8px; border-radius: 999px; background: var(--cor-grupo); color: var(--ink-2); }
 .cats-grupo.com-cor hr { border-top: 2px solid var(--cor-grupo); }
 
 /* arrastar categoria/grupo no menu: uma linha horizontal marca onde vai ficar */
@@ -1665,3 +1678,44 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .modal-cal-nota .modal-topo { padding-right: 210px; }
 .modal-cal-fechar { position: absolute; top: 14px; right: 14px; z-index: 3; }
 .modal-cal-ir { position: absolute; top: 14px; right: 56px; z-index: 3; height: 32px; padding: 0 12px; font-size: 12.5px; }
+
+/* Calendário: ícones dos tipos de copy (vazio = todos) */
+.cal-ed-tipos { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex-basis: 100%; }   /* sempre na linha de baixo, à esquerda */
+.cal-ed-tipo { height: 30px; min-width: 34px; padding: 0 9px; border-radius: 999px; font-size: 14px; line-height: 1; background: rgba(255, 255, 255, .5); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .08); opacity: .55; transition: opacity .12s, background .12s; }
+.cal-ed-tipo:first-child { font-size: 12px; font-weight: 500; }
+.cal-ed-tipo:hover { opacity: .9; }
+.cal-ed-tipo.is-on { opacity: 1; background: #1d1d1f; color: var(--lime); box-shadow: none; }
+
+/* título em edição com o mesmo peso do título (o cursor cai onde foi o clique) */
+.modal-titulo .ideias-titulo-campo { font-weight: 600; }
+
+/* Status: Inativo e Arquivado como links de texto discretos, lado a lado */
+.cats-discretos { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px 4px 12px; overflow: hidden; }
+.cats-discretos button.is-icone { margin-left: auto; display: inline-flex; opacity: .35; text-decoration: none; }
+.cats-discretos button.is-icone:hover, .cats-discretos button.is-icone.is-on { opacity: 1; }
+.cats-discretos button { padding: 2px 0; font: inherit; font-size: 11.5px; white-space: nowrap; color: var(--mute); text-decoration: underline; text-decoration-color: rgba(23, 24, 27, .25); text-underline-offset: 3px; }
+.cats-discretos button em { font-style: normal; opacity: .7; margin-left: 2px; }
+.cats-discretos button:hover { color: var(--ink); text-decoration-color: currentColor; }
+.cats-discretos button.is-on { color: var(--ink); font-weight: 600; text-decoration-color: currentColor; }
+.cats-discretos button.is-sobre { color: var(--ink); background: rgba(226, 240, 92, .4); border-radius: 4px; }
+
+/* Categorias em dois níveis: ícone do grupo, "herdar do grupo" no editor e o botão Arquivados no fim do menu */
+.cats-grupo-ic { margin-right: 5px; font-weight: 400; }
+.cats-editor-herda { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; gap: 1px; }
+.cats-editor-herda small { font-size: 8.5px; color: var(--mute); letter-spacing: .02em; }
+.cats-editor-campo span.is-herdado { opacity: .55; }
+.cats-arquivados { display: inline-flex; align-items: center; gap: 6px; margin: 14px 12px 6px; padding: 2px 0; font: inherit; font-size: 11.5px; color: var(--mute); opacity: .7; }
+.cats-arquivados:hover { opacity: 1; color: var(--ink); }
+
+/* grupo sem cor: só o texto, sólido (cor com transparência apagava também o emoji) */
+.cats-grupo:not(.com-cor) .cats-grupo-nome { color: var(--ink-2); }
+
+/* grupos (principal) no estilo do título "Categorias": caixa alta pequena, espaçada, sem pílula e sem linha; cinza sólido
+   (cor com transparência apagava o emoji) */
+.cats .cats-grupo .cats-grupo-nome, .cats .cats-grupo.com-cor .cats-grupo-nome { padding: 0; background: none; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8c8b88; }
+.cats .cats-grupo:hover .cats-grupo-nome { color: var(--ink-2); }
+.cats .cats-grupo hr, .cats .cats-grupo.com-cor hr { display: none; }
+
+/* a cor do grupo: bolinha antes do nome (o nome fica no estilo do título) */
+.cats-grupo-nome { display: inline-flex; align-items: center; gap: 6px; }
+.cats-grupo-cor { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); }

@@ -145,7 +145,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chav
   }, [chave])
 
   // painel de propriedades: os callbacks leem sempre a versão atual (o widget pode ficar com a antiga)
-  const assinatura = JSON.stringify([extra?.status?.valor, extra?.status?.opcoes, !!extra?.onData, !!extra?.onPublicado, extra?.canvases?.length ?? 0])
+  const assinatura = JSON.stringify([extra?.status?.valor, extra?.status?.opcoes, !!extra?.onData, !!extra?.onPublicado, extra?.canvases?.length ?? 0, extra?.categorias])
   useEffect(() => {
     const v = view.current, e = extraRef.current
     if (!v) return
@@ -155,6 +155,7 @@ export function Editor({ valor, onMudar, onSalvar, onLink, onMenu, viewRef, chav
       onPublicado: e?.onPublicado && ((b) => extraRef.current?.onPublicado?.(b)),
       onLink: (n) => extraRef.current?.onLink?.(n),
       canvases: e?.canvases,
+      categorias: e?.categorias,
     }
     v.dispatch({ effects: definirExtra.of(fixo) })
   }, [assinatura, chave])

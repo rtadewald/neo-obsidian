@@ -4,7 +4,8 @@ Status da copy, do jeito que o Rodrigo já marca no Obsidian:
 - ideia     → nota solta em 1 Copies/1 Priorizar
 - edicao    → nome começa com 🧑🏼‍🔧
 - agendado  → nome começa com 🔹
-- publicado → está em 1 Copies/2 Publicados com `status: publicado` (desde 19/11/2026 não existe mais `publicado:`)
+- publicado / ativo / inativo / arquivado → estão em 1 Copies/2 Publicados com `status:` (os de conclusão, 21/11/2026:
+  publicado = orgânico, ativo/inativo = VSL e ads no ar ou parados, arquivado = fora das listas)
 
 Leitura e escrita pelo editor do app. Só arquivos .md diretamente dentro dessas pastas (ou o SKILL.md de cada
 skill); nada de subir de pasta. Apagar não apaga: move para a lixeira do vault (`.trash`, a do Obsidian).
@@ -84,16 +85,17 @@ def _arquivos(raiz: str) -> list[tuple[str, Path]]:
 
 # O status da copy é a propriedade `status:` da nota (desde 19/11/2026; antes eram 🔴/🧑🏼‍🔧/🔹 no começo do nome).
 # Valores no vault: ideia, gravar, edicao, agendado, publicado (19/11/2026: "priorizar" virou "ideia"; o antigo ainda é lido).
-STATUS_VAULT = {"ideia": "ideia", "gravar": "gravar", "edicao": "edicao", "agendado": "agendado", "publicado": "publicado"}
+STATUS_VAULT = {"ideia": "ideia", "gravar": "gravar", "edicao": "edicao", "agendado": "agendado", "publicado": "publicado",
+                "ativo": "ativo", "inativo": "inativo", "arquivado": "arquivado"}
+FIM = ("publicado", "ativo", "inativo", "arquivado")   # os de conclusão: moram em 2 Publicados
 DO_VAULT = {**{v: k for k, v in STATUS_VAULT.items()}, "priorizar": "ideia"}
 _STATUS_RE = re.compile(r"\A---\n(?:.*\n)*?status:[ \t]*\"?([\w-]*)\"?[ \t]*\n(?:.*\n)*?---", re.M)
 
 
 def status(raiz: str, nome: str, texto: str | None = None) -> str:
-    """O status da copy: `publicado` em 2 Publicados; em Priorizar, a propriedade `status:` (vazia = ideia)."""
-    if raiz == "publicados":
-        return "publicado"
-    if raiz != "priorizar":
+    """O status da copy pela propriedade `status:`: em 2 Publicados um dos de conclusão (sem ele, publicado); em Priorizar
+    um dos outros (vazio = ideia)."""
+    if raiz not in ("priorizar", "publicados"):
         return ""
     if texto is None:
         p = _caminho(raiz, nome)
@@ -102,8 +104,10 @@ def status(raiz: str, nome: str, texto: str | None = None) -> str:
         except OSError:
             texto = ""
     m = _STATUS_RE.match(texto or "")
-    st = DO_VAULT.get((m.group(1) if m else "").lower(), "ideia")
-    return "ideia" if st == "publicado" else st
+    st = DO_VAULT.get((m.group(1) if m else "").lower(), "")
+    if raiz == "publicados":
+        return st if st in FIM else "publicado"
+    return "ideia" if not st or st in FIM else st
 
 
 # corpo das notas (sem o frontmatter) em memória, pelo mtime: a busca do ⌘O lê daqui (e o começo, para o status)
@@ -396,8 +400,9 @@ def _definir_prop(texto: str, chave: str, valor: str | None) -> str:
 
 
 def mudar_status(raiz: str, nome: str, novo_status: str) -> dict:
-    """ideia / gravar / edicao / agendado: grava a propriedade `status:` (a nota fica em Priorizar, o nome não muda)."""
-    if raiz != "priorizar" or novo_status not in ("ideia", "gravar", "edicao", "agendado"):
+    """Grava a propriedade `status:` (o nome não muda): em Priorizar ideia / gravar / edicao / agendado; em Publicados os
+    de conclusão (FIM). Trocar de pasta é com mover()."""
+    if novo_status not in STATUS_VAULT or (raiz == "priorizar") == (novo_status in FIM) or raiz not in ("priorizar", "publicados"):
         raise ValueError("status inválido")
     p = _caminho(raiz, nome)
     if not p or not p.is_file():

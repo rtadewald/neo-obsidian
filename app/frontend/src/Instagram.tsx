@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 /** Instagram: os canais que o Rodrigo monitora e os Reels deles, com métricas relativas ao próprio canal.
- *  Canais: cadastro à mão (@ ou link). Vídeos: grade 9:16 com outlier (views ÷ mediana do canal), views e engajamento,
+ *  Canais: cadastro à mão (@ ou link). Vídeos: grade 9:16 com outlier (curtidas ÷ mediana das curtidas do canal: views
+ *  podem ser pagas), curtidas, views e engajamento,
  *  filtros de canal, data, outlier e ordem. A coleta roda no backend (o agente abre o Instagram no Chrome logado). */
 
 type Canal = { handle: string; nome: string; seguidores: number; foto: string | null; reels: number; mediana: number; coletado: number | null; erro?: string | null }
 type Video = {
   code: string; handle: string; data: number | null; views: number; curtidas: number; comentarios: number; duracao: number | null
-  legenda: string; fixado?: boolean; outlier: number | null; engajamento: number | null; capa: string | null; url: string
+  legenda: string; fixado?: boolean; ocultas?: boolean; outlier: number | null; engajamento: number | null; capa: string | null; url: string
 }
 type Estado = { rodando: boolean; etapa: string; ultima: number | null; erro: string | null }
 
@@ -21,7 +22,7 @@ const titulo = (l: string) => (l.split('\n').find((x) => x.trim()) ?? '').trim()
 
 const DATAS = [['', 'Qualquer data'], ['7', 'Últimos 7 dias'], ['30', 'Últimos 30 dias'], ['90', 'Últimos 90 dias'], ['365', 'Último ano']] as const
 const OUTLIERS = [['', 'Qualquer outlier'], ['1', '1x ou mais'], ['2', '2x ou mais'], ['3', '3x ou mais'], ['5', '5x ou mais']] as const
-const ORDENS = [['outlier', 'Outlier'], ['views', 'Views'], ['data', 'Mais recentes'], ['engajamento', 'Engajamento']] as const
+const ORDENS = [['outlier', 'Outlier'], ['curtidas', 'Curtidas'], ['views', 'Views'], ['data', 'Mais recentes'], ['engajamento', 'Engajamento']] as const
 
 const SEM_CACHE: RequestInit = { cache: 'no-store' }   // as listas mudam a cada coleta
 
@@ -111,7 +112,7 @@ function Canais({ canais, onMudou, onColetar, onVer, rodando }: { canais: Canal[
             <div className="igc-canal-txt">
               <b>{c.handle}</b>
               <span>{c.seguidores ? `${compacto(c.seguidores)} seguidores` : c.coletado ? '—' : 'ainda não coletado'}</span>
-              {c.reels > 0 && <em>{c.reels} reels · mediana {compacto(c.mediana)} views</em>}
+              {c.reels > 0 && <em>{c.reels} reels · mediana {compacto(c.mediana)} curtidas</em>}
               {c.erro && <em className="igc-erro-mini" title={c.erro}>falhou na última coleta</em>}
             </div>
             <a className="igc-canal-link" href={`https://www.instagram.com/${c.handle}/`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Abrir no Instagram">↗</a>
@@ -138,7 +139,7 @@ function Videos({ videos, canais, onAbrir }: { videos: Video[]; canais: Canal[];
     const desde = dias ? Date.now() / 1000 - Number(dias) * 86400 : 0
     const l = videos.filter((v) => (!canal || v.handle === canal) && (!desde || (v.data ?? 0) >= desde) && (!minOut || (v.outlier ?? 0) >= Number(minOut))
       && (!b || v.legenda.toLowerCase().includes(b) || v.handle.includes(b)))
-    const chave = (v: Video) => ordem === 'views' ? v.views : ordem === 'data' ? (v.data ?? 0) : ordem === 'engajamento' ? (v.engajamento ?? 0) : (v.outlier ?? 0)
+    const chave = (v: Video) => ordem === 'views' ? v.views : ordem === 'curtidas' ? v.curtidas : ordem === 'data' ? (v.data ?? 0) : ordem === 'engajamento' ? (v.engajamento ?? 0) : (v.outlier ?? 0)
     return l.sort((a, b2) => chave(b2) - chave(a))
   }, [videos, busca, canal, dias, minOut, ordem])
   const limpar = () => { setBusca(''); setCanal(''); setDias(''); setMinOut(''); setOrdem('outlier') }
@@ -153,7 +154,10 @@ function Videos({ videos, canais, onAbrir }: { videos: Video[]; canais: Canal[];
         </select>
         <select value={dias} onChange={(e) => setDias(e.target.value)} className={dias ? 'is-on' : ''}>{DATAS.map(([v, r]) => <option key={v} value={v}>{r}</option>)}</select>
         <select value={minOut} onChange={(e) => setMinOut(e.target.value)} className={minOut ? 'is-on' : ''}>{OUTLIERS.map(([v, r]) => <option key={v} value={v}>{r}</option>)}</select>
-        <select value={ordem} onChange={(e) => setOrdem(e.target.value)}>{ORDENS.map(([v, r]) => <option key={v} value={v}>Ordenar: {r}</option>)}</select>
+        <span className="igc-sep" aria-hidden="true" />
+        <div className="igc-ordem" role="group" aria-label="Ordenar">
+          {ORDENS.map(([v, r]) => <button key={v} className={ordem === v ? 'is-on' : ''} aria-pressed={ordem === v} onClick={() => setOrdem(v)}>{r}</button>)}
+        </div>
         {(busca || canal || dias || minOut || ordem !== 'outlier') && <button className="igc-limpar" onClick={limpar}>Limpar</button>}
         <span className="igc-conta">{lista.length} de {videos.length} vídeos</span>
       </div>
@@ -177,7 +181,8 @@ function Metricas({ v }: { v: Video }) {
   const alto = (v.outlier ?? 0) >= 1
   return (
     <div className="igc-metricas">
-      <span className={`igc-pill ${alto ? 'is-alto' : 'is-baixo'}`} title="Outlier: views ÷ mediana das views do canal">{alto ? '↗' : '↘'} {v.outlier != null ? `${v.outlier.toFixed(1).replace('.', ',')}x` : '—'}</span>
+      <span className={`igc-pill ${alto ? 'is-alto' : 'is-baixo'}`} title="Outlier: curtidas ÷ mediana das curtidas do canal (views podem vir de tráfego pago)">{alto ? '↗' : '↘'} {v.outlier != null ? `${v.outlier.toFixed(1).replace('.', ',')}x` : '—'}</span>
+      <span className="igc-pill is-curt" title={v.ocultas ? 'O dono escondeu as curtidas' : `${v.curtidas.toLocaleString('pt-BR')} curtidas · ${v.comentarios.toLocaleString('pt-BR')} comentários`}>♥ {v.ocultas ? 'oculto' : compacto(v.curtidas)}</span>
       <span className="igc-pill is-views" title={`${v.views.toLocaleString('pt-BR')} views`}>👁 {compacto(v.views)}</span>
       <span className="igc-pill is-eng" title="Engajamento: (curtidas + comentários) ÷ views">✳ {v.engajamento != null ? `${(v.engajamento * 100).toFixed(1).replace('.', ',')}%` : '—'}</span>
     </div>

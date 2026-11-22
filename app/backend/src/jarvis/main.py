@@ -167,6 +167,13 @@ class AtualizarIG(BaseModel):
 _ig_tarefa: asyncio.Task | None = None
 
 
+@app.on_event("shutdown")
+async def _parar_coleta_ig():
+    """Parar a API cancela a coleta: senão o agente do Chrome seguia vivo, baixando JSON que ninguém lê."""
+    if _ig_tarefa and not _ig_tarefa.done():
+        _ig_tarefa.cancel()
+
+
 @app.post("/api/ig/atualizar")
 async def ig_atualizar(corpo: AtualizarIG | None = None):
     """Dispara a coleta em segundo plano (o agente abre o Instagram no Chrome logado)."""
@@ -196,18 +203,6 @@ def ig_arquivo(tipo: str, nome: str):
     return FileResponse(p)
 
 
-class ArquivarNota(BaseModel):
-    raiz: str
-    nome: str
-    sim: bool = True
-
-
-@app.post("/api/copies/arquivar")
-def copies_arquivar(corpo: ArquivarNota):
-    """Arquiva (`arquivado: true` na nota) ou desarquiva: a arquivada sai da Criação da Redação."""
-    return _erros(lambda: copies.arquivar_nota(corpo.raiz, corpo.nome, corpo.sim))
-
-
 @app.get("/api/criacao")
 def criacao():
     """A Criação da Redação: cor de cada categoria, ordem das categorias e a ordem das copies dentro de cada uma."""
@@ -216,7 +211,8 @@ def criacao():
 
 @app.post("/api/criacao")
 def criacao_salvar(corpo: dict):
-    """Muda o que vier: `cores` ({categoria: cor}), `categorias` (a ordem), `ordem` ({categoria: [raiz/nome]}) e/ou `arquivadas`."""
+    """Muda o que vier: `cores` ({categoria: cor}), `icones` ({categoria ou —id: emoji}), `categorias` (a ordem),
+    `ordem` ({categoria: [raiz/nome]}) e/ou `arquivadas` (categorias e ids de grupo)."""
     return copies.salvar_criacao(corpo)
 
 
@@ -547,6 +543,18 @@ def copies_categoria(corpo: Categoria):
 
 class Vista(BaseModel):
     nome: str
+
+
+class Nova(BaseModel):
+    nome: str
+    sim: bool = True
+
+
+@app.post("/api/copies/nova")
+def copies_nova(corpo: Nova):
+    """Botão direito → Marcar como new / Tirar o new (o 💡 na categoria até abrir a nota)."""
+    copies.marcar_nova(corpo.nome, corpo.sim)
+    return {"ok": True}
 
 
 @app.post("/api/copies/vista")

@@ -12,6 +12,7 @@ export type Extra = {
   onPublicado?: (sim: boolean) => void     // publicado muda o status (pasta)
   onLink?: (nome: string) => void          // clicar num [[link]] das propriedades abre a nota
   canvases?: { nome: string; icone: string }[]   // os canvas ativos: `grupo` vira um seletor de canvas
+  categorias?: { v: string; r: string }[]   // as categorias da Criação (valor e rótulo com ícone): `categoria` vira um select
 }
 
 export const definirExtra = StateEffect.define<Extra>()
@@ -63,8 +64,8 @@ function yaml(v: string) {
   return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 function bloco(chave: string, v: string | string[]) {
-  // grupo (canvas) sempre entre aspas, como no resto do vault
-  const q = (x: string) => (chave === 'grupo' ? `"${x.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : yaml(x))
+  // grupo (canvas) e categoria sempre entre aspas, como no resto do vault
+  const q = (x: string) => (chave === 'grupo' || chave === 'categoria' ? `"${x.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : yaml(x))
   if (Array.isArray(v)) return v.length ? `${chave}:\n${v.map((x) => `  - ${q(x)}`).join('\n')}` : `${chave}:`
   return v ? `${chave}: ${ehBool(v) ? v : q(v)}` : `${chave}:`
 }
@@ -97,6 +98,7 @@ class Painel extends WidgetType {
     return JSON.stringify(o.itens.map((i) => [i.chave, i.valor])) === JSON.stringify(this.itens.map((i) => [i.chave, i.valor]))
       && o.extra.status?.valor === this.extra.status?.valor && !!o.extra.onData === !!this.extra.onData
       && (o.extra.canvases?.length ?? 0) === (this.extra.canvases?.length ?? 0)
+      && JSON.stringify(o.extra.categorias ?? []) === JSON.stringify(this.extra.categorias ?? [])
   }
   ignoreEvent() { return true }
 
@@ -157,6 +159,19 @@ class Painel extends WidgetType {
     for (const it of this.itens) {
       const { chave, valor } = it
       if (chave === 'status' && st) continue   // a propriedade status já aparece no seletor da primeira linha
+      // categoria: select com as categorias da Criação (a atual entra mesmo se não estiver na lista)
+      if (chave === 'categoria' && this.extra.categorias && !Array.isArray(valor)) {
+        const atual = tirarAspas(valor)
+        const s = document.createElement('select'); s.className = 'cm-prop-campo'
+        const lista = this.extra.categorias
+        for (const c of [{ v: '', r: '— Sem categoria' }, ...lista, ...(atual && !lista.some((x) => x.v === atual) ? [{ v: atual, r: atual }] : [])]) {
+          const op = document.createElement('option'); op.value = c.v; op.textContent = c.r; s.append(op)
+        }
+        s.value = atual
+        s.onchange = () => trocar(view, chave, s.value)
+        linha(chave, s, chave)
+        continue
+      }
       if (chave === 'grupo' && cvs) {
         linha('canvas', campoCanvas((Array.isArray(valor) ? valor : valor ? [valor] : []).filter(Boolean)))
         continue

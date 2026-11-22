@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { EscolherIdeia } from './EscolherIdeia'
-import { ehDivisor, listaCategorias } from './Categorias'
+import { arquivadaCat, ehDivisor, idGrupo, listaCategorias, rotuloCat, type ModeloCats } from './Categorias'
 import { tudoEmCache } from './canvasApi'
 
 /** Criação rápida de qualquer página: ⌘⇧I = 💡 nova ideia, ⌘⇧N = 🎬 nova produção (uma copy em Priorizar, Reels por padrão).
@@ -36,9 +36,15 @@ export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, li
   useEffect(() => { try { localStorage.setItem('novo-formato', formato) } catch { /* sem storage */ } }, [formato])
   // categoria da copy nova: começa na escolhida no menu da Redação (se for uma só) ou na última usada aqui
   const [cats, setCats] = useState<string[]>(() => listaCategorias(tudoEmCache()?.producoes ?? [], []))
+  const [modelo, setModelo] = useState<ModeloCats>({ categorias: [] })   // ícones herdados do grupo e o que está arquivado
   useEffect(() => {
     fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json())
-      .then((c) => setCats(listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? []).filter((x) => !(c.arquivadas ?? []).includes(x)))).catch(() => {})   // os divisores separam os grupos
+      .then((c) => {
+        const todas = listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? [])
+        const m: ModeloCats = { categorias: todas, icones: c.icones ?? {}, arquivadas: c.arquivadas ?? [] }
+        setModelo(m)
+        setCats(todas.filter((x) => (ehDivisor(x) ? !m.arquivadas!.includes(idGrupo(x)) : !arquivadaCat(m, x))))   // os divisores separam os grupos
+      }).catch(() => {})
   }, [])
   const [categoria, setCategoria] = useState<string>(() => {
     try {
@@ -115,7 +121,7 @@ export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, li
             <span className="novo-secao-t">Categoria</span>
             <div className="novo-rapido-opcoes novo-rapido-cats" role="radiogroup" aria-label="Categoria">
               {cats.map((c, i) => ehDivisor(c) ? (i > 0 && i < cats.length - 1 ? <span key={c} className="novo-cats-sep" aria-hidden="true" /> : null) : (
-                <button key={c} type="button" role="radio" aria-checked={c === categoria} className={c === categoria ? 'is-on' : ''} onClick={() => setCategoria(c === categoria ? '' : c)}>{c}</button>
+                <button key={c} type="button" role="radio" aria-checked={c === categoria} className={c === categoria ? 'is-on' : ''} onClick={() => setCategoria(c === categoria ? '' : c)}>{rotuloCat(modelo, c)}</button>
               ))}
             </div>
           </div>

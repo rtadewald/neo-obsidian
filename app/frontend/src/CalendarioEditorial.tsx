@@ -17,12 +17,16 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const segunda = (d: Date) => { const s = new Date(d.getFullYear(), d.getMonth(), d.getDate()); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return s }
 const addDias = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 const diffDias = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / DIA)
-/** Semana ISO (1–53): a do número que aparece na margem. */
-function semanaIso(d: Date) {
-  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7))
-  return Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / DIA + 1) / 7)
+/** Tipo da copy pelo emoji do começo do nome (os do Reels juntos, como na Criação). */
+const TIPOS: [string, string][] = [['📱', 'Reels'], ['🏞️', 'Carrossel'], ['💰', 'Ads'], ['📺', 'VSL'], ['📚', 'Aula'], ['🎥', 'YouTube'], ['·', 'Outros']]
+function tipoDe(nome: string) {
+  const e = (nome.match(/^\p{Extended_Pictographic}\uFE0F?/u) ?? [''])[0].replace('\uFE0F', '')
+  if (['📱', '📝', '💻'].includes(e)) return '📱'
+  if (e === '🏞') return '🏞️'
+  if (e === '🧑' || e === '📚') return '📚'
+  return TIPOS.some(([k]) => k === e) ? e : '·'
 }
+const CONCLUIDO = ['publicado', 'ativo', 'inativo']   // checkbox marcado
 const nomeMes = (m: number) => MESES[m][0].toUpperCase() + MESES[m].slice(1)
 /** Matiz estável a partir do texto, pra cada bloco ("FIA", "VSL"...) ter sempre a mesma cor. */
 function matiz(t: string) {
@@ -98,11 +102,15 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
 
   const semanas = useMemo(() => Array.from({ length: nSem }, (_, w) => Array.from({ length: 7 }, (_, d) => addDias(ini, w * 7 + d))), [ini, nSem])
 
+  // ícones acima do calendário: quais tipos aparecem (vazio = todos; fica guardado)
+  const [tipos, setTipos] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('cal-tipos') || '[]') } catch { return [] } })
+  useEffect(() => { try { localStorage.setItem('cal-tipos', JSON.stringify(tipos)) } catch { /* sem storage */ } }, [tipos])
+  const contagem = useMemo(() => { const c: Record<string, number> = {}; for (const it of itens) { const t = tipoDe(it.nome); c[t] = (c[t] ?? 0) + 1 } return c }, [itens])
   const porDia = useMemo(() => {
     const m: Record<string, ItemAgenda[]> = {}
-    for (const it of itens) (m[it.scheduled] ??= []).push(it)
+    for (const it of itens) if (it.status !== 'arquivado' && (!tipos.length || tipos.includes(tipoDe(it.nome)))) (m[it.scheduled] ??= []).push(it)   // arquivada não aparece
     return m
-  }, [itens])
+  }, [itens, tipos])
 
   const hoje = iso(new Date())
 
@@ -115,11 +123,12 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
     onMudou?.()
   }
 
-  // checkbox do chip: marcar publica (vai para 2 Publicados); desmarcar volta para Priorizar como agendado. O ⌘Z desfaz.
+  // checkbox do chip: marcar conclui (VSL e ads viram ativo; o resto, publicado; vai para 2 Publicados); desmarcar volta
+  // para Priorizar como agendado. O ⌘Z desfaz.
   async function publicar(it: ItemAgenda, sim: boolean) {
-    const st = sim ? 'publicado' : 'agendado'
+    const st = sim ? (['💰', '📺'].includes(tipoDe(it.nome)) ? 'ativo' : 'publicado') : 'agendado'
     setItens((l) => l.map((x) => (x.raiz === it.raiz && x.nome === it.nome ? { ...x, status: st } : x)))
-    try { await mudarStatus([{ nome: it.nome, status: it.status }], st); avisar(sim ? 'Publicada' : 'Voltou para Priorizar') }
+    try { await mudarStatus([{ nome: it.nome, status: it.status }], st); avisar(sim ? (st === 'ativo' ? 'Ativa' : 'Publicada') : 'Voltou para Priorizar') }
     catch (e) { avisar((e as Error).message) }
     carregar()
     onMudou?.()
@@ -153,10 +162,17 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
           <button className="pilula" onClick={() => { pendente.current = true; setIrHoje((v) => v + 1) }}>Hoje</button>
           <button className="pilula" onClick={() => pularMes(1)} aria-label="Próximo mês">›</button>
         </div>
+        <div className="cal-ed-tipos" role="group" aria-label="Tipos de copy">
+          <button className={`cal-ed-tipo ${!tipos.length ? 'is-on' : ''}`} onClick={() => setTipos([])} title="Mostrar todos">Todos</button>
+          {TIPOS.filter(([k]) => contagem[k]).map(([k, rot]) => (
+            <button key={k} className={`cal-ed-tipo ${tipos.includes(k) ? 'is-on' : ''}`} title={`${rot} (${contagem[k]}) · clique soma ou tira`}
+              onClick={() => setTipos((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]))}>{k === '·' ? rot : k}</button>
+          ))}
+        </div>
       </div>
 
       <div ref={grade} className="cal-ed-grade glass glass--light" onScroll={rolou}>
-        <div className="cal-ed-nomes"><span className="cal-ed-margem">sem</span>{DIAS.map((d) => <span key={d}>{d}</span>)}</div>
+        <div className="cal-ed-nomes"><span className="cal-ed-margem" />{DIAS.map((d) => <span key={d}>{d}</span>)}</div>
         {semanas.map((sem, si) => (
           <SemanaEditorial key={iso(sem[0])} primeira={si === 0} semana={sem} porDia={porDia} blocos={blocos} hoje={hoje}
             sobreDia={sobreDia} onSobreDia={setSobreDia} onSoltar={soltarChave} onAbrir={onAbrir} onPublicar={publicar}
@@ -208,7 +224,7 @@ function SemanaEditorial({ semana, primeira, porDia, blocos, hoje, sobreDia, onS
   return (
     <div className="cal-ed-semana" data-ini={chaves[0]}>
       {(() => { const d1 = semana.find((d) => d.getDate() === 1); const m = d1 ?? (primeira ? semana[3] : null)
-        return <div className="cal-ed-margem">{m && <b>{MESES[m.getMonth()].slice(0, 3)}{m.getMonth() === 0 || primeira ? ` ${String(m.getFullYear()).slice(2)}` : ''}</b>}<span className="cal-ed-nsem">{semanaIso(semana[0])}</span></div> })()}
+        return <div className="cal-ed-margem">{m && <b>{MESES[m.getMonth()].slice(0, 3)}{m.getMonth() === 0 || primeira ? ` ${String(m.getFullYear()).slice(2)}` : ''}</b>}</div> })()}
       <div className="cal-ed-corpo">
       <div className="cal-ed-lane" onMouseDown={iniciarSel}>
         {faixas.map(({ b, col1, col2, esq, dir }) => (
@@ -235,7 +251,7 @@ function SemanaEditorial({ semana, primeira, porDia, blocos, hoje, sobreDia, onS
                   <div key={`${it.raiz}/${it.nome}`} role="button" tabIndex={0} className={`cal-ed-chip is-${it.status}`} draggable title={it.nome}
                     onDragStart={(e) => e.dataTransfer.setData('text/plain', `${it.raiz}\u0000${it.nome}\u0000${it.scheduled}`)}
                     onClick={() => onAbrir(it.raiz, it.nome)} onKeyDown={(e) => { if (e.key === 'Enter') onAbrir(it.raiz, it.nome) }}>
-                    <input type="checkbox" className="cal-ed-check" checked={it.status === 'publicado'} title={it.status === 'publicado' ? 'Desmarcar: volta para Priorizar' : 'Marcar como publicada'}
+                    <input type="checkbox" className="cal-ed-check" checked={CONCLUIDO.includes(it.status)} title={CONCLUIDO.includes(it.status) ? `${it.status} · desmarcar: volta para Priorizar` : 'Marcar como publicada (VSL e ads: ativa)'}
                       onClick={(e) => e.stopPropagation()} onChange={(e) => onPublicar(it, e.target.checked)} />
                     <span>{it.nome}</span>
                   </div>
