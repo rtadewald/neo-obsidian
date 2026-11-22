@@ -8,7 +8,7 @@ import type { Extra } from './propriedades'
 import { Icone } from './Icone'
 import { mudarStatus as statusComDesfazer } from './desfazer'
 import { PASTA, obsidian, type Raiz } from './notas'
-import { FIM, STATUS, type Alvo, type Producao, type StatusProd } from './canvasApi'
+import { FIM, STATUS, slotsFormatos, type Alvo, type Producao, type StatusProd } from './canvasApi'
 
 /** O painel de uma nota (cabeçalho, propriedades, editor e sumário): a Redação e a página Skills usam. */
 type Nota = { nome: string; raiz: Raiz; caminho: string; texto: string; mtime: number }
@@ -24,8 +24,9 @@ async function acao(a: Alvo, corpo: Record<string, string>) {
 }
 
 /** `fixo` (página Skills): o título não renomeia, para os arquivos das skills. */
-export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }: {
-  alvo: Alvo; prod?: Producao; versao?: number; onLink: (nome: string, nova?: boolean) => void; fixo?: boolean
+export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink, fixo }: {
+  alvo: Alvo; prod?: Producao; irmaos?: Producao[]   // as outras versões da mesma copy (outros formatos): ícones para navegar
+  versao?: number; onLink: (nome: string, nova?: boolean) => void; fixo?: boolean
   onMudou: (novo?: Alvo) => void; avisar: (m: string) => void
 }) {
   const [nota, setNota] = useState<Nota | null>(null)
@@ -152,7 +153,15 @@ export function PainelNota({ alvo, prod, versao, onMudou, avisar, onLink, fixo }
     <>
       <div className={`modal-topo ${semSumario ? "sem-sumario" : ""}`}>
         <div className="modal-titulo">
-          <p className="ideias-caminho">{caminho.split('/').slice(0, -1).join(' / ')}</p>
+          <div className="nota-caminho-linha">
+            <p className="ideias-caminho">{caminho.split('/').slice(0, -1).join(' / ')}</p>
+            {/* irmãos: os formatos da mesma copy; o da nota fica marcado, clicar num outro abre ele, os que faltam ficam apagados */}
+            {prod && irmaos && irmaos.length > 1 && <nav className="nota-irmaos" aria-label="Outros formatos desta copy">
+              {slotsFormatos(prod, irmaos).map(({ f, rot, nota }) => !nota ? <span key={f} className="fmt-off" title={`${rot}: não tem`}>{f}</span>
+                : nota.raiz === prod.raiz && nota.nome === prod.nome ? <span key={f} className="fmt-atual" title={`${rot} (esta nota)`}>{f}</span>
+                : <button key={f} className="fmt-on" title={`${rot}: ${nota.nome}`} onClick={() => onLink(nota.nome)}>{f}</button>)}
+            </nav>}
+          </div>
           {titulo !== null ? (
             <form onSubmit={(e) => { e.preventDefault(); confirmarTitulo() }}>
               <input className="ideias-titulo-campo" autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} onBlur={confirmarTitulo}

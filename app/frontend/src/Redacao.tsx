@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarioEditorial } from './CalendarioEditorial'
 import { PainelNota } from './PainelNota'
 import { ModalTabela, tabelaSalva, type Criacao, type EstadoTabela } from './Tabela'
-import { carregarTudo, onde, post, recemCriadas, tudoEmCache, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
+import { carregarTudo, familia, onde, post, recemCriadas, tudoEmCache, type Alvo, type EstadoCanvas, type Producao, type StatusProd } from './canvasApi'
 import { desfazerUltima, mudarStatus, registrarAcao } from './desfazer'
 import { lembrarAberta } from './Paleta'
 import { avisar } from './porta'
@@ -211,6 +211,8 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
     return () => window.removeEventListener('keydown', esc, true)
   }, [modal])
   const abrir = (a: Alvo, opts?: { nova?: boolean }) => { if (calendario) { if (opts?.nova && onAbrirNota) onAbrirNota(a, true); else setModal(a); return }; abrirEm(a, opts?.nova); setVerTabela(false) }
+  // as outras versões da mesma copy (mesmo nome em outro formato): a faixa de ícones da nota
+  const irmaosDe = (a: Alvo) => { const k = familia(a.nome); return k ? est?.producoes.filter((p) => familia(p.nome) === k) : undefined }
   const statusDe = (a: Alvo) => est?.producoes.find((p) => p.raiz === a.raiz && p.nome === a.nome)?.status ?? ''
 
   // 📅 Calendário: no canto superior direito, junto das abas de copy (sem copy aberta, no topo da tabela)
@@ -292,7 +294,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
             <span className="redacao-abas-cal">{botoes}</span>
             <button className="redacao-so-copy btn-icone" onClick={() => setSoCopy((v) => !v)} title={soCopy ? 'Mostrar a tabela (⌘B)' : 'Esconder a tabela (⌘B)'}>{soCopy ? '⇥' : '⇤'}</button>
           </nav>
-          <PainelNota key={`${aberta.raiz}/${aberta.nome}`} alvo={aberta} fixo versao={versao} avisar={avisar}
+          <PainelNota key={`${aberta.raiz}/${aberta.nome}`} alvo={aberta} fixo versao={versao} avisar={avisar} irmaos={irmaosDe(aberta)}
             prod={est?.producoes.find((x) => x.raiz === aberta.raiz && x.nome === aberta.nome)}
             onLink={(nome, nova) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) abrirEm({ raiz: p.raiz, nome: p.nome }, nova) }}
             onMudou={(novo) => { if (novo) setAberta(novo); recarregar(); setCalVersao((v) => v + 1) }} />
@@ -302,7 +304,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
         <div className="modal-nota modal-cal-nota glass glass--light" role="dialog" aria-label={modal.nome}>
           <button className="btn-icone modal-cal-fechar" onClick={() => setModal(null)} aria-label="Fechar" title="Fechar (Esc)">×</button>
           <button className="lateral-btn modal-cal-ir" onClick={() => { const a = modal; setModal(null); onAbrirNota?.(a, false) }} title="Abrir na Redação">Abrir na Redação ↗</button>
-          <PainelNota key={`${modal.raiz}/${modal.nome}`} alvo={modal} versao={versao} avisar={avisar}
+          <PainelNota key={`${modal.raiz}/${modal.nome}`} alvo={modal} versao={versao} avisar={avisar} irmaos={irmaosDe(modal)}
             prod={est?.producoes.find((x) => x.raiz === modal.raiz && x.nome === modal.nome)}
             onLink={(nome) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) setModal({ raiz: p.raiz, nome: p.nome }) }}
             onMudou={(novo) => { if (novo) setModal(novo); recarregar(); setCalVersao((v) => v + 1) }} />

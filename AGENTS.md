@@ -173,12 +173,10 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
     Botão direito na categoria → cor pastel (a linha e as copies dela ficam na cor). Arrastar categoria sobre
     categoria muda a ordem; arrastar copy sobre copy muda a posição (e a categoria, se for de outro grupo). Cor e ordem em
     `dados/criacao.json` (`GET/POST /api/criacao`).
-- **Quadros e Funis** (22/11/2026): o menu tem duas seções de categorias, **Quadros** (orgânico) e **Funis** (pago).
-  `tipos` no `criacao.json` marca `funil` em grupos (`—<id>`) e categorias soltas; o resto é quadro; a categoria num
-  grupo segue o grupo (`tipoCat`). Soltar uma categoria ou grupo no título da outra seção, arrastar para perto de um item
-  dela ou o botão direito ("Mover para Funis/Quadros") troca o tipo; categoria que sai de um grupo da outra seção fica
-  solta no topo da lista. Categoria nova nasce solta, na seção onde foi criada. Categorias que só existem nas notas
-  entram soltas no topo (`listaCategorias`). No Status, a Ideia fica um pouco separada dos outros.
+- **Coleções** (22/11/2026): a seção de categorias do menu se chama **Coleções** (orgânico e pago juntos; a
+  propriedade nas notas continua `categoria:`). Houve uma separação em Quadros/Funis, desfeita no mesmo dia: o tipo
+  antigo ficou guardado em `tipos` no `criacao.json` (sem uso no menu). Coleção nova nasce solta, no topo da lista;
+  coleções que só existem nas notas também entram soltas no topo (`listaCategorias`). A Ideia, no Status, fica em negrito.
 - **Categorias em dois níveis** (22/11/2026): os **grupos** (divisores `—<id>|<nome>` na lista do `criacao.json`) são
   o principal (só nome e cor) e as **categorias** abaixo deles, o secundário (ícone e nome). Toda copy fica num
   secundário. A nota guarda só o nome (`categoria: "Dicas & Hacks"`); o ícone da categoria fica em `icones` no
@@ -186,18 +184,18 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   bloco cai antes ou depois do grupo de destino, nunca no meio (`moverNaLista` em `Tabela.tsx`). Em 22/11/2026
   as 251 notas perderam o emoji do nome; "💰 VSL FIA/FID" viraram "Ads VSL FIA/FID" e "📺 VSL FIA/FID", "VSL FIA/FID"
   (backup em `dados/antes-categorias-*`). Arquivar vale para os dois: `arquivadas` guarda nomes de categoria e ids de
-  grupo (grupo arquivado leva as categorias dele; `arquivadaCat`). O ícone **Arquivados** fica no título "Funis" (aparece no hover) e no botão direito do vazio do menu.
-- **Menu de categorias** à esquerda da tabela (`Categorias.tsx`): a seção se chama **Funis**; os grupos (nome em caixa alta e uma bolinha com a cor; botão direito: Renomear
+  grupo (grupo arquivado leva as categorias dele; `arquivadaCat`). O ícone **Arquivados** fica no título "Coleções" (aparece no hover) e no botão direito do vazio do menu.
+- **Menu de categorias** à esquerda da tabela (`Categorias.tsx`): a seção se chama **Coleções**; os grupos (nome em caixa alta e uma bolinha com a cor; botão direito: Renomear
   , Arquivar, Deletar, cor), cada categoria (com a contagem da aba) e "+ Nova categoria" (entra na lista do
   `criacao.json`, mesmo sem copy; criar e renomear abrem ali mesmo um editor com o ícone e o nome). Clique filtra (⌘ soma), soltar uma copy (ou a
   seleção) muda a categoria, arrastar categoria muda a ordem, botão direito: cor, renomear, apagar (só vazia).
   No topo, a categoria especial **📌 Pinados**: só as pinadas da aba (soltar uma copy ali pina).
   Botão direito → **🗄️ Arquivar** (categoria ou grupo): sai do menu e da Criação (a não ser escolhida) e aparece na
-  janela **Arquivados** (ícone no título "Funis" ou botão direito no vazio do menu), de onde desarquiva; as copies não mudam.
+  janela **Arquivados** (ícone no título "Coleções" ou botão direito no vazio do menu), de onde desarquiva; as copies não mudam.
 - **Formatos** (22/11/2026): orgânico 📱 Dica/Hack · 💻 Projeto autoral · 🗣️ Opinião/Dúvida · 🏞️ Carrossel · 🎥 YouTube;
   pago 💰 Ad VSL · 📜 Ad LP · 🎣 Ad Isca (as 15 notas "💰 LP - …" e "💰 ISCA - …" foram renomeadas para 📜 e 🎣). A coluna
   **Formatos** junta as notas da mesma copy pelo nome (sem o emoji e sem "VSL - ", "LP - ", "ISCA - "; `familia` em
-  `Tabela.tsx`): os formatos que ela tem aparecem ligados (clicar abre a nota), um traço, e os que não tem, apagados. O Reels ocupa uma posição só (📱, 🗣️ ou 💻, o que a copy tiver; sem Reels, 📱 apagado); depois 🏞️ e os pagos. YouTube fica de fora por enquanto.
+  `Tabela.tsx`): os formatos que ela tem aparecem ligados (clicar abre a nota), um traço, e os que não tem, apagados. Na nota aberta (Redação e modal do Calendário), quando a família tem mais de uma nota, os mesmos ícones aparecem ao lado do caminho: o da nota marcado, os outros abrem a versão (`slotsFormatos`/`familia` em `canvasApi.ts`). O Reels ocupa uma posição só (📱, 🗣️ ou 💻, o que a copy tiver; sem Reels, 📱 apagado); depois 🏞️ e os pagos. YouTube fica de fora por enquanto.
 - **Menu: hierarquia dos grupos:** o grupo tem ícone e nome maiores; as categorias dentro dele vêm recuadas e sem
   ícone; categoria solta mostra o ícone dela. A Ideia, no Status, fica em negrito.
 - **Colunas da tabela:** botão **Colunas** na barra de cima: marcar quais aparecem depois da Copy (Data, Status,

@@ -1751,3 +1751,12 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .cats .cats-grupo .cats-grupo-seta { margin-left: auto; }
 .cats .cats-grupo .cats-grupo-cor { display: none; }
 .cats-item.is-filho { padding-left: 24px; }
+
+/* nota: os outros formatos da mesma copy, ao lado do caminho */
+.nota-caminho-linha { display: flex; align-items: center; gap: 12px; }
+.nota-irmaos { display: inline-flex; align-items: center; gap: 2px; }
+.nota-irmaos .fmt-on, .nota-irmaos .fmt-off, .nota-irmaos .fmt-atual { display: inline-grid; place-items: center; width: 24px; height: 24px; font-size: 14px; border-radius: 7px; }
+.nota-irmaos .fmt-on { cursor: pointer; border: 0; background: none; }
+.nota-irmaos .fmt-on:hover { background: rgba(23, 24, 27, .08); }
+.nota-irmaos .fmt-atual { background: rgba(226, 240, 92, .55); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); }
+.nota-irmaos .fmt-off { filter: grayscale(1); opacity: .28; }

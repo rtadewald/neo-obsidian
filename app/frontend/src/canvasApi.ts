@@ -54,3 +54,17 @@ export function carregarTudo(): Promise<EstadoCanvas> {
 
 /** Onde o Rodrigo está no app agora (a página e a nota aberta): porta.vigiarOnde manda ao backend (GET /api/onde). */
 export const onde: { pagina: string; nota?: Alvo | null } = { pagina: '' }
+
+/** Formatos da mesma copy (a família é o nome sem o emoji e sem "VSL - ", "LP - ", "ISCA - "): coluna Formatos da tabela
+ *  e a faixa de irmãos na nota. O Reels é um só (📱 dica/hack, 🗣️ opinião/dúvida ou 💻 projeto autoral) e ocupa uma
+ *  posição, com o tipo que a família tem; depois 🏞️ e os pagos. */
+const REELS: [string, string][] = [['📱', 'Dica/Hack'], ['🗣️', 'Opinião / Dúvida'], ['💻', 'Projeto autoral']]
+const FORMATOS_ORG: [string, string][] = [['🏞️', 'Carrossel']]
+const FORMATOS_PAGO: [string, string][] = [['💰', 'Ad VSL'], ['📜', 'Ad LP'], ['🎣', 'Ad Isca']]
+const semVS = (f: string) => f.replace('\uFE0F', '')
+export const familia = (nome: string) => nome.replace(/^[^\p{L}\p{N}]+/u, '').replace(/^(VSL|LP|ISCA|Isca|Ads?|AD)\b\s*[-–—:]?\s*/i, '').trim().toLowerCase()
+export function slotsFormatos(p: Producao, fam: Producao[]): { f: string; rot: string; nota?: Producao }[] {
+  const nota = (f: string) => (semVS(p.formato) === semVS(f) ? p : fam.find((x) => semVS(x.formato) === semVS(f)))
+  const reels = REELS.find(([f]) => nota(f)) ?? (['📱', 'Reels'] as [string, string])
+  return [reels, ...FORMATOS_ORG, ...FORMATOS_PAGO].map(([f, rot]) => ({ f, rot, nota: nota(f) }))
+}

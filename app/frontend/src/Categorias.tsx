@@ -87,7 +87,7 @@ export const ICONES_CAT = ['📱', '💰', '📺', '📚', '🎥', '🏞️', '�
 
 /** Criar ou renomear ali mesmo: a categoria (secundário) tem ícone + nome; o grupo (principal, `semIcone`) só nome.
  *  Enter grava, Esc desiste. */
-export function EditorCategoria({ inicial = '', icone: icone0 = '', semIcone, placeholder = 'Nome da categoria', onOk, onCancelar }: {
+export function EditorCategoria({ inicial = '', icone: icone0 = '', semIcone, placeholder = 'Nome da coleção', onOk, onCancelar }: {
   inicial?: string; icone?: string; semIcone?: boolean; placeholder?: string
   onOk: (nome: string, icone: string | null) => void; onCancelar: () => void
 }) {
@@ -109,7 +109,7 @@ export function EditorCategoria({ inicial = '', icone: icone0 = '', semIcone, pl
 
 /** Menu de categorias à esquerda da tabela: clicar filtra (⌘ soma mais de uma), soltar uma copy muda a categoria dela,
  *  arrastar uma categoria sobre outra muda a ordem, botão direito dá cor, renomeia ou apaga, e "+ Nova categoria". */
-export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, lista, icones = {}, tipos = {}, onTipo, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onArquivarGrupo, onTirar, onCor }: {
+export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, lista, icones = {}, renomear, onRenomear, arquivadas, contagem, nPins, sel, cores, onSel, onSoltar, onOrdem, onCriar, onMenu, onDivisor, onRenomearDivisor, onArquivarGrupo, onTirar, onCor }: {
   /** Status acima das categorias: clicar filtra (⌘ soma), soltar uma copy muda o status dela. */
   status?: { lista: { k: string; rotulo: string; n: number }[]; sel: string[]; onSel: (l: string[]) => void; onSoltar: (copia: string, k: string) => void }
   novas?: string[]   // categorias com copy nova (ainda não aberta): 💡 piscando e à vista como as pinadas
@@ -117,8 +117,6 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
   nArquivados?: number
   lista: string[]
   icones?: Record<string, string>   // ícone de cada categoria
-  tipos?: Record<string, string>   // 'funil' (pago) para grupos (—id) e categorias soltas; o resto é quadro (orgânico)
-  onTipo?: (chave: string, tipo: TipoCat) => void   // soltar no título da outra seção ou botão direito: vira quadro/funil
   renomear: string | null   // a categoria sendo renomeada ali mesmo (botão direito → Renomear)
   onRenomear: (de: string, para: string | null, icone?: string | null) => void   // para null = desistiu; icone null = herda do grupo
   arquivadas: string[]   // ficam numa seção recolhida no fim (botão direito desarquiva)
@@ -249,24 +247,20 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
           </>
         })()}
       </>}
-      {(['quadro', 'funil'] as TipoCat[]).map((tipo, k) => {
-        // Quadros (orgânico) e Funis (pago): cada seção mostra os grupos e categorias do seu tipo, na ordem da lista
-        const chave = tipo === 'funil' ? 'cats' : 'quadros'
-        const daSecao = lista.filter((c) => tipoCat(lista, tipos, c) === tipo)
+      {(['quadro'] as TipoCat[]).map((tipo, k) => {
+        // Coleções: uma seção só com todos os grupos e categorias (orgânico e pago juntos; o tipo antigo fica guardado em `tipos`)
+        const chave = 'cats'
+        const daSecao = lista
         const aberta = !secoes.includes(chave)
         return (
           <div key={tipo} className="cats-secao">
-            <div className={`cats-t ${k === 0 ? 'cats-t-segunda' : 'cats-t-terceira'} cats-t-acoes ${sobre === `sec:${tipo}` ? 'is-sobre' : ''}`}
-              onDragOver={(e) => { if (e.dataTransfer.types.includes('neo/categoria')) { e.preventDefault(); setSobre(`sec:${tipo}`) } }}
-              onDragLeave={() => setSobre(null)}
-              onDrop={(e) => { e.preventDefault(); setSobre(null); const c = e.dataTransfer.getData('neo/categoria'); if (c) onTipo?.(c, tipo) }}
-              title={`Solte aqui uma categoria ou grupo para virar ${tipo === 'funil' ? 'funil' : 'quadro'}`}>
-              {tituloSecao(chave, tipo === 'funil' ? 'Funis' : 'Quadros')}
+            <div className={`cats-t ${k === 0 ? 'cats-t-segunda' : 'cats-t-terceira'} cats-t-acoes`}>
+              {tituloSecao(chave, 'Coleções')}
               {/* ações discretas, só com o cursor sobre o título (o botão direito no vazio do menu tem as mesmas) */}
               <span className="cats-t-botoes">
-                <button type="button" onClick={() => setCriando(tipo)} title={`Nova categoria (${tipo})`} aria-label="Nova categoria"><Icone n="mais" t={13} /></button>
-                <button type="button" onClick={() => setEditGrupo(`+${tipo}`)} title={`Novo grupo (${tipo === 'funil' ? 'funis' : 'quadros'})`} aria-label="Novo grupo"><Icone n="grupo" t={13} /></button>
-                {k === 1 && onArquivados && <button type="button" onClick={onArquivados} title={`Arquivados (${nArquivados ?? 0})`} aria-label="Arquivados"><Icone n="arquivo" t={13} /></button>}
+                <button type="button" onClick={() => setCriando(tipo)} title="Nova coleção" aria-label="Nova coleção"><Icone n="mais" t={13} /></button>
+                <button type="button" onClick={() => setEditGrupo(`+${tipo}`)} title="Novo grupo" aria-label="Novo grupo"><Icone n="grupo" t={13} /></button>
+                {onArquivados && <button type="button" onClick={onArquivados} title={`Arquivados (${nArquivados ?? 0})`} aria-label="Arquivados"><Icone n="arquivo" t={13} /></button>}
               </span>
             </div>
             {!aberta && daSecao.filter((c) => !ehDivisor(c) && pins.includes(`cat:${c}`)).map((c) => item(c, rotuloCat(modelo, c)))}
@@ -317,8 +311,6 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
             <button onClick={() => { const k = menuGrupo.c; setMenuGrupo(null); alternarPin(k) }}>📌 {pinsMarcados.includes(menuGrupo.c) ? 'Despinar' : 'Pinar'}</button>
           ) : menuGrupo.c ? <>
             <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); setEditGrupo(c) }}>✏️ Renomear</button>
-            {onTipo && (() => { const t = tipoCat(lista, tipos, menuGrupo.c), outro: TipoCat = t === 'funil' ? 'quadro' : 'funil'
-              return <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onTipo(c, outro) }}>{outro === 'funil' ? '💸 Mover para Funis' : '🎬 Mover para Quadros'}</button> })()}
             {onArquivarGrupo && <button onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onArquivarGrupo(c) }} title="O grupo e as categorias dele saem do menu (voltam por Arquivados, no fim)">🗄️ Arquivar</button>}
             <button className="is-perigo" onClick={() => { const c = menuGrupo.c; setMenuGrupo(null); onTirar(c) }} title="As categorias do grupo ficam no menu">Deletar</button>
             {onCor && (() => { const id = menuGrupo.c.split('|')[0]; return <>
@@ -330,10 +322,8 @@ export function MenuCategorias({ novas = [], status, onArquivados, nArquivados, 
                 <button className={`tabela-sem-cor ${cores[id] ? '' : 'is-on'}`} title="Sem cor" aria-label="Sem cor" onClick={() => { onCor(id, ''); setMenuGrupo(null) }} />
               </div></> })()}
           </> : <>   {/* botão direito no vazio do menu: as mesmas ações do título Categorias */}
-            <button onClick={() => { setMenuGrupo(null); setCriando('quadro') }}>＋ Nova categoria (quadro)</button>
-            <button onClick={() => { setMenuGrupo(null); setCriando('funil') }}>＋ Nova categoria (funil)</button>
-            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+quadro') }}>☰ Novo grupo (quadros)</button>
-            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+funil') }}>☰ Novo grupo (funis)</button>
+            <button onClick={() => { setMenuGrupo(null); setCriando('quadro') }}>＋ Nova coleção</button>
+            <button onClick={() => { setMenuGrupo(null); setEditGrupo('+quadro') }}>☰ Novo grupo</button>
             {onArquivados && <button onClick={() => { setMenuGrupo(null); onArquivados() }}>🗄️ Arquivados ({nArquivados ?? arquivadas.length})</button>}
           </>}
         </div>, document.body)}
