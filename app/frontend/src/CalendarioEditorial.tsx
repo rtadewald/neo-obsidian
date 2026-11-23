@@ -40,6 +40,9 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
   const [ini, setIni] = useState(() => addDias(segunda(new Date()), -12 * 7))
   const [nSem, setNSem] = useState(40)
   const [titulo, setTitulo] = useState('')
+  // altura dos dias: o controle ao lado do Hoje (duplo clique volta ao padrão); fica guardada
+  const [altura, setAltura] = useState<number>(() => { try { return Number(localStorage.getItem('cal-altura')) || 140 } catch { return 140 } })
+  useEffect(() => { try { localStorage.setItem('cal-altura', String(altura)) } catch { /* sem storage */ } }, [altura])
   const [itens, setItens] = useState<ItemAgenda[]>([])
   const [blocos, setBlocos] = useState<Bloco[]>([])
   const [sobreDia, setSobreDia] = useState<string | null>(null)
@@ -161,6 +164,10 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
           <button className="pilula" onClick={() => pularMes(-1)} aria-label="Mês anterior">‹</button>
           <button className="pilula" onClick={() => { pendente.current = true; setIrHoje((v) => v + 1) }}>Hoje</button>
           <button className="pilula" onClick={() => pularMes(1)} aria-label="Próximo mês">›</button>
+          <label className="cal-ed-altura" title="Altura dos dias (fica guardada)">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v10M3.5 3.5 6 1l2.5 2.5M3.5 8.5 6 11l2.5-2.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <input type="range" min={70} max={320} step={10} value={altura} onChange={(e) => setAltura(Number(e.target.value))} onDoubleClick={() => setAltura(140)} aria-label="Altura dos dias" />
+          </label>
         </div>
         <div className="cal-ed-tipos" role="group" aria-label="Tipos de copy">
           <button className={`cal-ed-tipo ${!tipos.length ? 'is-on' : ''}`} onClick={() => setTipos([])} title="Mostrar todos">Todos</button>
@@ -171,7 +178,7 @@ export function CalendarioEditorial({ onAbrir, onMudou }: { onAbrir: (raiz: Raiz
         </div>
       </div>
 
-      <div ref={grade} className="cal-ed-grade glass glass--light" onScroll={rolou}>
+      <div ref={grade} className="cal-ed-grade glass glass--light" onScroll={rolou} style={{ '--cal-dia-h': `${altura}px` } as React.CSSProperties}>
         <div className="cal-ed-nomes"><span className="cal-ed-margem" />{DIAS.map((d) => <span key={d}>{d}</span>)}</div>
         {semanas.map((sem, si) => (
           <SemanaEditorial key={iso(sem[0])} primeira={si === 0} semana={sem} porDia={porDia} blocos={blocos} hoje={hoje}

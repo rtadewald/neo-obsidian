@@ -34,7 +34,7 @@ export async function desfazerUltima(refazer: boolean): Promise<string> {
   }
 }
 
-const NOMES: Record<string, string> = { ideia: 'Ideia', gravar: 'Gravar', edicao: 'Em edição', agendado: 'Agendado', publicado: 'Publicado', ativo: 'Ativo', inativo: 'Inativo', arquivado: 'Arquivado' }
+const NOMES: Record<string, string> = { ideia: 'Ideia', referencia: 'Referência', gravar: 'Gravar', edicao: 'Em edição', agendado: 'Agendado', publicado: 'Publicado', ativo: 'Ativo', inativo: 'Inativo', arquivado: 'Arquivado' }
 
 /** Muda o status de várias copies e deixa a mudança no ⌘Z. `antes` é o status de cada uma antes da mudança.
  *  A nota pode trocar de nome ao mudar de status (marcador no nome, pasta Publicados): a ação segue o nome novo. */

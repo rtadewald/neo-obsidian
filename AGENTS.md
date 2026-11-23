@@ -94,6 +94,7 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 | `gravar` | Gravar | `status: gravar` |
 | `edicao` | Em edição | `status: edicao` |
 | `agendado` | Agendado | `status: agendado` |
+| `referencia` | 🔖 Referência | `status: referencia`, em `1 Priorizar/` (material de referência; fica fora do menu de status, só nos seletores) |
 | `publicado` | ✅ Publicado | em `2 Publicados/`, com `status: publicado` (orgânico; sem a propriedade em Publicados também é publicado) |
 | `ativo` | 🟢 Ativo | em `2 Publicados/`, `status: ativo` (VSL e ads no ar) |
 | `inativo` | ⏸️ Inativo | em `2 Publicados/`, `status: inativo` (VSL e ads parados; em 21/11/2026 as 333 💰/📺 publicadas viraram inativo) |
@@ -109,7 +110,7 @@ No Claude Code desta pasta os dois estão em `.claude/launch.json` como `neo-obs
 - **Priorizar é o pin** (botão direito → 📌 Priorizar; ids `p:raiz/nome` em `canvas-pinados`): as pinadas ficam no topo da
   própria categoria (ou da lista), com 📌, fundo amarelo e um traço separando das demais, fora dos filtros e da ordenação.
 - Copy nova (⌘K, ⌥N ou "+ Nova copy" na Redação) nasce com o frontmatter do `T-Copy.md` (`status: ideia`,
-  `scheduled`, `notion`, `tags`, `categoria`) e o ícone do formato, então aparece na Criação. A janela também mostra as categorias (começa na escolhida no menu, se for uma só, ou na última usada) e grava o `categoria:`.
+  `scheduled`, `notion`, `tags`, `colecao`) e o ícone do formato, então aparece na Criação. A janela também mostra as categorias (começa na escolhida no menu, se for uma só, ou na última usada) e grava o `categoria:`.
 - Leitura: `notas.status(raiz, nome)`; `notas.STATUS_VAULT`/`DO_VAULT` traduzem o código do app para o vault.
 
 ### Formato (emoji depois da marca de status)
@@ -138,14 +139,14 @@ emoji conhecido aparece como `📄`. O nome sem marcas nem emoji é o título da
 |---|---|---|
 | `scheduled` | copy | `"AAAA-MM-DD"`, a data de publicação; o calendário editorial lê e grava |
 | `tags` | todas | lista YAML; vazia fica `tags:` (nunca apague a chave) |
-| `categoria` | copy | agrupa a Criação e o menu de categorias da Redação. No painel de propriedades da nota é um select com as categorias do `criacao.json` (sempre gravada entre aspas) |
+| `colecao` | copy | a coleção (antes `categoria:`, e `funil:` por algumas horas; ainda lidas): agrupa a Criação e o menu Coleções da Redação. No painel de propriedades da nota é um select com as categorias do `criacao.json` (sempre gravada entre aspas) |
 | `notion` | copy | link do card no Notion (base "Edição e Publicação - 2026"); vários cards da mesma copy (versões, LP/VSL, retestes) viram lista. O painel mostra como "Notion ↗" |
 | `origin` | ideia | wikilink do projeto/tema pai (padrão do vault) |
 | `fontes` | ideia | lista de `[[…]]` das entradas ligadas (legado) |
 | `url`, `tipo`, `thumb`, `autor` | ideia | o material bruto: `tipo` é `texto`, `link`, `youtube`, `instagram` ou `radar` |
 
 Copy nova nasce em `1 Priorizar/` com o frontmatter do T-Copy (`notas.criar`) ou `status: ideia / scheduled: /
-notion: / tags: / categoria:` (`copies._nova_copy`, para ⌘K, link colado e o radar).
+notion: / tags: / colecao:` (`copies._nova_copy`, para ⌘K, link colado e o radar).
 
 ### Links
 
@@ -163,23 +164,32 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 ## 5. A Redação (`Redacao.tsx`, `Tabela.tsx`)
 
 - **Layout:** um card só, com a tabela à esquerda e a nota (ou o calendário) à direita; divisória arrastável
-  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** vai para a aba Calendário e volta (só sem texto selecionado; o calendário saiu da Redação); **⌘A** seleciona todas as copies visíveis na tabela (Esc limpa a seleção); **⌘D** ou **⌘⌫** mandam para a lixeira as selecionadas ou a copy aberta (pede confirmação; no editor o ⌘⌫ segue apagando a linha). Um clique no título da copy aberta abre a edição do nome com o cursor onde foi o clique (duplo clique seleciona tudo). Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. **⌘1…** (ou ⌃) trocam de página na ordem da navbar (⌘1 Redação, ⌘2 Calendário…), também com copy aberta e no modo W; no modo copy, **⌥1…⌥9** vão para as abas de nota. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas aparecem no fim, depois de um traço (visíveis por padrão; "Esconder publicados" guarda a escolha em `tabela-ver-pub`).
+  (`redacao-largura`; duplo clique volta ao meio). **Atalhos do modo esc** (fora de campos e do editor): **⌘B** esconde/mostra a tabela, fica só a copy ou o calendário (no editor, sem texto selecionado, também vale; com seleção é negrito; o botão ⇤ faz o mesmo); **⌘P** esconde/mostra a copy, fica a tabela inteira (as abas de notas ficam guardadas; clicar numa copy volta); **⌘[** esconde/mostra o menu de categorias (`redacao-sem-cats`); **⌘]** esconde/mostra Status e Data no modo copy (`redacao-sem-colunas`); **⌘C** vai para a aba Calendário e volta (só sem texto selecionado; o calendário saiu da Redação); **⌘A** seleciona todas as copies visíveis na tabela (Esc limpa a seleção); **⌘D** ou **⌘⌫** mandam para a lixeira as selecionadas ou a copy aberta (pede confirmação; no editor o ⌘⌫ segue apagando a linha). Um clique no título da copy aberta abre a edição do nome com o cursor onde foi o clique (duplo clique seleciona tudo). Clicar no emoji do título abre o seletor de ícone (os formatos sugeridos e um campo para qualquer emoji; ⌃⌘Espaço abre os do Mac): escolher renomeia a nota trocando só o emoji. Abrir uma copy (⌘O, clique, aba) abre o grupo dela na tabela e rola até a linha. **⌘1…** (ou ⌃) trocam de página na ordem da navbar (⌘1 Redação, ⌘2 Calendário…), também com copy aberta e no modo W; no modo copy, **⌥1…⌥9** vão para as abas de nota. A tabela é uma tela só (a Criação, por categoria): o **status** é a primeira seção do menu da esquerda, acima das categorias (clicar filtra, ⌘ soma, soltar uma copy muda o status dela); sem status escolhido, as publicadas aparecem no fim, depois de um traço (visíveis por padrão; "Esconder publicados" guarda a escolha em `tabela-ver-pub`).
 - **Abas de notas** sobre o painel, como no Obsidian (`redacao-abas` no `localStorage`): clique numa linha abre na aba
   da frente; **⌘+clique** (ou ⌘↵ na busca ⌘O) abre numa aba nova; × ou clique do meio fecha. Enter na busca abre na
   aba da frente.
 - **Abas da tabela:** Criação · Gravar | Em edição · Agendado · Publicados, com o ícone de cada status, o nome e o número (Priorizar e Winners saíram em 19/11/2026).
   - **Criação:** as copies com ícone de formato (📱 📝 🏞️ 💻 📚 💰 📺, `GRUPO_FORMATO`) agrupadas pela **categoria**
-    (`categoria:` da copy; sem ela, "Sem categoria" no fim). Ordem padrão (sem status escolhido): **ativos** no topo, depois as **pinadas**, depois as em andamento (ideia, gravar, edição, agendado); publicado e inativo ficam no bloco "Mostrar publicados" do fim, **recolhido por padrão** (`tabela-ver-pub-2`); arquivado não aparece (só no filtro dele).
+    (`colecao:` da copy; sem ela, "Sem coleção" no fim). Ordem padrão (sem status escolhido): **ativos** no topo, depois as **pinadas**, depois as em andamento (ideia, gravar, edição, agendado); publicado e inativo ficam no bloco "Mostrar publicados" do fim, **recolhido por padrão** (`tabela-ver-pub-2`); arquivado não aparece (só no filtro dele).
     Botão direito na categoria → cor pastel (a linha e as copies dela ficam na cor). Arrastar categoria sobre
     categoria muda a ordem; arrastar copy sobre copy muda a posição (e a categoria, se for de outro grupo). Cor e ordem em
     `dados/criacao.json` (`GET/POST /api/criacao`).
-- **Coleções** (22/11/2026): a seção de categorias do menu se chama **Coleções** (orgânico e pago juntos; a
-  propriedade nas notas continua `categoria:`). Houve uma separação em Quadros/Funis, desfeita no mesmo dia: o tipo
-  antigo ficou guardado em `tipos` no `criacao.json` (sem uso no menu). Coleção nova nasce solta, no topo da lista;
-  coleções que só existem nas notas também entram soltas no topo (`listaCategorias`). A Ideia, no Status, fica em negrito.
+- **Coleções** (22/11/2026): a seção de categorias do menu se chama **Coleções** (orgânico e pago juntos) e a
+  propriedade da copy é `colecao:` (antes `categoria:`; por algumas horas `funil:`; as duas ainda lidas e trocadas na
+  mesma linha por `copies._gravar_colecao`; por dentro do app o campo segue "categoria"). No mesmo dia houve Quadros/
+  Funis e Projetos embaixo de Ideia, desfeitos: o tipo ficou guardado em `tipos` e o backend ainda aceita `projetos` no
+  `criacao.json`, sem uso no front. Coleção nova nasce solta, no topo; as que só existem nas notas também. Status com 0 copies somem (a não ser escolhidos ou pinados).
+- **Os 4 grupos fixos** (22/11/2026, pedido do Rodrigo): 📱 Reels FIA (FIA Reels), 📱 Reels FID (FID Reels), 📺 VSL FIA (VSL FIA, LP FIA, VSL Carrinho) e 📺 VSL FID (VSL FID, LP FID). Os nomes dos grupos não mudam mais; cada um tem uma sessão editora no 19-agent-video-editor. As notas não mudaram (`colecao:` segue o nome da coleção).
+- **Grupo nas Coleções:** clicar no grupo filtra todas as coleções dele (clicar de novo tira; ⌘ soma às já escolhidas); a setinha à direita abre e fecha o grupo.
+- **Divisor simples** nas Coleções: `·sep:<id>` na lista do `criacao.json` (não é coleção nem grupo; `ehSeparador`):
+  só uma linha; com o cursor em cima, "+" põe outro abaixo e "−" tira; arrastável. Cria pelo ícone de linha no título
+  "Coleções" ou pelo botão direito no vazio do menu.
+- **Calendário:** um controle ao lado do Hoje muda a altura dos dias (`cal-altura`; duplo clique volta a 140 px). A aba
+  Calendário não tem a barra do "+ Nova copy" (o ⌘K continua). A Criação fica guardada entre Redação e Calendário
+  (`criacaoCache`), para a troca de aba não piscar.
 - **Categorias em dois níveis** (22/11/2026): os **grupos** (divisores `—<id>|<nome>` na lista do `criacao.json`) são
   o principal (só nome e cor) e as **categorias** abaixo deles, o secundário (ícone e nome). Toda copy fica num
-  secundário. A nota guarda só o nome (`categoria: "Dicas & Hacks"`); o ícone da categoria fica em `icones` no
+  secundário. A nota guarda só o nome (`colecao: "Dicas & Hacks"`); o ícone da categoria fica em `icones` no
   `criacao.json` (`iconeCat`/`rotuloCat` em `Categorias.tsx`). Arrastar um grupo leva as categorias dele junto e o
   bloco cai antes ou depois do grupo de destino, nunca no meio (`moverNaLista` em `Tabela.tsx`). Em 22/11/2026
   as 251 notas perderam o emoji do nome; "💰 VSL FIA/FID" viraram "Ads VSL FIA/FID" e "📺 VSL FIA/FID", "VSL FIA/FID"
@@ -195,7 +205,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
 - **Formatos** (22/11/2026): orgânico 📱 Dica/Hack · 💻 Projeto autoral · 🗣️ Opinião/Dúvida · 🏞️ Carrossel · 🎥 YouTube;
   pago 💰 Ad VSL · 📜 Ad LP · 🎣 Ad Isca (as 15 notas "💰 LP - …" e "💰 ISCA - …" foram renomeadas para 📜 e 🎣). A coluna
   **Formatos** junta as notas da mesma copy pelo nome (sem o emoji e sem "VSL - ", "LP - ", "ISCA - "; `familia` em
-  `Tabela.tsx`): os formatos que ela tem aparecem ligados (clicar abre a nota), um traço, e os que não tem, apagados. Na nota aberta (Redação e modal do Calendário), quando a família tem mais de uma nota, os mesmos ícones aparecem ao lado do caminho: o da nota marcado, os outros abrem a versão (`slotsFormatos`/`familia` em `canvasApi.ts`). O Reels ocupa uma posição só (📱, 🗣️ ou 💻, o que a copy tiver; sem Reels, 📱 apagado); depois 🏞️ e os pagos. YouTube fica de fora por enquanto.
+  `Tabela.tsx`): os formatos que ela tem aparecem ligados (clicar abre a nota), um traço, e os que não tem, apagados. Na nota aberta (Redação e modal do Calendário), quando a família tem mais de uma nota, os mesmos ícones aparecem ao lado do caminho: o da nota marcado, os outros abrem a versão (`slotsFormatos`/`familia` em `canvasApi.ts`). Clicar num formato apagado propõe criar a nota dele (`NovoFormato.tsx`): pergunta a coleção (começa na da original), dá o nome ("💰 VSL - …", "📜 LP - …", "🎣 ISCA - …", "🏞️ …") e a nota nasce em Priorizar com o texto da original e um link `Base: [[original]]`. As copies ativas ficam numa caixa verde na tabela (`tr.is-ativo`). O botão **🔥 Winners** (barra de cima da tabela, `tabela-winners`) põe as winners (tag 🔥) da seleção atual, de qualquer status menos arquivado, no topo de tudo numa caixa vermelha (`tr.is-winner`); uma winner ativa sai do bloco dos ativos. O Reels ocupa uma posição só (📱, 🗣️ ou 💻, o que a copy tiver; sem Reels, 📱 apagado); depois 🏞️ e os pagos. YouTube fica de fora por enquanto.
 - **Menu: hierarquia dos grupos:** o grupo tem ícone e nome maiores; as categorias dentro dele vêm recuadas e sem
   ícone; categoria solta mostra o ícone dela. A Ideia, no Status, fica em negrito.
 - **Colunas da tabela:** botão **Colunas** na barra de cima: marcar quais aparecem depois da Copy (Data, Status,
@@ -225,7 +235,7 @@ modal mostra "recarregar" em vez de sobrescrever. Não contorne isso.
   estado da tabela). Com regras, elas passam por cima do cabeçalho e da ordem arrastada na Criação.
 - **Seleção:** arrastar o mouse fora do nome desenha a caixa e seleciona várias (⌘/⇧ somam); pelo nome, a linha
   continua arrastando para o calendário.
-- **Filtrar** (no lugar da busca, que saiu da Redação: o ⌘O busca): chips de Status e Data (com/sem; a categoria vai pelo menu);
+- **Filtrar** (no lugar da busca, que saiu da Redação: o ⌘O busca): chips de Status e Data (com/sem; a coleção vai pelo menu);
   um clique liga ou desliga. A tabela guarda o estado de quando saiu (`tabela-estado`).
 - **Botão direito numa copy:** priorizar, renomear, arquivar | tags | deletar (abrir saiu: é só clicar); fora da Criação, também mover de status.
 - **📅 Calendário:** o `CalendarioEditorial` abre no lugar da nota; arrastar uma linha da tabela para um dia agenda.

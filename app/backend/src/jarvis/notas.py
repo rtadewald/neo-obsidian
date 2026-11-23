@@ -85,7 +85,7 @@ def _arquivos(raiz: str) -> list[tuple[str, Path]]:
 
 # O status da copy é a propriedade `status:` da nota (desde 19/11/2026; antes eram 🔴/🧑🏼‍🔧/🔹 no começo do nome).
 # Valores no vault: ideia, gravar, edicao, agendado, publicado (19/11/2026: "priorizar" virou "ideia"; o antigo ainda é lido).
-STATUS_VAULT = {"ideia": "ideia", "gravar": "gravar", "edicao": "edicao", "agendado": "agendado", "publicado": "publicado",
+STATUS_VAULT = {"ideia": "ideia", "referencia": "referencia", "gravar": "gravar", "edicao": "edicao", "agendado": "agendado", "publicado": "publicado",
                 "ativo": "ativo", "inativo": "inativo", "arquivado": "arquivado"}
 FIM = ("publicado", "ativo", "inativo", "arquivado")   # os de conclusão: moram em 2 Publicados
 DO_VAULT = {**{v: k for k, v in STATUS_VAULT.items()}, "priorizar": "ideia"}
@@ -269,7 +269,7 @@ def criar(titulo: str) -> dict:
     p = PRIORIZAR / f"{titulo}.md"
     if p.exists():
         raise FileExistsError(p.name)
-    modelo = "---\nstatus: ideia\nscheduled:\nnotion:\ntags:\ncategoria:\n---\n\n"
+    modelo = "---\nstatus: ideia\nscheduled:\nnotion:\ntags:\ncolecao:\n---\n\n"
     if TEMPLATE_COPY.is_file():
         t = TEMPLATE_COPY.read_text(encoding="utf-8", errors="replace")
         m = re.match(r"^---\n.*?\n---\n", t, flags=re.S)

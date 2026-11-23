@@ -1,7 +1,7 @@
 import type { Raiz } from './notas'
 
 type Midia = { links: string[]; imagem: string | null; video?: string | null; copia: boolean }
-export type StatusProd = 'ideia' | 'gravar' | 'edicao' | 'agendado' | 'publicado' | 'ativo' | 'inativo' | 'arquivado'
+export type StatusProd = 'ideia' | 'referencia' | 'gravar' | 'edicao' | 'agendado' | 'publicado' | 'ativo' | 'inativo' | 'arquivado'
 /** Os de conclusão (moram em 2 Publicados): saem da lista padrão da Criação. */
 export const FIM: StatusProd[] = ['publicado', 'ativo', 'inativo', 'arquivado']
 export type Producao = {
@@ -21,6 +21,7 @@ export type Alvo = { raiz: Raiz; nome: string }
 export const ORDEM_FORMATO = ['📱', '💻', '🗣️', '🏞️', '🎥', '💰', '📜', '🎣', '📺', '📝', '🎙️']
 export const STATUS: { k: StatusProd; nome: string; marca: string }[] = [
   { k: 'ideia', nome: 'Ideia', marca: '💡' },
+  { k: 'referencia', nome: 'Referência', marca: '🔖' },   // material de referência: fica fora do menu de status
   { k: 'gravar', nome: 'Gravar', marca: '🔴' },   // copy pronta, falta gravar
   { k: 'edicao', nome: 'Em edição', marca: '🧑🏼‍🔧' },
   { k: 'agendado', nome: 'Agendado', marca: '🔹' },

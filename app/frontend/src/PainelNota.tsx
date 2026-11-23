@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+import { NovoFormato } from './NovoFormato'
 import { arquivadaCat, ehDivisor, rotuloCat, type ModeloCats } from './Categorias'
 import { exportarPdf } from './exportarPdf'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -124,6 +126,16 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
     if (!r.ok) throw new Error('Não consegui mudar as datas.')
   }, datas.length > 1 ? `${datas.length} datas` : 'Data mudou')
 
+  // seletor de ícone do título: os formatos primeiro e um campo para qualquer emoji (⌃⌘Espaço abre os do Mac)
+  const [icone, setIcone] = useState<{ x: number; y: number } | null>(null)
+  const trocarIcone = async (novoIc: string) => {
+    setIcone(null)
+    const visto = alvo.nome
+    const ic = /^[^\p{L}\p{N}]+/u.exec(visto)?.[0] ?? ''
+    const novo = `${novoIc.trim()} ${visto.slice(ic.length).trimStart()}`
+    if (novoIc.trim() && novo !== alvo.nome) await executar(() => acao(alvo, { acao: 'renomear', novo }))
+  }
+
   async function confirmarTitulo() {
     const v = titulo?.trim()
     setTitulo(null)
@@ -134,8 +146,9 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
   const [categorias, setCategorias] = useState<{ v: string; r: string }[] | undefined>()
   useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
     const m: ModeloCats = { categorias: d.categorias ?? [], icones: d.icones ?? {}, arquivadas: d.arquivadas ?? [] }
-    setCategorias(m.categorias.filter((c) => !ehDivisor(c) && !arquivadaCat(m, c)).map((c) => ({ v: c, r: rotuloCat(m, c) })))
+    setCategorias(m.categorias.filter((c) => !ehDivisor(c) && !c.startsWith('·sep:') && !arquivadaCat(m, c)).map((c) => ({ v: c, r: rotuloCat(m, c) })))
   }).catch(() => {}) }, [])
+  const [novoFmt, setNovoFmt] = useState<{ f: string; rot: string; x: number; y: number } | null>(null)   // criar um formato que falta
   const caminho = nota?.caminho ?? `${PASTA[alvo.raiz]}/${alvo.nome}.md`
 
   const extra: Extra = prod ? {
@@ -157,10 +170,13 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
             <p className="ideias-caminho">{caminho.split('/').slice(0, -1).join(' / ')}</p>
             {/* irmãos: os formatos da mesma copy; o da nota fica marcado, clicar num outro abre ele, os que faltam ficam apagados */}
             {prod && irmaos && irmaos.length > 1 && <nav className="nota-irmaos" aria-label="Outros formatos desta copy">
-              {slotsFormatos(prod, irmaos).map(({ f, rot, nota }) => !nota ? <span key={f} className="fmt-off" title={`${rot}: não tem`}>{f}</span>
+              {slotsFormatos(prod, irmaos).map(({ f, rot, nota }) => !nota ? <button key={f} className="fmt-off" title={`${rot}: não tem · clique para criar`} onClick={(e) => setNovoFmt({ f, rot, x: e.clientX, y: e.clientY })}>{f}</button>
                 : nota.raiz === prod.raiz && nota.nome === prod.nome ? <span key={f} className="fmt-atual" title={`${rot} (esta nota)`}>{f}</span>
                 : <button key={f} className="fmt-on" title={`${rot}: ${nota.nome}`} onClick={() => onLink(nota.nome)}>{f}</button>)}
             </nav>}
+            {icone && createPortal(<SeletorIcone x={icone.x} y={icone.y} onEscolher={trocarIcone} onFechar={() => setIcone(null)} />, document.body)}
+            {novoFmt && prod && createPortal(<NovoFormato origem={prod} f={novoFmt.f} rotulo={novoFmt.rot} x={novoFmt.x} y={novoFmt.y} colecoes={categorias ?? []}
+              onFechar={() => setNovoFmt(null)} onCriado={(a) => { setNovoFmt(null); onLink(a.nome) }} />, document.body)}
           </div>
           {titulo !== null ? (
             <form onSubmit={(e) => { e.preventDefault(); confirmarTitulo() }}>
@@ -168,13 +184,20 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
                 onFocus={(e) => { const c = cursorTitulo.current; cursorTitulo.current = null; if (c === null) e.target.select(); else e.target.setSelectionRange(c, c) }}
                 onDoubleClick={(e) => e.currentTarget.select()} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setTitulo(null) } }} aria-label="Nome da nota" />
             </form>
-          ) : fixo ? <h1 className="is-editavel" title="Clique para renomear (duplo clique seleciona tudo)" onClick={(e) => {
-              // a posição do clique no texto vira a posição do cursor no campo
-              const d = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
-              const off = d.caretPositionFromPoint?.(e.clientX, e.clientY)?.offset ?? d.caretRangeFromPoint?.(e.clientX, e.clientY)?.startOffset ?? null
+          ) : fixo ? (() => {
+              // o emoji do começo do nome é clicável (abre o seletor de ícone); o resto, clicado, vira o campo com o cursor ali
               const visto = alvo.nome.split('/').pop() ?? alvo.nome
-              cursorTitulo.current = off === null ? null : alvo.nome.length - visto.length + Math.min(off, visto.length)
-              setTitulo(alvo.nome) }}>{alvo.nome.split('/').pop()}</h1>
+              const ic = (/^[^\p{L}\p{N}]+/u.exec(visto)?.[0] ?? '').trim()
+              const resto = ic ? visto.slice(visto.indexOf(ic) + ic.length).trimStart() : visto
+              return <h1 className="is-editavel" title="Clique para renomear (duplo clique seleciona tudo; clique no ícone para trocar)" onClick={(e) => {
+                if ((e.target as HTMLElement).closest('.titulo-ic')) return
+                const d = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
+                const off = d.caretPositionFromPoint?.(e.clientX, e.clientY)?.offset ?? d.caretRangeFromPoint?.(e.clientX, e.clientY)?.startOffset ?? null
+                cursorTitulo.current = off === null ? null : alvo.nome.length - resto.length + Math.min(off, resto.length)
+                setTitulo(alvo.nome) }}>
+                {ic && <button type="button" className="titulo-ic" title="Trocar o ícone" onClick={(e) => { e.stopPropagation(); setIcone({ x: e.clientX, y: e.clientY }) }}>{ic}</button>}
+                {ic ? ' ' : ''}{resto}</h1>
+            })()
             : <h1 className="is-editavel" title="Clique para renomear" onClick={() => setTitulo(alvo.nome)}>{alvo.nome}</h1>}
         </div>
         {/* o estado só aparece quando pede atenção (conflito com o Obsidian ou erro ao salvar) */}
@@ -197,5 +220,31 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
         {!semSumario && <Sumario key={`${alvo.raiz}/${alvo.nome}`} texto={texto} view={view} />}
       </div>
     </>
+  )
+}
+
+/** Seletor de ícone do título da nota: os formatos sugeridos e um campo para colar ou escolher qualquer emoji. */
+const ICONES_SUGERIDOS: [string, string][] = [['📱', 'Dica/Hack'], ['💻', 'Projeto autoral'], ['🗣️', 'Opinião / Dúvida'], ['🏞️', 'Carrossel'], ['🎥', 'YouTube'],
+  ['💰', 'Ad VSL'], ['📜', 'Ad LP'], ['🎣', 'Ad Isca'], ['📺', 'VSL'], ['📚', 'Aula']]
+function SeletorIcone({ x, y, onEscolher, onFechar }: { x: number; y: number; onEscolher: (ic: string) => void; onFechar: () => void }) {
+  const caixa = useRef<HTMLDivElement>(null)
+  const [outro, setOutro] = useState('')
+  useEffect(() => {
+    const fora = (e: PointerEvent) => { if (!caixa.current?.contains(e.target as Node)) onFechar() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onFechar() } }
+    window.addEventListener('pointerdown', fora, true); window.addEventListener('keydown', esc, true)
+    return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc, true) }
+  }, [onFechar])
+  return (
+    <div ref={caixa} className="seletor-icone glass glass--light" style={{ left: Math.min(x, window.innerWidth - 260), top: y + 10 }} role="dialog" aria-label="Trocar o ícone">
+      <div className="seletor-icone-grade">
+        {ICONES_SUGERIDOS.map(([ic, rot]) => <button key={ic} type="button" title={rot} onClick={() => onEscolher(ic)}>{ic}</button>)}
+      </div>
+      <form className="seletor-icone-outro" onSubmit={(e) => { e.preventDefault(); if (outro.trim()) onEscolher(outro.trim()) }}>
+        <input autoFocus value={outro} onChange={(e) => setOutro(e.target.value)} placeholder="Outro emoji" aria-label="Outro emoji" />
+        <button type="submit" className="pilula is-on" disabled={!outro.trim()}>Usar</button>
+      </form>
+      <p className="seletor-icone-dica">⌃⌘Espaço abre os emojis do Mac no campo acima.</p>
+    </div>
   )
 }

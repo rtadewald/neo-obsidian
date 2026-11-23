@@ -138,12 +138,12 @@ no `CLAUDE.md` dele (já carregado) e o guia do app (telas, rotas, de-para) est�
 
 ## As copies (o vault manda; o app só mostra)
 - `1 Copies/1 Priorizar/` → copies vivas. `1 Copies/2 Publicados/` → publicadas.
-- Status = a propriedade `status:` no frontmatter: ideia → gravar → edicao → agendado e os de conclusão publicado
+- Status = a propriedade `status:` no frontmatter: ideia → gravar → edicao → agendado (e `referencia`, material de referência, também em Priorizar) e os de conclusão publicado
   (orgânico) · ativo / inativo (VSL e ads no ar ou parados) · arquivado. Os de conclusão movem a nota para `2 Publicados`. Não existe mais 💡 ideia separada nem canvas: a ideia é a própria copy.
 - Formato pelo emoji do começo do nome: 📱 Reels · 💰 Ad · 🏞️ Carrossel · 📺 VSL · 🎥 YouTube · 📝 Feed · 🎙️ Live · 🗣️ Stories.
 - Frontmatter da copy (`2 Notas/Engine/templates/T-Copy.md`): `status`, `scheduled: "AAAA-MM-DD"`, `notion` (link do
   card no Notion; vários viram lista), `tags` (lista; vazia fica `tags:`, nunca apague a chave; produto: 🤖fia, 🖼️fid,
-  💰bf26, 📊dados; 🔥 = winner), `categoria` (só o nome do secundário, sem emoji, ex.: "Dicas & Hacks"; o grupo e o ícone ficam no app). Arquivar é `status: arquivado`.
+  💰bf26, 📊dados; 🔥 = winner), `colecao` (a coleção; só o nome, sem emoji, ex.: "Dicas & Hacks"; o grupo e o ícone ficam no app). Arquivar é `status: arquivado`.
 - Links sempre `[[título]]`. `3 Skills/<nome>/SKILL.md` são as skills dele (hooks, roteiros, carrosséis, VSLs): use-as.
 
 ## Como agir

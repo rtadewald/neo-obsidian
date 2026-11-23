@@ -1142,7 +1142,6 @@ button.tabela-seta-grupo:hover { background: rgba(23, 24, 27, .08); }
 .redacao-tabela, .redacao-lado { overflow: hidden; }
 .redacao .tabela-rolo { overflow-x: auto; }
 /* Redação: só Nome, Versões, Status e Data na tabela (as outras colunas ficam na tabela do canvas) */
-.tabela-embutida .col-tags, .tabela-embutida .col-grupo, .tabela-embutida .col-palavras, .tabela-embutida .col-mtime { display: none; }
 .tabela-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
 .tabela-embutida .col-status { width: 110px; }
 .tabela-embutida .col-data { width: 90px; }
@@ -1585,8 +1584,7 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .arq-vazio { margin: 4px 8px; font-size: 12px; color: var(--mute); }
 
 /* um espaço separa Status de Categorias (sem traço) */
-/* um divisor fino separa Status de Categorias */
-.cats .cats-t-segunda { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(23, 24, 27, .09); }
+.cats .cats-t-segunda { margin-top: 30px; }   /* respiro entre Status e Coleções */
 
 /* grupos do menu de categorias: setinha (hover; sempre visível quando fechado), nome discreto, n de categorias
    escondidas quando fechado e o traço até a borda. A linha toda recolhe/mostra. */
@@ -1707,19 +1705,6 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .cats-arquivados { display: inline-flex; align-items: center; gap: 6px; margin: 14px 12px 6px; padding: 2px 0; font: inherit; font-size: 11.5px; color: var(--mute); opacity: .7; }
 .cats-arquivados:hover { opacity: 1; color: var(--ink); }
 
-/* grupo sem cor: só o texto, sólido (cor com transparência apagava também o emoji) */
-.cats-grupo:not(.com-cor) .cats-grupo-nome { color: var(--ink-2); }
-
-/* grupos (principal) no estilo do título "Categorias": caixa alta pequena, espaçada, sem pílula e sem linha; cinza sólido
-   (cor com transparência apagava o emoji) */
-.cats .cats-grupo .cats-grupo-nome, .cats .cats-grupo.com-cor .cats-grupo-nome { padding: 0; background: none; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8c8b88; }
-.cats .cats-grupo:hover .cats-grupo-nome { color: var(--ink-2); }
-.cats .cats-grupo hr, .cats .cats-grupo.com-cor hr { display: none; }
-
-/* a cor do grupo: bolinha antes do nome (o nome fica no estilo do título) */
-.cats-grupo-nome { display: inline-flex; align-items: center; gap: 6px; }
-.cats-grupo-cor { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); }
-
 /* Status: a Ideia (a entrada de tudo) fica em negrito */
 .cats-item.is-especial span { font-weight: 600; }
 /* Quadros (orgânico) e Funis (pago): duas seções; soltar no título troca o tipo */
@@ -1739,19 +1724,6 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .col-formatos .fmt-off { filter: grayscale(1); opacity: .28; }
 .col-formatos .fmt-sep { display: inline-block; width: 1px; height: 14px; margin: 0 5px; background: rgba(23, 24, 27, .2); vertical-align: middle; }
 
-/* hierarquia: o grupo (pai) é maior e mais escuro, com o ícone; as categorias dele vêm recuadas, sem ícone */
-.cats .cats-grupo .cats-grupo-nome, .cats .cats-grupo.com-cor .cats-grupo-nome { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
-.cats .cats-grupo .cats-grupo-ic { font-weight: 400; margin-right: 0; }
-.cats .cats-grupo { padding-top: 10px; }
-.cats-item.is-filho { padding-left: 26px; }
-
-/* o grupo (pai) com o mesmo alinhamento dos itens: bolinha no mesmo lugar, nome em seguida, setinha à direita */
-.cats .cats-grupo { gap: 8px; padding: 6px 8px; margin-top: 4px; }
-.cats .cats-grupo .cats-grupo-nome { flex: 1; min-width: 0; gap: 6px; }
-.cats .cats-grupo .cats-grupo-seta { margin-left: auto; }
-.cats .cats-grupo .cats-grupo-cor { display: none; }
-.cats-item.is-filho { padding-left: 24px; }
-
 /* nota: os outros formatos da mesma copy, ao lado do caminho */
 .nota-caminho-linha { display: flex; align-items: center; gap: 12px; }
 .nota-irmaos { display: inline-flex; align-items: center; gap: 2px; }
@@ -1760,3 +1732,84 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .nota-irmaos .fmt-on:hover { background: rgba(23, 24, 27, .08); }
 .nota-irmaos .fmt-atual { background: rgba(226, 240, 92, .55); box-shadow: inset 0 0 0 1px rgba(23, 24, 27, .12); }
 .nota-irmaos .fmt-off { filter: grayscale(1); opacity: .28; }
+
+/* projetos embaixo de Ideia: recuados; o "+" do novo projeto aparece no hover da Ideia */
+.cats-item.is-projeto span { font-size: 12.5px; }
+.cats-projeto-campo { margin: 2px 8px 2px 24px; width: calc(100% - 32px); }
+
+/* ativos: uma caixa verde em volta do bloco das copies ativas (que ficam juntas no topo) */
+.tabela tbody tr.is-ativo > td { background-color: rgba(31, 174, 91, .05); }
+.tabela tbody tr.is-ativo > td:first-child { box-shadow: inset 2px 0 0 #1fae5b; }
+.tabela tbody tr.is-ativo > td:last-child { box-shadow: inset -2px 0 0 #1fae5b; }
+.tabela tbody tr:not(.is-ativo) + tr.is-ativo > td, .tabela tbody tr.is-ativo:first-child > td { border-top: 2px solid #1fae5b !important; }
+.tabela tbody tr.is-ativo:has(+ tr:not(.is-ativo)) > td, .tabela tbody tr.is-ativo:last-child > td { border-bottom: 2px solid #1fae5b !important; }
+
+/* criar um formato que falta: caixinha perto do ícone */
+.novo-formato { position: fixed; z-index: 95; width: 280px; padding: 14px; border-radius: 14px; display: flex; flex-direction: column; gap: 8px; }
+.novo-formato-t { margin: 0; font-weight: 600; font-size: 13.5px; }
+.novo-formato-nome { margin: 0; font-size: 12px; color: var(--ink-2); }
+.novo-formato-campo { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); }
+.novo-formato-campo select { flex: 1; padding: 5px 8px; border-radius: 8px; border: 1px solid rgba(23, 24, 27, .14); font: inherit; font-size: 12.5px; background: #fff; }
+.novo-formato-dica { margin: 0; font-size: 11px; color: var(--mute); }
+.novo-formato-acoes { display: flex; justify-content: flex-end; gap: 6px; }
+.novo-formato-acoes button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; }
+.col-formatos button.fmt-off, .nota-irmaos button.fmt-off { border: 0; background: none; cursor: pointer; }
+.col-formatos button.fmt-off:hover, .nota-irmaos button.fmt-off:hover { opacity: .7; filter: grayscale(.4); }
+
+/* o grupo (pai): alinhado como os itens (bolinha no mesmo lugar, ícone e nome em negrito, setinha à direita); os filhos recuados */
+.cats .cats-grupo { gap: 8px; padding: 6px 8px; margin-top: 4px; }
+.cats .cats-grupo .cats-grupo-nome, .cats .cats-grupo.com-cor .cats-grupo-nome { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: .28em; padding: 0; background: none;
+  font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.cats .cats-grupo .cats-grupo-ic { font-weight: 400; }
+.cats .cats-grupo .cats-grupo-seta { margin-left: auto; }
+.cats .cats-grupo hr { display: none; }
+.cats-item.is-filho { padding-left: 24px; }
+
+/* calendário: altura dos dias pelo controle ao lado do Hoje */
+.cal-ed-dia { min-height: var(--cal-dia-h, 140px); }
+.cal-ed-altura { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; color: var(--mute); }
+.cal-ed-altura input[type=range] { width: 90px; accent-color: #1d1d1f; }
+
+/* divisor simples entre as coleções: só a linha; + e − aparecem com o cursor em cima */
+.cats-sep { position: relative; display: flex; align-items: center; height: 14px; margin: 4px 8px; cursor: grab; }
+.cats-sep hr { flex: 1; margin: 0; border: 0; border-top: 1px solid rgba(23, 24, 27, .12); }
+.cats-sep-botoes { position: absolute; right: 0; display: none; gap: 2px; background: var(--fundo, #f3f2ef); padding-left: 4px; }
+.cats-sep:hover .cats-sep-botoes { display: inline-flex; }
+.cats-sep-botoes button { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 5px; font-size: 13px; line-height: 1; color: var(--ink-2); }
+.cats-sep-botoes button:hover { background: rgba(23, 24, 27, .08); color: var(--ink); }
+.cats-sep.is-linha-antes { box-shadow: 0 -2px 0 #1d1d1f; }
+.cats-sep.is-linha-depois { box-shadow: 0 2px 0 #1d1d1f; }
+
+.cats .cats-grupo .cats-grupo-ic { margin-right: 0; }
+
+/* título da nota: o emoji abre o seletor de ícone */
+.titulo-ic { border: 0; background: none; padding: 0 2px; margin-left: -2px; font: inherit; cursor: pointer; border-radius: 8px; }
+.titulo-ic:hover { background: rgba(23, 24, 27, .08); }
+.seletor-icone { position: fixed; z-index: 95; width: 240px; padding: 10px; border-radius: 14px; display: flex; flex-direction: column; gap: 8px; }
+.seletor-icone-grade { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
+.seletor-icone-grade button { height: 36px; border: 0; border-radius: 8px; background: none; font-size: 20px; cursor: pointer; }
+.seletor-icone-grade button:hover { background: rgba(23, 24, 27, .08); }
+.seletor-icone-outro { display: flex; gap: 6px; }
+.seletor-icone-outro input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid rgba(23, 24, 27, .14); font: inherit; font-size: 14px; background: #fff; }
+.seletor-icone-outro button { height: 30px; padding: 0 10px; font-size: 12px; }
+.seletor-icone-dica { margin: 0; font-size: 11px; color: var(--mute); }
+
+/* títulos das seções (Status, Coleções) em negrito */
+.cats .cats-t, .cats .cats-t .cats-t-btn { font-weight: 700; color: rgba(23, 24, 27, .62); }
+/* Referência */
+.ponto.is-referencia { background: #8a7ad6; }
+.tabela-status-sel.is-referencia { border-color: rgba(138, 122, 214, .5); color: #5b4bb0; }
+.cal-ed-chip.is-referencia { box-shadow: inset 0 0 0 1px rgba(138, 122, 214, .45); }
+
+/* grupo: clicar filtra os filhos (fica marcado como os itens); a setinha à direita abre e fecha */
+.cats .cats-grupo.is-on { background: var(--lime-claro, rgba(226, 240, 92, .45)); border-radius: 8px; }
+.cats-grupo-seta-btn { margin-left: auto; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; cursor: pointer; }
+.cats-grupo-seta-btn:hover { background: rgba(23, 24, 27, .08); }
+
+/* winners (botão 🔥 Winners): caixa vermelha em volta do bloco, no topo; mais forte que a verde dos ativos */
+.tabela tbody tr.is-winner > td { background-color: rgba(229, 72, 77, .06); }
+.tabela tbody tr.is-winner > td:first-child { box-shadow: inset 2px 0 0 #e5484d; }
+.tabela tbody tr.is-winner > td:last-child { box-shadow: inset -2px 0 0 #e5484d; }
+.tabela tbody tr:not(.is-winner) + tr.is-winner > td, .tabela tbody tr.is-winner:first-child > td { border-top: 2px solid #e5484d !important; }
+.tabela tbody tr.is-winner:has(+ tr:not(.is-winner)) > td, .tabela tbody tr.is-winner:last-child > td { border-bottom: 2px solid #e5484d !important; }
+.tabela-winners.is-on { color: #c2393e; text-decoration-color: currentColor; }

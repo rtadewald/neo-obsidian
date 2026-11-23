@@ -43,7 +43,7 @@ export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, li
         const todas = listaCategorias(tudoEmCache()?.producoes ?? [], c.categorias ?? [])
         const m: ModeloCats = { categorias: todas, icones: c.icones ?? {}, arquivadas: c.arquivadas ?? [] }
         setModelo(m)
-        setCats(todas.filter((x) => (ehDivisor(x) ? !m.arquivadas!.includes(idGrupo(x)) : !arquivadaCat(m, x))))   // os divisores separam os grupos
+        setCats(todas.filter((x) => !x.startsWith('·sep:') && (ehDivisor(x) ? !m.arquivadas!.includes(idGrupo(x)) : !arquivadaCat(m, x))))   // os divisores separam os grupos
       }).catch(() => {})
   }, [])
   const [categoria, setCategoria] = useState<string>(() => {
@@ -118,8 +118,8 @@ export function NovoRapido({ tipo: tipoInicial, onFechar, onCriado, alternar, li
         )}
         {tipo === 'producao' && cats.some((c) => !ehDivisor(c)) && (
           <div className="novo-secao">
-            <span className="novo-secao-t">Categoria</span>
-            <div className="novo-rapido-opcoes novo-rapido-cats" role="radiogroup" aria-label="Categoria">
+            <span className="novo-secao-t">Coleção</span>
+            <div className="novo-rapido-opcoes novo-rapido-cats" role="radiogroup" aria-label="Coleção">
               {cats.map((c, i) => ehDivisor(c) ? (i > 0 && i < cats.length - 1 ? <span key={c} className="novo-cats-sep" aria-hidden="true" /> : null) : (
                 <button key={c} type="button" role="radio" aria-checked={c === categoria} className={c === categoria ? 'is-on' : ''} onClick={() => setCategoria(c === categoria ? '' : c)}>{rotuloCat(modelo, c)}</button>
               ))}

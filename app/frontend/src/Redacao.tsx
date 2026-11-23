@@ -16,14 +16,18 @@ const CHAVE_LARG = 'redacao-largura'   // fração da largura que a tabela ocupa
 
 /** `calendario`: a aba Calendário da navbar — a mesma tabela à esquerda e o calendário sempre à direita; abrir uma copy
  *  leva para a Redação (onAbrirNota). */
+let criacaoCache: Criacao | null = null   // a última Criação lida (vale para a Redação e o Calendário)
+
 export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; calendario?: boolean; onAbrirNota?: (a: Alvo, nova?: boolean) => void }) {
   const [est, setEst] = useState<EstadoCanvas | null>(() => tudoEmCache())   // abre na hora com o que o app já tem
   const [t, setT] = useState<EstadoTabela>(() => tabelaSalva('ideias'))
   // cor e ordem das categorias e das copies na Criação (dados/criacao.json)
-  const [criacao, setCriacao] = useState<Criacao>({ cores: {}, categorias: [], ordem: {} })
+  // a Criação fica guardada entre as abas (Redação ↔ Calendário): abre na hora com a última, sem piscar
+  const [criacao, setCriacaoEstado] = useState<Criacao>(() => criacaoCache ?? { cores: {}, categorias: [], ordem: {} })
+  const setCriacao = useCallback((c: Criacao | ((x: Criacao) => Criacao)) => setCriacaoEstado((x) => { const n = typeof c === 'function' ? c(x) : c; criacaoCache = n; return n }), [])
   useEffect(() => { fetch('/api/criacao', { cache: 'no-store' }).then((r) => r.json()).then(setCriacao).catch(() => {}) }, [])
   const mudarCriacao = (m: Partial<Criacao>) => {
-    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, icones: { ...c.icones, ...(m.icones ?? {}) }, tipos: { ...c.tipos, ...(m.tipos ?? {}) }, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
+    setCriacao((c) => ({ cores: { ...c.cores, ...(m.cores ?? {}) }, icones: { ...c.icones, ...(m.icones ?? {}) }, tipos: { ...c.tipos, ...(m.tipos ?? {}) }, projetos: m.projetos ? Object.fromEntries(Object.entries({ ...c.projetos, ...m.projetos }).filter(([, v]) => v)) : c.projetos, categorias: m.categorias ?? c.categorias, ordem: { ...c.ordem, ...(m.ordem ?? {}) }, arquivadas: m.arquivadas ?? c.arquivadas }))
     fetch('/api/criacao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) }).then((r) => r.json()).then(setCriacao).catch(() => avisar('Não consegui guardar.'))
   }
   const [abas, setAbas] = useState<{ lista: Alvo[]; ativa: number }>(() => { if (calendario) return { lista: [], ativa: 0 }; try { return JSON.parse(localStorage.getItem(CHAVE_ABAS) || 'null') ?? { lista: [], ativa: 0 } } catch { return { lista: [], ativa: 0 } } })
@@ -232,7 +236,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
       <div className="redacao-canto is-esq" onPointerDown={arrastarCard(-1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1 / fatorCard); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-canto is-dir" onPointerDown={arrastarCard(1, true)} onDoubleClick={() => { if (soTabela) setTabCardW(null); else setCardW(1 / fatorCard); setCardH(1) }} title="Arraste para mudar o tamanho (duplo clique ocupa tudo)" />
       <div className="redacao-tabela" hidden={soCopy && !!(aberta || cal)}>
-        {est && <ModalTabela compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
+        {est && <ModalTabela compacto={escrita} semColunas={escrita && semColunas} semCategorias={semCats} extra={aberta || calendario ? undefined : <div className="redacao-botoes-w">{botoes}</div>} est={est} t={t} aberta={aberta}
           onMudar={setT} onAbrir={abrir} criacao={criacao} onCriacao={mudarCriacao}
           onCategoria={async (a, categoria) => { naHora([a], { categoria: categoria || null }); await post('categoria', { nomes: [a.nome], categoria }); avisar(categoria ? `Foi para ${categoria}` : "Ficou sem categoria"); await recarregar() }}
           onRenomearCategoria={async (de, para) => { await post('categoria/renomear', { de, para }); avisar(`Categoria agora é ${para}`)
@@ -296,7 +300,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
           </nav>
           <PainelNota key={`${aberta.raiz}/${aberta.nome}`} alvo={aberta} fixo versao={versao} avisar={avisar} irmaos={irmaosDe(aberta)}
             prod={est?.producoes.find((x) => x.raiz === aberta.raiz && x.nome === aberta.nome)}
-            onLink={(nome, nova) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) abrirEm({ raiz: p.raiz, nome: p.nome }, nova) }}
+            onLink={(nome, nova) => { const p = est?.producoes.find((x) => x.nome === nome); abrirEm(p ? { raiz: p.raiz, nome: p.nome } : { raiz: 'priorizar', nome }, nova); if (!p) recarregar() }}
             onMudou={(novo) => { if (novo) setAberta(novo); recarregar(); setCalVersao((v) => v + 1) }} />
         </aside>
       ) : null}
@@ -306,7 +310,7 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
           <button className="lateral-btn modal-cal-ir" onClick={() => { const a = modal; setModal(null); onAbrirNota?.(a, false) }} title="Abrir na Redação">Abrir na Redação ↗</button>
           <PainelNota key={`${modal.raiz}/${modal.nome}`} alvo={modal} versao={versao} avisar={avisar} irmaos={irmaosDe(modal)}
             prod={est?.producoes.find((x) => x.raiz === modal.raiz && x.nome === modal.nome)}
-            onLink={(nome) => { const p = est?.producoes.find((x) => x.nome === nome); if (p) setModal({ raiz: p.raiz, nome: p.nome }) }}
+            onLink={(nome) => { const p = est?.producoes.find((x) => x.nome === nome); setModal(p ? { raiz: p.raiz, nome: p.nome } : { raiz: 'priorizar', nome }); if (!p) recarregar() }}
             onMudou={(novo) => { if (novo) setModal(novo); recarregar(); setCalVersao((v) => v + 1) }} />
         </div>
       </div>}

@@ -2,7 +2,8 @@
 tags, winner e categoria, e a cor/ordem das categorias e das copies na Criação (`dados/criacao.json`).
 
 - copy → as notas de `1 Copies/1 Priorizar` e `2 Publicados`; o status vem do nome/pasta (ver notas.py).
-- `categoria:` no frontmatter agrupa a Criação. Arquivar é o status `arquivado` (21/11/2026; saiu o `arquivado: true`).
+- `colecao:` no frontmatter (antes `categoria:`; `funil:` por algumas horas em 22/11/2026; os dois ainda lidos) agrupa as
+  Coleções da Redação. Arquivar é o status `arquivado` (21/11/2026; saiu o `arquivado: true`).
 - O Canvas (mapa mental, canvas, layout, desenho, `grupo:`) saiu em 19/11/2026.
 """
 import functools
@@ -177,7 +178,7 @@ def _linha(raiz: str, nome: str, p: Path) -> dict:
              "previa": notas._previa(t), "mtime": st.st_mtime, "criado": criado,
              "palavras": len(re.findall(r"[\wÀ-ÿ]+", URL.sub("", IMG.sub("", corpo)))),
              "winner": WINNER in tags, "tags": tags,
-             "categoria": _valor(fm, "categoria") or None, **midia}
+             "categoria": next((v for k in (COLECAO, *ANTIGAS) if (v := _valor(fm, k))), None), **midia}   # a coleção (chaves antigas também)
     _LINHAS[p] = (chave, linha)
     return linha
 
@@ -233,7 +234,7 @@ CRIACAO = DADOS / "criacao.json"
 
 def criacao() -> dict:
     d = _json(CRIACAO, {})
-    return {"cores": d.get("cores", {}), "icones": d.get("icones", {}), "tipos": d.get("tipos", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}),
+    return {"cores": d.get("cores", {}), "icones": d.get("icones", {}), "tipos": d.get("tipos", {}), "projetos": d.get("projetos", {}), "categorias": d.get("categorias", []), "ordem": d.get("ordem", {}),
             "arquivadas": d.get("arquivadas", [])}
 
 
@@ -244,6 +245,15 @@ def salvar_criacao(mudanca: dict) -> dict:
         if isinstance(mudanca.get(k), dict):
             d[k] = {**d[k], **mudanca[k]}
             d[k] = {c: v for c, v in d[k].items() if v not in (None, "", [])}
+    # projetos: {nome: [nomes de copy]} (vazio fica: projeto recém-criado; None apaga); a ordem é a de criação
+    if isinstance(mudanca.get("projetos"), dict):
+        pr = dict(d["projetos"])
+        for k, v in mudanca["projetos"].items():
+            if v is None:
+                pr.pop(k, None)
+            elif isinstance(v, list):
+                pr[k] = list(dict.fromkeys(str(x) for x in v))
+        d["projetos"] = pr
     for k in ("categorias", "arquivadas"):   # arquivadas: categorias fora do menu e da Criação (as copies ficam como estão)
         if isinstance(mudanca.get(k), list):
             d[k] = list(dict.fromkeys(str(x) for x in mudanca[k]))
@@ -271,7 +281,7 @@ def _nova_copy(titulo: str, corpo: str, categoria: str | None = None, extras: di
     """Copy nova em Priorizar com o frontmatter do T-Copy, a `categoria:` (a caixa do mapa) e o que vier em `extras`
     (url, tipo, thumb do material). Não há mais 💡 ideia à parte: tudo nasce copy, numa categoria."""
     p = _livre(notas.PRIORIZAR, _limpo(titulo) or "Nova copy")
-    cab = ["status: ideia", "scheduled:", "notion:", "tags:", f'categoria: "{categoria}"' if categoria else "categoria:"]
+    cab = ["status: ideia", "scheduled:", "notion:", "tags:", f'{COLECAO}: "{categoria}"' if categoria else f"{COLECAO}:"]
     cab += [f'{k}: "{v}"' for k, v in (extras or {}).items() if v]
     notas._escrever(p, "---\n" + "\n".join(cab) + "\n---\n\n" + (corpo.strip() + "\n" if corpo.strip() else ""))
     marcar_nova(p.stem)
@@ -372,6 +382,8 @@ def renomeou(raiz: str, antes: str, raiz_depois: str, depois: str):
         marcar_nova(depois)
     velho, novo = f"{raiz}/{antes}", f"{raiz_depois}/{depois}"
     d = criacao()
+    if antes != depois and any(antes in v for v in d["projetos"].values()):   # o projeto guarda o nome da copy
+        salvar_criacao({"projetos": {k: [depois if x == antes else x for x in v] for k, v in d["projetos"].items()}})
     if any(velho in v for v in d["ordem"].values()):
         salvar_criacao({"ordem": {c: [novo if x == velho else x for x in v] for c, v in d["ordem"].items()}})
 
@@ -454,7 +466,7 @@ def mudar_status(nome: str, status: str) -> dict:
     if raiz not in notas.PASTAS:
         raise ValueError("só copies (1 Priorizar ou 2 Publicados) têm status")
     if status not in notas.STATUS_VAULT:
-        raise ValueError("status é ideia, gravar, edicao, agendado, publicado, ativo, inativo ou arquivado")
+        raise ValueError("status é ideia, referencia, gravar, edicao, agendado, publicado, ativo, inativo ou arquivado")
     antes = (raiz, nome)
     if status in notas.FIM:
         d = notas.mover(raiz, nome, "publicados") if raiz != "publicados" else {"raiz": raiz, "nome": nome}
@@ -481,6 +493,22 @@ def definir_tags(nome: str, tags: list[str]) -> list[str]:
     return antes
 
 
+COLECAO = "colecao"   # a chave do frontmatter (a coleção da copy; por dentro do app o campo segue "categoria")
+ANTIGAS = ("funil", "categoria")   # nomes antigos da mesma chave (22/11/2026), ainda lidos
+
+
+def _gravar_colecao(texto: str, valor: str | None) -> str:
+    """Grava `colecao:` no lugar da chave (vazio fica `colecao:` sem valor, a chave não some); uma chave antiga
+    (`funil:`, `categoria:`) vira `colecao:` na mesma linha."""
+    for antiga in ANTIGAS:
+        fm = _fm(texto)
+        if re.search(rf"(?m)^{antiga}:", fm):
+            texto = _definir(texto, COLECAO, None) if re.search(rf"(?m)^{COLECAO}:", fm) else texto
+            texto = re.sub(rf"(?m)^{antiga}:", f"{COLECAO}:", texto, count=1)
+    t = _definir(texto, COLECAO, valor if valor else "")
+    return t.replace(f'{COLECAO}: ""', f"{COLECAO}:", 1)
+
+
 def definir_categoria(nomes: list[str], categoria: str | None) -> int:
     """Põe as copies numa categoria (a caixa do mapa mental): `categoria:` no frontmatter. Vazio tira (Sem categoria)."""
     cat = (categoria or "").strip()
@@ -490,9 +518,10 @@ def definir_categoria(nomes: list[str], categoria: str | None) -> int:
         raiz, nome = achar(nome)
         p = notas.TODAS[raiz] / f"{nome}.md"
         t = _ler(p, None)
-        if _valor(_fm(t), "categoria") == cat:
+        fm = _fm(t)
+        if _valor(fm, COLECAO) == cat and not any(re.search(rf"(?m)^{k}:", fm) for k in ANTIGAS):
             continue
-        notas._escrever(p, _definir(t, "categoria", cat))
+        notas._escrever(p, _gravar_colecao(t, cat))
         n += 1
     return n
 
@@ -507,7 +536,7 @@ def renomear_categoria(de: str, para: str) -> int:
     for pr in _todas()["producoes"]:
         if pr.get("categoria") == de:
             p = notas.TODAS[pr["raiz"]] / f"{pr['nome']}.md"
-            notas._escrever(p, _definir(_ler(p, None), "categoria", para))
+            notas._escrever(p, _gravar_colecao(_ler(p, None), para))
             n += 1
     d = criacao()
     salvar_criacao({"cores": {para: d["cores"].get(de), de: None}, "ordem": {para: d["ordem"].get(de), de: None},

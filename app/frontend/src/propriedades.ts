@@ -65,7 +65,7 @@ function yaml(v: string) {
 }
 function bloco(chave: string, v: string | string[]) {
   // grupo (canvas) e categoria sempre entre aspas, como no resto do vault
-  const q = (x: string) => (chave === 'grupo' || chave === 'categoria' ? `"${x.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : yaml(x))
+  const q = (x: string) => (chave === 'grupo' || chave === 'categoria' || chave === 'colecao' || chave === 'funil' ? `"${x.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : yaml(x))
   if (Array.isArray(v)) return v.length ? `${chave}:\n${v.map((x) => `  - ${q(x)}`).join('\n')}` : `${chave}:`
   return v ? `${chave}: ${ehBool(v) ? v : q(v)}` : `${chave}:`
 }
@@ -112,7 +112,7 @@ class Painel extends WidgetType {
     envelope.append(raiz)
     const linha = (rotulo: string, campo: HTMLElement, chave?: string) => {
       const d = document.createElement('div'); d.className = 'cm-prop'
-      const k = document.createElement('span'); k.className = 'cm-prop-chave'; k.textContent = rotulo
+      const k = document.createElement('span'); k.className = 'cm-prop-chave'; k.textContent = rotulo === 'colecao' ? 'coleção' : rotulo
       d.append(k, campo)
       if (chave) {
         const x = document.createElement('button'); x.className = 'cm-prop-tirar'; x.textContent = '×'; x.title = 'Remover propriedade'
@@ -160,11 +160,11 @@ class Painel extends WidgetType {
       const { chave, valor } = it
       if (chave === 'status' && st) continue   // a propriedade status já aparece no seletor da primeira linha
       // categoria: select com as categorias da Criação (a atual entra mesmo se não estiver na lista)
-      if (chave === 'categoria' && this.extra.categorias && !Array.isArray(valor)) {
+      if ((chave === 'funil' || chave === 'colecao' || chave === 'categoria') && this.extra.categorias && !Array.isArray(valor)) {
         const atual = tirarAspas(valor)
         const s = document.createElement('select'); s.className = 'cm-prop-campo'
         const lista = this.extra.categorias
-        for (const c of [{ v: '', r: '— Sem categoria' }, ...lista, ...(atual && !lista.some((x) => x.v === atual) ? [{ v: atual, r: atual }] : [])]) {
+        for (const c of [{ v: '', r: '— Sem coleção' }, ...lista, ...(atual && !lista.some((x) => x.v === atual) ? [{ v: atual, r: atual }] : [])]) {
           const op = document.createElement('option'); op.value = c.v; op.textContent = c.r; s.append(op)
         }
         s.value = atual
