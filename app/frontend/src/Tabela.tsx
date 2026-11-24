@@ -17,7 +17,9 @@ export type EstadoTabela = {
   filtros?: Filtros   // botão Filtrar: status, categoria e data; vazio = tudo
   regras?: Regra[]   // ordenação por regras (botão ⇅): valem em sequência e passam por cima da ordem do cabeçalho
 }
-type Filtros = { status?: string[]; categoria?: string[]; data?: '' | 'com' | 'sem' }
+type Filtros = { status?: string[]; categoria?: string[]; data?: '' | 'com' | 'sem'; fora?: string[] }
+/** Filtro reverso (botão Filtrar, segundo clique no chip): os status escondidos. Sem escolha, agendado e publicado. */
+const FORA_PADRAO = ['agendado', 'publicado']
 const nFiltros = (f?: Filtros) => (f?.status?.length ?? 0) + (f?.categoria?.length ?? 0) + (f?.data ? 1 : 0)
 type CampoOrdem = 'nome' | 'status' | 'categoria' | 'data' | 'mtime' | 'palavras' | 'formato' | 'tags' | 'formatos'
 type Regra = { campo: CampoOrdem; asc: boolean }
@@ -214,8 +216,11 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   // Categoria no lugar de Status e ordenada por data e categoria (as pinadas em cima)
   const porStatus = stSel.length > 0
   const noStatus = (p: Producao, l: string[]) => l.includes(p.status)
+  // filtro reverso: o status escondido some de tudo, menos se estiver escolhido (escolher mostra)
+  const fora = t.filtros?.fora ?? FORA_PADRAO
+  const dentro = (p: Producao) => !fora.includes(p.status) || stSel.includes(p.status)
   // padrão (sem status escolhido): as em andamento e as ativas
-  const daCriacao = useMemo(() => baseCriacao.filter((p) => (stSel.length ? noStatus(p, stSel) : !FIM.includes(p.status) || p.status === 'ativo')), [baseCriacao, stSel.join('|'), pinsSet])   // eslint-disable-line react-hooks/exhaustive-deps
+  const daCriacao = useMemo(() => baseCriacao.filter((p) => dentro(p) && (stSel.length ? noStatus(p, stSel) : !FIM.includes(p.status) || p.status === 'ativo')), [baseCriacao, stSel.join('|'), pinsSet, fora.join('|')])   // eslint-disable-line react-hooks/exhaustive-deps
   const daPasta = daCriacao
   // contagem de cada status (com a categoria escolhida no menu)
   // status e categoria são excludentes: escolher um tira o outro (contagem do status: lista inteira)
@@ -267,15 +272,15 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   }
   const publicadasCriacao = useMemo(() => {
     const cats = t.filtros?.categoria ?? []
-    const l = est.producoes.filter((p) => (p.status === 'publicado' || p.status === 'inativo') && !!GRUPO_FORMATO[p.formato] && naCat(cats, p))   // ativos ficam em cima, arquivados não aparecem
+    const l = est.producoes.filter((p) => (p.status === 'publicado' || p.status === 'inativo') && !!GRUPO_FORMATO[p.formato] && naCat(cats, p) && dentro(p))   // ativos ficam em cima, arquivados não aparecem
     return ordenarLista(l)
-  }, [est.producoes, t.filtros?.categoria, t.ordem, t.regras, pinsSet])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [est.producoes, t.filtros?.categoria, t.ordem, t.regras, pinsSet, fora.join('|')])   // eslint-disable-line react-hooks/exhaustive-deps
   // colunas que existem de fato (colSpan maior cria colunas fantasmas que comiam a sobra da largura)
   useEffect(() => { if (t.pasta !== 'ideias') onMudar({ ...tabelaSalva('ideias'), filtros: { ...tabelaSalva('ideias').filtros, status: [t.pasta] } }) }, [t.pasta])   // eslint-disable-line react-hooks/exhaustive-deps
   // categoria numa coluna
   const umaCat = t.pasta === 'ideias' && (t.filtros?.categoria?.length ?? 0) === 1
   // contagem das categorias: as copies não publicadas de cada uma (o que aparece ao escolher a categoria)
-  const contagemCat = useMemo(() => { const c: Record<string, number> = {}; for (const p of baseCriacao) if (!FIM.includes(p.status) || p.status === 'ativo') c[p.categoria ?? ''] = (c[p.categoria ?? ''] ?? 0) + 1; return c }, [baseCriacao])
+  const contagemCat = useMemo(() => { const c: Record<string, number> = {}; for (const p of baseCriacao) if ((!FIM.includes(p.status) || p.status === 'ativo') && !fora.includes(p.status)) c[p.categoria ?? ''] = (c[p.categoria ?? ''] ?? 0) + 1; return c }, [baseCriacao, fora.join('|')])
   const linhas = useMemo(() => {
     const f = t.filtros
     const l = daPasta.filter((p) => (!t.ano || dia(p).startsWith(t.ano))
@@ -337,7 +342,7 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const [verWinners, setVerWinners] = useState(() => { try { return localStorage.getItem('tabela-winners') === 'sim' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('tabela-winners', verWinners ? 'sim' : 'nao') } catch { /* sem storage */ } }, [verWinners])
   const winners = useMemo(() => (verWinners ? ordenarLista(baseCriacao.filter((p) => p.winner && p.status !== 'arquivado'
-    && naCat(t.filtros?.categoria ?? [], p) && (!stSel.length || noStatus(p, stSel)))) : []), [verWinners, baseCriacao, t.filtros?.categoria, stSel.join('|'), t.ordem, t.regras])   // eslint-disable-line react-hooks/exhaustive-deps
+    && naCat(t.filtros?.categoria ?? [], p) && dentro(p) && (!stSel.length || noStatus(p, stSel)))) : []), [verWinners, baseCriacao, t.filtros?.categoria, stSel.join('|'), t.ordem, t.regras, fora.join('|')])   // eslint-disable-line react-hooks/exhaustive-deps
   const winSet = useMemo(() => new Set(winners.map(chaveDe)), [winners])
   const semWin = (p: Producao) => !winSet.has(chaveDe(p))
   // copy aberta (⌘O, clique, aba): se ela está na tabela com os filtros de agora, abre o grupo dela e rola até a linha
@@ -444,7 +449,6 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
   const ordenarPor = (campo: CampoOrdem, primeira = true) => mudar({ regras: [{ campo, asc: t.regras?.length === 1 && t.regras[0].campo === campo ? !t.regras[0].asc : primeira }] })
   const setaDe = (campo: CampoOrdem) => t.regras?.[0]?.campo === campo ? <span className="tabela-seta">{t.regras[0].asc ? '↑' : '↓'}</span> : null
   const ordenar = (col: Coluna) => mudar({ regras: [], ordem: { col, asc: t.ordem.col === col ? !t.ordem.asc : col === 'nome' } })
-  const filtrando = nFiltros(t.filtros) || t.ano
   // duplo clique no nome renomeia ali mesmo (o emoji do começo fica; Enter ou sair do campo grava, Esc desiste)
   const [renomeando, setRenomeando] = useState<string | null>(null)
   const nomeOuCampo = (p: Producao) => {
@@ -577,7 +581,6 @@ export function ModalTabela({ est, t, onMudar, onAbrir, onApagar, onStatus, onRe
                 {tudoAberto ? <path d="M3 2.5l3 3 3-3M3 9.5l3-3 3 3" /> : <path d="M3 5l3-3 3 3M3 7l3 3 3-3" />}</svg>
               {tudoAberto ? 'Recolher tudo' : 'Expandir tudo'}</button>
           })()}
-          {filtrando ? <button className="tabela-limpar" onClick={() => mudar({ ano: '', mes: '', filtros: {} })}>Limpar filtros</button> : null}
         </section>
 
         <div className="tabela-rolo" ref={rolo} onPointerDown={comecarLaco} onScroll={(e) => guardar(t.pasta, { rolagem: e.currentTarget.scrollTop })}>
@@ -834,16 +837,24 @@ function FiltroRedacao({ f, onMudar }: { f: Filtros; onMudar: (f: Filtros) => vo
     return () => { window.removeEventListener('pointerdown', fora, true); window.removeEventListener('keydown', esc, true) }
   }, [aberto])
   const n = nFiltros(f)
-  const alt = (k: 'status' | 'categoria', v: string) => { const l = f[k] ?? []; onMudar({ ...f, [k]: l.includes(v) ? l.filter((x) => x !== v) : [...l, v] }) }
-  const chip = (on: boolean, rotulo: string, fn: () => void, key: string) => <button key={key} className={`tabela-chip ${on ? 'is-on' : ''}`} onClick={fn}>{rotulo}</button>
+  // status: um clique mostra só ele, o segundo esconde (filtro reverso, riscado), o terceiro volta ao neutro
+  const fora = f.fora ?? FORA_PADRAO
+  const ciclo = (v: string) => {
+    const st = f.status ?? []
+    if (st.includes(v)) onMudar({ ...f, status: st.filter((x) => x !== v), fora: [...fora, v] })
+    else if (fora.includes(v)) onMudar({ ...f, fora: fora.filter((x) => x !== v) })
+    else onMudar({ ...f, status: [...st, v] })
+  }
+  const chip = (on: boolean, rotulo: string, fn: () => void, key: string, escondido = false) => <button key={key} className={`tabela-chip ${on ? 'is-on' : ''} ${escondido ? 'is-fora' : ''}`} onClick={fn}
+    title={escondido ? 'Escondido · clique volta a mostrar' : undefined}>{rotulo}</button>
   return (
     <div className="tabela-fmt" ref={caixa}>
       <button className={`tabela-canvas ${n ? 'is-on' : ''}`} onClick={() => setAberto((v) => !v)} aria-expanded={aberto} title="Filtrar as copies">
         {n ? `Filtro (${n})` : 'Filtrar'}</button>
       {aberto && (
         <div className="tabela-fmt-menu tabela-filtro-menu glass glass--light" role="dialog" aria-label="Filtrar">
-          <p className="tabela-filtro-t">Status</p>
-          <div className="tabela-chips">{STATUS.map((x) => chip(!!f.status?.includes(x.k), `${x.marca} ${x.nome}`, () => alt('status', x.k), x.k))}</div>
+          <p className="tabela-filtro-t">Status <span className="mudo">· clique de novo esconde</span></p>
+          <div className="tabela-chips">{STATUS.map((x) => chip(!!f.status?.includes(x.k), `${x.marca} ${x.nome}`, () => ciclo(x.k), x.k, fora.includes(x.k) && !f.status?.includes(x.k)))}</div>
           <p className="tabela-filtro-t">Data</p>
           <div className="tabela-chips">{([['com', '📅 Com data'], ['sem', 'Sem data']] as const).map(([k, r]) => chip(f.data === k, r, () => onMudar({ ...f, data: f.data === k ? '' : k }), k))}</div>
           {n > 0 && <><hr /><button className="tabela-fmt-item" onClick={() => onMudar({})}>Limpar filtros</button></>}

@@ -1813,3 +1813,6 @@ body.lacando, body.lacando * { user-select: none !important; cursor: crosshair; 
 .tabela tbody tr:not(.is-winner) + tr.is-winner > td, .tabela tbody tr.is-winner:first-child > td { border-top: 2px solid #e5484d !important; }
 .tabela tbody tr.is-winner:has(+ tr:not(.is-winner)) > td, .tabela tbody tr.is-winner:last-child > td { border-bottom: 2px solid #e5484d !important; }
 .tabela-winners.is-on { color: #c2393e; text-decoration-color: currentColor; }
+
+/* filtro reverso (botão Filtrar): o status escondido fica riscado e apagado */
+.tabela-chip.is-fora { text-decoration: line-through; opacity: .5; }
