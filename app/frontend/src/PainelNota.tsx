@@ -42,7 +42,7 @@ export function PainelNota({ alvo, prod, irmaos, versao, onMudou, avisar, onLink
   // ⌘] mostra/oculta o sumário (vale também com o cursor no editor)
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || !(e.key === ']' || e.code === 'BracketRight')) return
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || !(e.key === ']' || (e.code === 'BracketRight' && e.key !== '['))) return   // no ABNT2 o ⌘[ vem com o code do ] americano
       e.preventDefault(); e.stopPropagation()
       alternarSumario()
     }

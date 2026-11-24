@@ -166,8 +166,9 @@ export function Redacao({ versao, calendario, onAbrirNota }: { versao?: number; 
       if (k === 'KeyZ') { feito(); desfazerUltima(e.shiftKey).then((m) => { avisar(m); recarregarRef.current() }); return }
       if (e.shiftKey) return
       if (k === 'KeyB') { feito(); setSoCopy((v) => !v) }
-      else if (k === 'BracketLeft') { feito(); const m = document.querySelector('.redacao .cats')?.getBoundingClientRect().width; if (m) setCatsW(Math.round(m)); setSemCats((v) => !v) }
-      else if (k === 'BracketRight') { feito(); setSemColunas((v) => !v) }
+      // [ e ] pelo caractere: no teclado ABNT2 o [ está na tecla física do ] americano (o e.code engana)
+      else if (e.key === '[' || (k === 'BracketLeft' && e.key !== ']' && e.key !== '´' && e.key !== 'Dead')) { feito(); const m = document.querySelector('.redacao .cats')?.getBoundingClientRect().width; if (m) setCatsW(Math.round(m)); setSemCats((v) => !v) }
+      else if (e.key === ']' || (k === 'BracketRight' && e.key !== '[')) { feito(); setSemColunas((v) => !v) }
       else if (k === 'KeyP') { feito(); setVerTabela((v) => !v) }
       else if (k === 'KeyC' && !String(window.getSelection() ?? '')) { feito(); irCal() }
     }
